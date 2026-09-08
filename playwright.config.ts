@@ -1,3 +1,4 @@
+import {resolve} from 'node:path';
 import {defineConfig, devices} from '@playwright/test';
 
 /**
@@ -8,6 +9,19 @@ import {defineConfig, devices} from '@playwright/test';
 const HOST = process.env.HOSTNAME || '127.0.0.1';
 const PORT = process.env.PORT || '3000';
 const baseURL = `http://${HOST}:${PORT}`;
+
+/**
+ * Chemins **absolus**, résolus depuis ce fichier — pas depuis le répertoire
+ * courant, qui dépend d'où la commande est lancée. `server.js` du build autonome
+ * se place dans `.next/standalone` avant de démarrer : un chemin relatif y
+ * désignerait un répertoire inexistant, et le démarrage échouerait — à raison
+ * (AD-2, et `src/env.ts` refuse désormais un `CONTENT_DIR` relatif).
+ *
+ * `__dirname` et non `import.meta.url` : Playwright charge sa configuration en
+ * CommonJS, où `import.meta` est une erreur de syntaxe.
+ */
+const FIXTURES = resolve(__dirname, 'tests/fixtures/content');
+const DATA = resolve(__dirname, 'tests/fixtures/data');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -37,8 +51,8 @@ export default defineConfig({
       PORT,
       ADMIN_DEV: '0',
       ANTHROPIC_API_KEY: 'cle-de-test-sans-valeur',
-      CONTENT_DIR: 'tests/fixtures/content',
-      DATA_DIR: 'tests/fixtures/data',
+      CONTENT_DIR: FIXTURES,
+      DATA_DIR: DATA,
       NEXT_PUBLIC_SITE_URL: baseURL
     }
   }

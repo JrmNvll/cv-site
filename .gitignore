@@ -3,6 +3,13 @@
 .env.local
 .env.*.local
 
+# Contenu privé — jamais dans ce dépôt (AD-2).
+# « Je copie content/ à la racine, juste pour essayer » est le chemin le plus
+# court vers une fuite de données personnelles dans un dépôt public. Ce filet
+# rattrape le geste ; le contrôle qui refuse tout cv.yaml ou qa.*.md hors des
+# fixtures vit dans tests/unit/content-repo-guard.test.ts.
+/content/
+
 # Node / Next.js
 node_modules/
 .next/

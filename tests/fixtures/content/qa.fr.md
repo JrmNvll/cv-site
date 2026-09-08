@@ -5,8 +5,13 @@ Aucune de ces questions ni de ces réponses ne provient du corpus réel, qui vit
 dans CONTENT_DIR, hors de ce dépôt (AD-2, AD-12). Ce fichier n'existe que pour
 exercer l'analyseur : il couvre une entrée ordinaire, une entrée prioritaire,
 une entrée avec consigne, une entrée PRIVÉ, une entrée PASSE, une entrée au
-corps vide, et les entrées de comportement sys-*.
+corps vide, un identifiant à chiffre dans le préfixe, et les entrées de
+comportement sys-*.
 -->
+
+# Base de connaissance fictive — questions recruteurs
+
+---
 
 ## 1. Parcours fictif
 
@@ -23,6 +28,8 @@ bascule imaginaire vers l'outillage interne.
 #### `par-02` — Sur quelles technologies fictives travaille-t-elle ?
 **Réponse :**
 Langage-Fictif et Pseudo-SQL au quotidien, Atelier-Imaginaire sur l'historique.
+
+---
 
 ## 2. Situation fictive
 
@@ -47,7 +54,20 @@ PASSE
 #### `vid-01` — Question fictive dont la réponse reste à écrire
 **Réponse :**
 
-## 3. Comportement de l'agent
+---
+
+## 3. Entreprise fictive à chiffre
+
+> Le préfixe d'un identifiant peut porter un chiffre — `i2k` désigne un
+> employeur dont le nom en contient un. Le corpus réel en compte neuf.
+
+#### `i2k-01` — Que faisait l'entreprise fictive à chiffre ?
+**Réponse :**
+Des applications de gestion imaginaires, pour une clientèle inventée.
+
+---
+
+## 4. Comportement de l'agent
 
 #### `sys-01` — Que répondre à une question hors périmètre ?
 **Réponse :**

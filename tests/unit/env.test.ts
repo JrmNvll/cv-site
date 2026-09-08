@@ -73,6 +73,16 @@ describe('parseEnv', () => {
     }
   );
 
+  it.each(['tests/fixtures/content', './content', '../content', 'content'])(
+    'refuse un CONTENT_DIR relatif comme « %s »',
+    (value) => {
+      // `server.js` du build autonome se place dans `.next/standalone` avant de
+      // démarrer : un chemin relatif y désigne un répertoire inexistant, et
+      // l'erreur — « cv.yaml absent » — ne dit rien du vrai problème.
+      expect(() => parseEnv({...COMPLETE, CONTENT_DIR: value})).toThrowError(/CONTENT_DIR/);
+    }
+  );
+
   it('refuse une URL de site qui n’est pas absolue', () => {
     expect(() => parseEnv({...COMPLETE, NEXT_PUBLIC_SITE_URL: 'cv.exemple.invalid'})).toThrowError(
       /NEXT_PUBLIC_SITE_URL/

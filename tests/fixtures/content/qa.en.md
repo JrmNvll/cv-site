@@ -10,6 +10,10 @@ None of these questions or answers comes from the real corpus, which lives in
 CONTENT_DIR, outside this repository (AD-2, AD-12).
 -->
 
+# Fictional knowledge base — recruiter questions
+
+---
+
 ## 1. Fictional career
 
 > Block note, ignored by the parser.
@@ -25,6 +29,8 @@ imaginary move towards internal tooling.
 #### `par-02` — Which fictional technologies does she work with?
 **Réponse :**
 Langage-Fictif and Pseudo-SQL day to day, Atelier-Imaginaire on the older work.
+
+---
 
 ## 2. Fictional situation
 
@@ -49,7 +55,20 @@ PASSE
 #### `vid-01` — Fictional question whose answer is still to be written
 **Réponse :**
 
-## 3. Agent behaviour
+---
+
+## 3. Fictional company with a digit
+
+> An identifier prefix may carry a digit — `i2k` stands for an employer whose
+> name contains one. The real corpus has nine such entries.
+
+#### `i2k-01` — What did the fictional company with a digit do?
+**Réponse :**
+Imaginary business applications, for an invented customer base.
+
+---
+
+## 4. Agent behaviour
 
 #### `sys-01` — What to answer when a question is out of scope?
 **Réponse :**

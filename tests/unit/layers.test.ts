@@ -12,10 +12,23 @@ import {join, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
 // Module de configuration partagé, en JavaScript : `allowJs` en infère les types.
-import {FORBIDDEN_LAYERS, FORBIDDEN_MODULES, LAYER_PATHS, SHARED} from '../../layers.config.mjs';
+import {
+  FORBIDDEN_LAYERS,
+  FORBIDDEN_MODULES,
+  LAYER_PATHS,
+  SHARED,
+  SOURCE_EXTENSIONS
+} from '../../layers.config.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SRC = join(ROOT, 'src');
+const SCRIPTS = join(ROOT, 'scripts');
+const extensions = SOURCE_EXTENSIONS as string[];
+
+// L'outillage n'est pas dans `src/`, mais il tourne sur la même machine et
+// pourrait ouvrir `usage.db` ou appeler le modèle. Il est donc contrôlé comme
+// le reste : sans cela, un prochain script franchirait le graphe sans être vu.
+const SCANNED = [SRC, SCRIPTS];
 
 const forbiddenLayers = FORBIDDEN_LAYERS as Record<string, string[]>;
 const forbiddenModules = FORBIDDEN_MODULES as Record<string, string[] | undefined>;
@@ -28,7 +41,7 @@ function sourceFiles(directory: string): string[] {
     const path = join(directory, entry);
     if (statSync(path).isDirectory()) {
       found.push(...sourceFiles(path));
-    } else if (/\.(ts|tsx|mts|cts)$/.test(entry)) {
+    } else if (extensions.some((extension) => entry.endsWith(`.${extension}`))) {
       found.push(path);
     }
   }
@@ -89,7 +102,7 @@ function crossesInto(specifier: string, layer: string): boolean {
 }
 
 describe('frontières de couches', () => {
-  const files = sourceFiles(SRC);
+  const files = SCANNED.flatMap(sourceFiles);
 
   it('trouve bien les sources à contrôler', () => {
     expect(files.length).toBeGreaterThan(0);
@@ -155,6 +168,12 @@ describe('frontières de couches', () => {
 
   it('signale un import dynamique dont l’argument est une variable', () => {
     expect(analyze('const m = await import(chemin);').opaqueImports).toBe(1);
+  });
+
+  it("contrôle aussi l'outillage hors application", () => {
+    const scanned = files.filter((file) => file.startsWith(SCRIPTS));
+    expect(scanned.length).toBeGreaterThan(0);
+    expect(layerOf(scanned[0]!)).toBe('scripts');
   });
 
   it('les cinq couches existent', () => {

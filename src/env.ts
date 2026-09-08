@@ -14,6 +14,7 @@
  * depuis un composant client fait échouer la compilation, pas la production.
  */
 import 'server-only';
+import {isAbsolute} from 'node:path';
 import {z} from 'zod';
 
 /** Chaîne requise, non vide, dont le message d'erreur nomme la variable. */
@@ -26,8 +27,19 @@ function required(name: string) {
 export const envSchema = z.object({
   /** Clé API Anthropic. Serveur uniquement, jamais transmise au navigateur (AD-6). */
   ANTHROPIC_API_KEY: required('ANTHROPIC_API_KEY'),
-  /** Répertoire du contenu privé en lecture seule : cv.yaml, qa.*.md, assets/ (AD-2). */
-  CONTENT_DIR: required('CONTENT_DIR'),
+  /**
+   * Répertoire du contenu privé en lecture seule : cv.yaml, qa.*.md, assets/ (AD-2).
+   *
+   * **Absolu, et vérifié comme tel.** `server.js` du build autonome se place dans
+   * `.next/standalone` avant de démarrer : un chemin relatif y désigne un
+   * répertoire qui n'existe pas, et l'erreur — « cv.yaml absent » — ne dit alors
+   * rien du vrai problème. Mieux vaut refuser la variable que faire chercher le
+   * fichier.
+   */
+  CONTENT_DIR: required('CONTENT_DIR').refine(
+    isAbsolute,
+    'CONTENT_DIR doit être un chemin absolu (voir .env.example)'
+  ),
   /** Répertoire des données : usage.db, hors dépôt (AD-7). */
   DATA_DIR: required('DATA_DIR'),
   /** URL publique du site. */

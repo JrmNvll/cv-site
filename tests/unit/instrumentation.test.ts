@@ -3,6 +3,9 @@
  * de la matrice repose sur `register()` et `ensureConfiguration()`. Sans ce
  * test, ce chemin ne serait exercé par rien.
  */
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 // `startup.ts` écrit sur le descripteur 2 sans passer par `console` : c'est
@@ -78,6 +81,46 @@ describe('register', () => {
 
     expect(exit).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(0);
+  });
+});
+
+describe('contenu invalide au démarrage', () => {
+  it('arrête le processus en nommant le fichier et l’entrée fautive', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cv-content-instr-'));
+    // `finally` : une assertion qui échoue ne doit pas laisser un répertoire
+    // temporaire de plus derrière elle à chaque exécution de la suite.
+    try {
+      // Un `cv.yaml` amputé de ce que le schéma exige, à côté d'un corpus valide.
+      writeFileSync(join(dir, 'cv.yaml'), 'identite:\n  prenom: Camille\n', 'utf8');
+      writeFileSync(
+        join(dir, 'qa.fr.md'),
+        '#### `abc-01` — Question ?\n**Réponse :**\nCorps.\n',
+        'utf8'
+      );
+      process.env.CONTENT_DIR = dir;
+      const exit = spyOnExit();
+
+      const {register} = await import('@/instrumentation');
+      await register();
+
+      expect(exit).toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(stderrOutput()).toContain('cv.yaml');
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
+  it("n'essaie même pas de charger le contenu si la configuration est invalide", async () => {
+    delete process.env.CONTENT_DIR;
+    spyOnExit();
+
+    const {register} = await import('@/instrumentation');
+    await register();
+
+    // Un seul message : celui de la configuration, pas deux échecs empilés.
+    expect(stderrOutput()).toContain('CONTENT_DIR');
+    expect(stderrOutput()).not.toContain('cv.yaml');
   });
 });
 

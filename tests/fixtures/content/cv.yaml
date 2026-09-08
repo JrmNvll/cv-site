@@ -3,34 +3,47 @@
 # Personne, entreprises, dates et diplômes sont inventés. Aucun élément du CV
 # réel ne figure ici : le contenu réel vit dans CONTENT_DIR, hors de ce dépôt
 # (AD-2). Ce fichier ne sert qu'à faire tourner les tests unitaires et e2e.
+#
+# Sa structure suit **le fichier de référence**, section par section : c'est le
+# fichier réel qui définit le format (contrat de contenu), pas cette fixture.
+#
+# Les valeurs des champs **hors liste blanche** (AD-8) sont des sentinelles
+# longues et uniques : `tests/unit/projection-leak.test.ts` vérifie qu'aucune
+# d'elles n'apparaît dans une projection. Les banaliser affaiblirait ce test.
 
 meta:
-  version: 1
-  mis_a_jour: '2026-01-15'
+  langues_disponibles: [fr, en]
+  derniere_extraction: 2026-01-15
   sources:
-    - dossier-fictif/notes.md
+    - dossier-fictif/notes-extraction-fictives.md
 
 identite:
   prenom: Camille
   nom: Durand
-  prenoms_etat_civil: Camille Alix
-  date_naissance: '1988-04-12'
-  lieu_naissance: Ville-Fictive
-  nationalite: Suisse
+  prenoms_etat_civil: Camille-Alix-EtatCivilFictif
+  date_naissance: 1988-04-12
+  lieu_naissance: Bourgade-NaissanceFictive
+  nationalite:
+    fr: Suisse
+    en: Swiss
   permis: null
+  photo: assets/photo-fictive.svg
   titre:
     fr: Développeuse logiciel
     en: Software developer
   sous_titre:
     fr: Applications métier et outillage interne
     en: Line-of-business applications and internal tooling
-  photo: assets/photo-fictive.jpg
 
 contact:
+  telephone: "+41 00 000 00 07"
   email: camille.durand@exemple.invalid
-  linkedin: https://linkedin.exemple.invalid/in/camille-durand-fictif
-  telephone: '+41 00 000 00 00'
-  adresse: 1 rue Inexistante, 0000 Ville-Fictive
+  adresse:
+    rue: Chemin-InexistantFictif 42
+    code_postal: "0000-CodePostalFictif"
+    ville: Cite-AdresseFictive
+    pays: Pays-Fictif
+  linkedin: linkedin.exemple.invalid/in/camille-durand-fictif
 
 profil:
   fr: >-
@@ -42,138 +55,153 @@ profil:
     applications, then an invented move towards internal tooling.
 
 langues:
-  - langue:
-      fr: Français
-      en: French
-    niveau:
-      fr: Langue maternelle
-      en: Native
-  - langue:
-      fr: Anglais
-      en: English
-    niveau:
-      fr: Professionnel
-      en: Professional working proficiency
+  - langue: {fr: Français, en: French}
+    niveau: {fr: langue maternelle, en: native}
+  - langue: {fr: Anglais, en: English}
+    niveau: {fr: professionnel, en: professional}
 
 competences:
-  langages:
-    - Langage-Fictif
-    - Pseudo-SQL
-  outils:
-    - Atelier-Imaginaire
-    - Gestionnaire-Inventé
-  methodes:
-    fr:
-      - Revue croisée
-      - Tests automatisés
-    en:
-      - Cross review
-      - Automated testing
+  # `items` sous ses deux formes : liste simple, et paire {fr, en}.
+  - id: langages-fictifs
+    categorie:
+      fr: Langages fictifs
+      en: Fictional languages
+    items: [Langage-Fictif, Pseudo-SQL]
+  - id: outils-imaginaires
+    categorie:
+      fr: Outils imaginaires
+      en: Imaginary tools
+    items: [Atelier-Imaginaire, Gestionnaire-Invente]
+  - id: methodes-fictives
+    categorie:
+      fr: Méthodes
+      en: Methods
+    items:
+      fr: [Revue croisée, Tests automatisés]
+      en: [Cross review, Automated testing]
 
 atouts:
-  fr:
-    - Écrit des spécifications lisibles
-    - Documente ce qu'elle livre
-  en:
-    - Writes readable specifications
-    - Documents what she ships
+  fr: [Écrit des spécifications lisibles, Documente ce qu'elle livre]
+  en: [Writes readable specifications, Documents what she ships]
 
 experiences:
   - id: outillage-interne
-    entreprise: Société Fictive SA
-    lieu: Ville-Fictive
-    debut: '2022-01'
-    fin: '2026-01'
     poste:
       fr: Développeuse outillage interne
       en: Internal tooling developer
+    entreprise: Société Fictive SA
+    lieu: Villeneuve-Imaginaire
+    activite:
+      fr: outillage interne pour ateliers fictifs
+      en: internal tooling for fictional workshops
+    debut: 2022-01
+    fin: 2026-01
+    environnement: [Langage-Fictif, Pseudo-SQL]
     realisations:
       fr:
-        - Réduction inventée du temps de préparation des données
-        - Reprise fictive d'un parc d'applications
+        - Réduction inventée du temps de préparation des données.
+        - Reprise fictive d'un parc d'applications.
       en:
-        - Invented reduction of data preparation time
-        - Fictional takeover of an application estate
-    competences:
-      - Langage-Fictif
-      - Pseudo-SQL
+        - Invented reduction of data preparation time.
+        - Fictional takeover of an application estate.
 
+  # `lieu` en objet plutôt qu'en chaîne, et `entreprise: null` : les deux formes
+  # que le fichier de référence mélange.
   - id: conge-parental
+    poste:
+      fr: Interruption volontaire d'activité
+      en: Voluntary career break
     entreprise: null
     lieu:
       fr: Congé parental
       en: Parental leave
-    debut: '2021-03'
-    fin: '2021-12'
-    poste:
-      fr: Interruption volontaire d'activité
-      en: Voluntary career break
+    debut: 2021-03
+    fin: 2021-12
     realisations:
       fr: []
       en: []
 
   - id: applications-gestion
-    entreprise: Entreprise Imaginaire Sàrl
-    lieu: Bourg-Inventé
-    debut: '2014-09'
-    fin: '2021-02'
     poste:
       fr: Développeuse applications de gestion
       en: Business application developer
+    entreprise: Entreprise Imaginaire Sàrl
+    lieu: Bourg-Invente
+    debut: 2014-09
+    fin: 2021-02
+    environnement: [Atelier-Imaginaire]
     realisations:
       fr:
-        - Refonte fictive d'un module de facturation
+        - Refonte fictive d'un module de facturation.
       en:
-        - Fictional rewrite of a billing module
-    competences:
-      - Atelier-Imaginaire
+        - Fictional rewrite of a billing module.
 
 formation:
   - id: diplome-fictif
-    dans_cv: true
-    intitule:
+    diplome:
       fr: Diplôme fictif en informatique
       en: Fictional degree in computer science
     etablissement: École Inexistante
-    annee: '2012'
-    justificatif: dossier-fictif/diplome.pdf
+    academie: Académie Imaginaire
+    annee: 2012
+    date_examen: 2012-06-21
+    equivalence_suisse:
+      fr: Équivalence fictive
+      en: Fictional equivalence
+    justificatif: dossier-fictif/diplome-fictif.pdf
+    dans_cv: true
+
+  # `dans_cv: false` : absente de l'affichage, présente pour l'agent (AD-8).
   - id: certificat-annexe
-    dans_cv: false
-    intitule:
+    diplome:
       fr: Certificat annexe inventé
       en: Invented side certificate
     etablissement: Organisme Fictif
-    annee: '2019'
+    annee: 2019
     equivalence_suisse: null
+    justificatif: dossier-fictif/certificat-annexe-fictif.pdf
+    dans_cv: false
 
 references:
-  - nom: Personne Fictive
+  - nom: Referente-Fictive-Personne
     fonction:
-      fr: Responsable imaginaire
-      en: Imaginary manager
-    telephone: '+41 00 000 00 01'
+      fr: Responsable-ReferenceFictive
+      en: Fictional-Reference-Manager
+    telephone: "+41 00 000 00 08"
+    email: referente-fictive@exemple.invalid
+    present_dans: [fr, en]
 
 certificats_travail:
   - id: certificat-societe-fictive
     entreprise: Société Fictive SA
-    date: '2026-02-02'
-    periode_attestee: '2022-01 → 2026-01'
+    date: 2026-02-02
+    signataire: Signataire-CertificatFictif
+    periode_attestee: du 1er janvier 2022 au 31 janvier 2026
     fonction_attestee:
-      fr: Développeuse outillage interne
-      en: Internal tooling developer
+      fr: développeuse outillage interne
+      en: internal tooling developer
     points_cles:
       fr:
-        - Autonomie attestée de façon fictive
+        - Autonomie attestée de façon fictive.
       en:
-        - Autonomy attested fictitiously
-    signataire: Signataire Fictif
-    fichier: dossier-fictif/certificat.pdf
+        - Autonomy attested fictitiously.
+    fichier: dossier-fictif/certificat-travail-fictif.pdf
+
+  # `fonction_attestee` en chaîne et `points_cles` en liste simple : les formes
+  # du fichier de référence.
+  - id: certificat-entreprise-imaginaire
+    entreprise: Entreprise Imaginaire Sàrl
+    date: 2021-02-28
+    signataire: Contresignataire-CertificatFictif
+    periode_attestee: du 1er septembre 2014 au 28 février 2021
+    fonction_attestee: développeuse
+    points_cles:
+      - Facturation fictive reprise de bout en bout.
+    fichier: dossier-fictif/certificat-imaginaire-fictif.pdf
 
 lettre_motivation:
+  fichier: dossier-fictif/lettre-motivation-fictive.pdf
+  type: candidature-spontanee-fictive-non-nominative
   arguments_cles:
-    fr:
-      - Argument fictif numéro un
-      - Argument fictif numéro deux
-    en:
-      - Fictional argument one
-      - Fictional argument two
+    - Argument fictif numéro un.
+    - Argument fictif numéro deux.

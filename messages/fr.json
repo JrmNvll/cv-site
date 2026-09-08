@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "title": "CV interrogeable",
+    "description": "Curriculum vitæ consultable et interrogeable. Site privé, non indexé."
+  },
+  "shell": {
+    "heading": "CV interrogeable",
+    "tagline": "Le parcours, les réalisations et un assistant qui répond à partir de ce qui est écrit — rien d'autre.",
+    "underConstruction": "Coquille bilingue en place. Le contenu, l'assistant et le journal des visites arrivent aux étapes suivantes."
+  },
+  "languages": {
+    "label": "Langue",
+    "fr": "Français",
+    "en": "English"
+  },
+  "notFound": {
+    "heading": "Page introuvable",
+    "body": "Cette adresse ne correspond à rien sur ce site."
+  }
+}

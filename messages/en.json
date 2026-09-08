@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "title": "Queryable CV",
+    "description": "A CV you can read and question. Private site, not indexed."
+  },
+  "shell": {
+    "heading": "Queryable CV",
+    "tagline": "The career, the deliverables, and an assistant that answers from what is written — nothing else.",
+    "underConstruction": "Bilingual shell in place. Content, assistant and visit journal come in the next steps."
+  },
+  "languages": {
+    "label": "Language",
+    "fr": "Français",
+    "en": "English"
+  },
+  "notFound": {
+    "heading": "Page not found",
+    "body": "This address matches nothing on this site."
+  }
+}

@@ -8,6 +8,7 @@ node_modules/
 .next/
 out/
 next-env.d.ts
+*.tsbuildinfo
 
 # Données locales (AD-7 : usage.db vit dans DATA_DIR, hors dépôt)
 data/
@@ -19,3 +20,9 @@ Thumbs.db
 desktop.ini
 .DS_Store
 *.tmp
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

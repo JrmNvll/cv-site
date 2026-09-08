@@ -1,0 +1,179 @@
+# FIXTURE DE TEST — CONTENU ENTIÈREMENT FICTIF.
+#
+# Personne, entreprises, dates et diplômes sont inventés. Aucun élément du CV
+# réel ne figure ici : le contenu réel vit dans CONTENT_DIR, hors de ce dépôt
+# (AD-2). Ce fichier ne sert qu'à faire tourner les tests unitaires et e2e.
+
+meta:
+  version: 1
+  mis_a_jour: '2026-01-15'
+  sources:
+    - dossier-fictif/notes.md
+
+identite:
+  prenom: Camille
+  nom: Durand
+  prenoms_etat_civil: Camille Alix
+  date_naissance: '1988-04-12'
+  lieu_naissance: Ville-Fictive
+  nationalite: Suisse
+  permis: null
+  titre:
+    fr: Développeuse logiciel
+    en: Software developer
+  sous_titre:
+    fr: Applications métier et outillage interne
+    en: Line-of-business applications and internal tooling
+  photo: assets/photo-fictive.jpg
+
+contact:
+  email: camille.durand@exemple.invalid
+  linkedin: https://linkedin.exemple.invalid/in/camille-durand-fictif
+  telephone: '+41 00 000 00 00'
+  adresse: 1 rue Inexistante, 0000 Ville-Fictive
+
+profil:
+  fr: >-
+    Profil fictif servant de fixture. Une dizaine d'années d'expérience
+    imaginaire sur des applications de gestion, puis une bascule inventée vers
+    l'outillage interne.
+  en: >-
+    Fictional profile used as a fixture. About ten imaginary years on business
+    applications, then an invented move towards internal tooling.
+
+langues:
+  - langue:
+      fr: Français
+      en: French
+    niveau:
+      fr: Langue maternelle
+      en: Native
+  - langue:
+      fr: Anglais
+      en: English
+    niveau:
+      fr: Professionnel
+      en: Professional working proficiency
+
+competences:
+  langages:
+    - Langage-Fictif
+    - Pseudo-SQL
+  outils:
+    - Atelier-Imaginaire
+    - Gestionnaire-Inventé
+  methodes:
+    fr:
+      - Revue croisée
+      - Tests automatisés
+    en:
+      - Cross review
+      - Automated testing
+
+atouts:
+  fr:
+    - Écrit des spécifications lisibles
+    - Documente ce qu'elle livre
+  en:
+    - Writes readable specifications
+    - Documents what she ships
+
+experiences:
+  - id: outillage-interne
+    entreprise: Société Fictive SA
+    lieu: Ville-Fictive
+    debut: '2022-01'
+    fin: '2026-01'
+    poste:
+      fr: Développeuse outillage interne
+      en: Internal tooling developer
+    realisations:
+      fr:
+        - Réduction inventée du temps de préparation des données
+        - Reprise fictive d'un parc d'applications
+      en:
+        - Invented reduction of data preparation time
+        - Fictional takeover of an application estate
+    competences:
+      - Langage-Fictif
+      - Pseudo-SQL
+
+  - id: conge-parental
+    entreprise: null
+    lieu:
+      fr: Congé parental
+      en: Parental leave
+    debut: '2021-03'
+    fin: '2021-12'
+    poste:
+      fr: Interruption volontaire d'activité
+      en: Voluntary career break
+    realisations:
+      fr: []
+      en: []
+
+  - id: applications-gestion
+    entreprise: Entreprise Imaginaire Sàrl
+    lieu: Bourg-Inventé
+    debut: '2014-09'
+    fin: '2021-02'
+    poste:
+      fr: Développeuse applications de gestion
+      en: Business application developer
+    realisations:
+      fr:
+        - Refonte fictive d'un module de facturation
+      en:
+        - Fictional rewrite of a billing module
+    competences:
+      - Atelier-Imaginaire
+
+formation:
+  - id: diplome-fictif
+    dans_cv: true
+    intitule:
+      fr: Diplôme fictif en informatique
+      en: Fictional degree in computer science
+    etablissement: École Inexistante
+    annee: '2012'
+    justificatif: dossier-fictif/diplome.pdf
+  - id: certificat-annexe
+    dans_cv: false
+    intitule:
+      fr: Certificat annexe inventé
+      en: Invented side certificate
+    etablissement: Organisme Fictif
+    annee: '2019'
+    equivalence_suisse: null
+
+references:
+  - nom: Personne Fictive
+    fonction:
+      fr: Responsable imaginaire
+      en: Imaginary manager
+    telephone: '+41 00 000 00 01'
+
+certificats_travail:
+  - id: certificat-societe-fictive
+    entreprise: Société Fictive SA
+    date: '2026-02-02'
+    periode_attestee: '2022-01 → 2026-01'
+    fonction_attestee:
+      fr: Développeuse outillage interne
+      en: Internal tooling developer
+    points_cles:
+      fr:
+        - Autonomie attestée de façon fictive
+      en:
+        - Autonomy attested fictitiously
+    signataire: Signataire Fictif
+    fichier: dossier-fictif/certificat.pdf
+
+lettre_motivation:
+  arguments_cles:
+    fr:
+      - Argument fictif numéro un
+      - Argument fictif numéro deux
+    en:
+      - Fictional argument one
+      - Fictional argument two

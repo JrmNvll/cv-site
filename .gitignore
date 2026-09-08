@@ -1,0 +1,21 @@
+# Secrets — jamais versionnés (AD-9)
+.env
+.env.local
+.env.*.local
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+
+# Données locales (AD-7 : usage.db vit dans DATA_DIR, hors dépôt)
+data/
+*.db
+*.db-journal
+
+# Système / éditeur
+Thumbs.db
+desktop.ini
+.DS_Store
+*.tmp

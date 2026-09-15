@@ -17,7 +17,7 @@
  */
 import {env} from '@/env';
 import {loadContent, logContentWarnings, type Content} from './load';
-import type {AgentProjection, DisplayProjection} from './projections';
+import {ageFrom, type AgentProjection, type DisplayProjection} from './projections';
 import type {QaEntry, QaStatus} from './qa-parser';
 import type {Lang} from './schema';
 
@@ -55,14 +55,30 @@ export function ensureContent(): void {
   content();
 }
 
+/**
+ * L'âge est la seule valeur projetée qui dépende du jour : gelé au chargement
+ * avec le reste, il resterait faux d'un anniversaire au prochain redémarrage.
+ * Il est donc recalculé à chaque lecture, depuis la date que la projection
+ * porte déjà. Si la date ne donne pas d'âge, celui du chargement — tout aussi
+ * absent — reste tel quel.
+ */
+function withCurrentAge<T extends {readonly date_naissance: string; readonly age?: number}>(
+  identite: T
+): T {
+  const age = ageFrom(identite.date_naissance, new Date());
+  return age === undefined ? identite : {...identite, age};
+}
+
 /** La projection destinée à la page — jamais celle du modèle (AD-8). */
 export function displayProjection(lang: Lang): DisplayProjection {
-  return content().cv.display[lang];
+  const display = content().cv.display[lang];
+  return {...display, identite: withCurrentAge(display.identite)};
 }
 
 /** La projection destinée au modèle — jamais celle de la page (AD-8). */
 export function agentProjection(lang: Lang): AgentProjection {
-  return content().cv.agent[lang];
+  const agent = content().cv.agent[lang];
+  return {...agent, identite: withCurrentAge(agent.identite)};
 }
 
 /** Le corpus question/réponse d'une langue, dans l'ordre du fichier (AD-5). */
@@ -85,4 +101,39 @@ export function qaEntry(lang: Lang, id: string): QaEntry | undefined {
 /** Statut d'une entrée sans avoir à la lire — d'une `PRIVÉ`, on n'a que ceci. */
 export function qaStatus(lang: Lang, id: string): QaStatus | undefined {
   return content().byId[lang][id]?.statut;
+}
+
+/** Une photo prête à être servie : des octets et un type, jamais un chemin. */
+export type ServedPhoto = {
+  readonly bytes: Uint8Array<ArrayBuffer>;
+  readonly mime: string;
+  readonly etag: string;
+};
+
+/**
+ * La photo, pour la route qui la sert (AD-8 : « servie depuis `CONTENT_DIR/assets` »).
+ *
+ * `displayProjection` n'annonce que sa **présence** ; son chemin ne sort pas
+ * d'ici. L'appelant reçoit des octets, un type MIME et un `ETag` — rien qui
+ * révèle l'arborescence du dépôt privé. Les octets sont ceux lus au démarrage
+ * (AD-2) : aucun accès disque à la requête. `null` quand `cv.yaml` n'en déclare
+ * pas, quand le fichier était introuvable ou illisible, ou quand son type n'est
+ * pas reconnu.
+ */
+export function photo(): ServedPhoto | null {
+  const file = content().restricted.photo;
+  return file === null ? null : {bytes: file.bytes, mime: file.mime, etag: file.etag};
+}
+
+/**
+ * Le numéro de téléphone — **la seule exception délibérée** aux projections.
+ *
+ * AD-8 l'exclut des deux projections : il ne doit jamais figurer dans le HTML
+ * servi ni dans le contexte du modèle. Il reste pourtant une coordonnée que
+ * Jérémie publie, à la demande. La route `/api/contact/phone` est donc le seul
+ * appelant légitime de cette fonction ; tout autre usage remettrait le numéro
+ * dans une page rendue côté serveur, ce qu'AD-8 interdit.
+ */
+export function contactPhone(): string | null {
+  return content().restricted.telephone;
 }

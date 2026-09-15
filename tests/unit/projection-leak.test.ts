@@ -141,13 +141,13 @@ describe('aucun champ hors liste blanche par sa clé non plus', () => {
     expect(Object.keys(identite).sort()).toEqual(
       ['age', 'date_naissance', 'nationalite', 'nom', 'photo', 'prenom', 'sous_titre', 'titre'].sort()
     );
-    expect(Object.keys(contact).sort()).toEqual(['email', 'linkedin'].sort());
+    expect(Object.keys(contact).sort()).toEqual(['email', 'linkedin', 'localite'].sort());
   });
 
   it.each(LANGS)('agent (%s) ne porte ni photo ni téléphone', (lang) => {
     const {identite, contact} = projections[lang]!.agent;
     expect(Object.keys(identite)).not.toContain('photo');
-    expect(Object.keys(contact).sort()).toEqual(['email', 'linkedin', 'source'].sort());
+    expect(Object.keys(contact).sort()).toEqual(['email', 'linkedin', 'localite', 'source'].sort());
   });
 
   it("n'expose ni les signataires ni les fichiers des certificats", () => {

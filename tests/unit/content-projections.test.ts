@@ -88,6 +88,13 @@ describe('projection display — ce que la page reçoit', () => {
     expect(fr.display.formation.map((entry) => entry.id)).toEqual(['diplome-fictif']);
   });
 
+  it('porte la localité et lʼoption du diplôme, dans la langue demandée', () => {
+    // La localité est un champ à part : rien n'est tiré de `contact.adresse`.
+    expect(fr.display.contact.localite).toBe('Bourgade-Fictive (Contrée)');
+    expect(fr.display.formation[0]!.option).toBe('Option fictive');
+    expect(en.display.formation[0]!.option).toBe('Fictional option');
+  });
+
   it("n'a ni certificats de travail, ni arguments de lettre, ni références", () => {
     expect(fr.display).not.toHaveProperty('certificats_travail');
     expect(fr.display).not.toHaveProperty('lettre_motivation');

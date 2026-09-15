@@ -149,6 +149,12 @@ export const cvSchema = z.object({
     adresse: z
       .union([z.string(), z.record(z.string(), z.union([z.string(), z.number()]))])
       .optional(),
+    /**
+     * Ce que le CV **dit** du domicile : la commune et le pays, écrits pour être
+     * affichés (« Viry (France) »). Champ distinct de `adresse` par construction :
+     * rien n'est dérivé de l'adresse postale, qui ne sort jamais (AD-8).
+     */
+    localite: localizedText.optional(),
     linkedin: profileUrl.optional()
   }),
 
@@ -180,6 +186,8 @@ export const cvSchema = z.object({
     z.object({
       id: stableId,
       diplome: localizedText,
+      /** L'option ou la spécialité du diplôme, affichée sous son intitulé. */
+      option: localizedText.optional(),
       etablissement: z.string().optional(),
       academie: z.string().optional(),
       annee: dateLike.optional(),

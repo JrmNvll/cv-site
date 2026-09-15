@@ -10,8 +10,10 @@ export default async function NotFound() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-4 px-6 py-16">
-      <h1 className="text-3xl font-semibold tracking-tight">{t('heading')}</h1>
-      <p className="text-neutral-700 dark:text-neutral-300">{t('body')}</p>
+      <h1 className="font-serif text-[clamp(1.75rem,5vw,2.5rem)] leading-tight font-normal">
+        {t('heading')}
+      </h1>
+      <p className="text-ink-soft">{t('body')}</p>
     </main>
   );
 }

@@ -3,15 +3,58 @@
     "title": "CV interrogeable",
     "description": "Curriculum vitæ consultable et interrogeable. Site privé, non indexé."
   },
-  "shell": {
-    "heading": "CV interrogeable",
-    "tagline": "Le parcours, les réalisations et un assistant qui répond à partir de ce qui est écrit — rien d'autre.",
-    "underConstruction": "Coquille bilingue en place. Le contenu, l'assistant et le journal des visites arrivent aux étapes suivantes."
-  },
   "languages": {
     "label": "Langue",
     "fr": "Français",
     "en": "English"
+  },
+  "header": {
+    "contact": "Coordonnées",
+    "linkedin": "LinkedIn"
+  },
+  "phone": {
+    "reveal": "Afficher le numéro",
+    "pending": "Un instant…",
+    "label": "Téléphone",
+    "unavailable": "Numéro indisponible pour le moment — écrivez-moi par courriel."
+  },
+  "identity": {
+    "photoAlt": "Portrait de {name}",
+    "years": "{count, plural, one {an d'expérience} other {ans d'expérience}}",
+    "companies": "{count, plural, one {entreprise} other {entreprises}}"
+  },
+  "assistant": {
+    "eyebrow": "Posez-moi vos questions",
+    "intro": "Un assistant répond à partir des réponses que j'ai écrites moi-même. Il ne peut rien inventer : hors de ce qu'il sait, il vous renvoie vers moi.",
+    "placeholder": "…ou écrivez votre propre question",
+    "inactive": "Les questions sont en place ; l'assistant, lui, n'est pas encore branché.",
+    "questions": {
+      "lic-01": "Pourquoi est-il en recherche ?",
+      "sit-02": "Quand est-il disponible ?",
+      "ia-01": "Le « développement assisté par IA », concrètement ?",
+      "wd-02": "Que reste-t-il de ses 20 ans ?",
+      "site-02": "Comment ce site est-il fait ?",
+      "annonce": "Collez votre annonce → je vous dis ce qui correspond"
+    }
+  },
+  "sections": {
+    "career": "Parcours",
+    "skills": "Compétences",
+    "assets": "Atouts",
+    "spokenLanguages": "Langues",
+    "education": "Formation",
+    "practical": "Informations pratiques"
+  },
+  "career": {
+    "present": "aujourd'hui",
+    "environment": "Environnement technique"
+  },
+  "practical": {
+    "age": "{age} ans"
+  },
+  "education": {
+    "equivalence": "Équivalence suisse : {value}",
+    "option": "Option : {value}"
   },
   "notFound": {
     "heading": "Page introuvable",

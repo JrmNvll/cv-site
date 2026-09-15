@@ -3,15 +3,58 @@
     "title": "Queryable CV",
     "description": "A CV you can read and question. Private site, not indexed."
   },
-  "shell": {
-    "heading": "Queryable CV",
-    "tagline": "The career, the deliverables, and an assistant that answers from what is written — nothing else.",
-    "underConstruction": "Bilingual shell in place. Content, assistant and visit journal come in the next steps."
-  },
   "languages": {
     "label": "Language",
     "fr": "Français",
     "en": "English"
+  },
+  "header": {
+    "contact": "Contact details",
+    "linkedin": "LinkedIn"
+  },
+  "phone": {
+    "reveal": "Show the number",
+    "pending": "One moment…",
+    "label": "Phone",
+    "unavailable": "The number is unavailable right now — please email me instead."
+  },
+  "identity": {
+    "photoAlt": "Portrait of {name}",
+    "years": "{count, plural, one {year of experience} other {years of experience}}",
+    "companies": "{count, plural, one {company} other {companies}}"
+  },
+  "assistant": {
+    "eyebrow": "Ask me anything",
+    "intro": "An assistant answers from the replies I wrote myself. It cannot invent anything: beyond what it knows, it points you back to me.",
+    "placeholder": "…or write your own question",
+    "inactive": "The questions are in place; the assistant itself is not wired up yet.",
+    "questions": {
+      "lic-01": "Why is he looking?",
+      "sit-02": "When is he available?",
+      "ia-01": "What does “AI-assisted development” actually mean?",
+      "wd-02": "What is left of his 20 years?",
+      "site-02": "How was this site built?",
+      "annonce": "Paste your job ad → I'll tell you what matches"
+    }
+  },
+  "sections": {
+    "career": "Career",
+    "skills": "Skills",
+    "assets": "Strengths",
+    "spokenLanguages": "Languages",
+    "education": "Education",
+    "practical": "Practical details"
+  },
+  "career": {
+    "present": "today",
+    "environment": "Technical environment"
+  },
+  "practical": {
+    "age": "{age} years old"
+  },
+  "education": {
+    "equivalence": "Swiss equivalence: {value}",
+    "option": "Option: {value}"
   },
   "notFound": {
     "heading": "Page not found",

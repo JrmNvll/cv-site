@@ -113,9 +113,51 @@ porte d'entrée de la configuration ; `src/content/` le seul module qui lit
 `CONTENT_DIR`. Next 16 remplace `middleware.ts` par `proxy.ts` : il n'y a pas de
 `middleware.ts` dans ce dépôt.
 
+## La page, et ce qu'elle ne sert pas
+
+La page d'accueil **est** le CV : `/fr` et `/en` rendent l'intégralité de
+[`displayProjection(lang)`](./src/content/projections.ts), dans l'ordre de
+lecture de la direction A — identité, positionnement, assistant, puis parcours.
+Aucun texte de CV n'est écrit dans un composant ; ce que les composants écrivent
+(titres de sections, libellés des six questions, bouton du téléphone) vit dans
+`messages/`. `tests/unit/page-projection.test.ts` cherche chaque valeur de la
+fixture dans les sources de la page et échoue si l'une s'y trouve.
+
+Deux choses de `cv.yaml` ne sortent d'**aucune** projection et ne s'obtiennent
+que par une adresse nommée (AD-8) :
+
+| Route | Sert | Cache |
+| --- | --- | --- |
+| `GET /api/photo?s=1\|2\|3` | `identite.photo`, lue une fois au démarrage — jamais son chemin — **découpée au carré affiché** à la densité demandée (`sharp`), métadonnées EXIF retirées ; un SVG est servi tel quel ; un fichier que `sharp` ne lit pas vaut `404`, jamais l'original | `private, no-cache` + `ETag` par variante |
+| `GET /api/contact/phone` | `contact.telephone`, après un geste du visiteur, inséré côté client | `private, no-store` |
+
+Le téléphone n'est donc **jamais** dans le HTML servi, et le bouton qui le
+demande n'est pas rendu du tout sans JavaScript — le courriel, lui, reste là.
+`tests/e2e/no-leak.spec.ts` relit le document réellement servi et y cherche
+chaque valeur hors liste blanche de la fixture : téléphone, adresse, tiers,
+chemins de fichiers.
+
+**Le rendu est dynamique, et doit le rester.** `/fr` et `/en` portent
+`export const dynamic = 'force-dynamic'`, et atteignent `@/content` par un
+import **différé**. Les deux sont nécessaires : `force-dynamic` empêche de figer
+le contenu dans l'artefact de build (AD-2 : il est lu au démarrage, un
+redémarrage suffit à publier une correction), et l'import différé empêche
+`@/env` d'être évalué pendant le build — sans quoi `next build` réclamerait une
+clé API et un chemin de contenu. La même précaution vaut pour les deux routes
+ci-dessus.
+
 ## Règles de contribution
 
 - Aucun secret, aucune donnée personnelle réelle dans le dépôt.
 - Aucune valeur de configuration en dur : tout passe par `src/env.ts`.
 - Les décisions d'architecture (AD-1 à AD-17) se suivent ; une divergence se
   remonte, elle ne se décide pas localement.
+
+## Dépendance native : `sharp`
+
+`sharp` (redimensionnement de la photo) embarque un binaire par plateforme, choisi à
+l'installation (`@img/sharp-<os>-<arch>`, dépendances optionnelles). L'artefact autonome
+(`.next/standalone`) recopie celui de la machine qui a construit : **construire sur la même
+plateforme que celle qui sert** — ici Windows x64 des deux côtés — ou faire `npm ci` sur le
+serveur. Next 16 installe déjà `sharp` pour son propre optimiseur d'images ; il est déclaré
+ici explicitement parce que le code l'importe.

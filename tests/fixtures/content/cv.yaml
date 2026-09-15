@@ -27,7 +27,7 @@ identite:
     fr: Suisse
     en: Swiss
   permis: null
-  photo: assets/photo-fictive.svg
+  photo: assets/photo-fictive.jpg
   titre:
     fr: Développeuse logiciel
     en: Software developer
@@ -43,6 +43,8 @@ contact:
     code_postal: "0000-CodePostalFictif"
     ville: Cite-AdresseFictive
     pays: Pays-Fictif
+  # Affichable : la commune telle que le CV la dit, sans lien avec `adresse`.
+  localite: Bourgade-Fictive (Contrée)
   linkedin: linkedin.exemple.invalid/in/camille-durand-fictif
 
 profil:
@@ -141,6 +143,9 @@ formation:
     diplome:
       fr: Diplôme fictif en informatique
       en: Fictional degree in computer science
+    option:
+      fr: Option fictive
+      en: Fictional option
     etablissement: École Inexistante
     academie: Académie Imaginaire
     annee: 2012

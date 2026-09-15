@@ -1,1 +1,128 @@
 @import "tailwindcss";
+
+/**
+ * Jeu de couleurs et échelle typographique de la **direction A**.
+ *
+ * Les valeurs claires viennent de la maquette validée (`direction-A.html`) :
+ * un fond chaud très clair, une encre presque noire légèrement chaude, un
+ * accent terre cuite, et un panneau sombre pour l'assistant — le seul bloc qui
+ * reste sombre dans les deux thèmes, parce que c'est lui qui appelle le regard
+ * au premier écran.
+ *
+ * Deux règles tiennent l'ensemble :
+ *
+ *  1. **Les composants n'écrivent aucune couleur.** Ils n'emploient que les
+ *     jetons sémantiques ci-dessous (`bg-surface`, `text-ink-muted`,
+ *     `border-rule`…). Le thème sombre se règle donc ici, en un seul endroit :
+ *     aucun `dark:` n'est nécessaire dans les composants, et aucun ne doit
+ *     y apparaître — sinon la correspondance clair/sombre se disperse.
+ *  2. **Aucune police n'est téléchargée.** La maquette emploie Instrument Serif
+ *     et Public Sans (Google Fonts) ; les charger ajouterait une dépendance
+ *     externe à un site privé et ferait dépendre le build du réseau. Les piles
+ *     ci-dessous les nomment d'abord — si le poste les a, tant mieux — puis
+ *     retombent sur Georgia et la police système, qui conservent l'opposition
+ *     serif d'affichage / sans-serif de lecture sur laquelle repose la
+ *     hiérarchie.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Fonds */
+  --cv-surface: oklch(0.985 0.008 85);
+  --cv-surface-raised: oklch(0.96 0.01 80);
+
+  /* Encre — `ink-muted` reste au-dessus de 4.5:1 sur `surface`, y compris en 13 px */
+  --cv-ink: oklch(0.22 0.012 60);
+  --cv-ink-soft: oklch(0.38 0.012 60);
+  --cv-ink-muted: oklch(0.46 0.012 60);
+
+  /* Filets */
+  --cv-rule: oklch(0.9 0.012 75);
+  --cv-rule-soft: oklch(0.93 0.012 75);
+  --cv-rule-strong: oklch(0.85 0.012 75);
+
+  /* Étiquettes d'environnement technique */
+  --cv-tag: oklch(0.94 0.014 75);
+
+  /* Accent terre cuite */
+  --cv-accent: oklch(0.48 0.14 42);
+  --cv-accent-strong: oklch(0.38 0.13 42);
+
+  /* Panneau de l'assistant — sombre dans les deux thèmes */
+  --cv-panel: oklch(0.22 0.012 60);
+  --cv-panel-raised: oklch(0.26 0.012 60);
+  --cv-panel-sunken: oklch(0.19 0.012 60);
+  --cv-panel-rule: oklch(0.38 0.012 60);
+  --cv-panel-ink: oklch(0.96 0.008 85);
+  --cv-panel-ink-soft: oklch(0.82 0.008 85);
+  --cv-panel-ink-muted: oklch(0.68 0.012 60);
+  --cv-panel-accent: oklch(0.74 0.13 45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cv-surface: oklch(0.18 0.01 65);
+    --cv-surface-raised: oklch(0.22 0.01 65);
+
+    --cv-ink: oklch(0.93 0.008 85);
+    --cv-ink-soft: oklch(0.78 0.008 85);
+    --cv-ink-muted: oklch(0.7 0.008 85);
+
+    --cv-rule: oklch(0.32 0.012 65);
+    --cv-rule-soft: oklch(0.26 0.012 65);
+    --cv-rule-strong: oklch(0.4 0.012 65);
+
+    --cv-tag: oklch(0.27 0.012 65);
+
+    --cv-accent: oklch(0.78 0.12 45);
+    --cv-accent-strong: oklch(0.87 0.09 45);
+
+    /* Le panneau reste sombre, mais se détache du fond en s'éclaircissant. */
+    --cv-panel: oklch(0.25 0.012 60);
+    --cv-panel-raised: oklch(0.3 0.012 60);
+    --cv-panel-sunken: oklch(0.21 0.012 60);
+    --cv-panel-rule: oklch(0.4 0.012 60);
+    --cv-panel-ink: oklch(0.96 0.008 85);
+    --cv-panel-ink-soft: oklch(0.84 0.008 85);
+    --cv-panel-ink-muted: oklch(0.72 0.012 60);
+    --cv-panel-accent: oklch(0.78 0.12 45);
+  }
+}
+
+/**
+ * `inline` : les utilitaires référencent les variables ci-dessus plutôt que
+ * leur valeur résolue. Sans cela, le bloc `prefers-color-scheme` n'aurait aucun
+ * effet — Tailwind aurait déjà figé la couleur claire dans chaque classe.
+ */
+@theme inline {
+  --color-surface: var(--cv-surface);
+  --color-surface-raised: var(--cv-surface-raised);
+
+  --color-ink: var(--cv-ink);
+  --color-ink-soft: var(--cv-ink-soft);
+  --color-ink-muted: var(--cv-ink-muted);
+
+  --color-rule: var(--cv-rule);
+  --color-rule-soft: var(--cv-rule-soft);
+  --color-rule-strong: var(--cv-rule-strong);
+
+  --color-tag: var(--cv-tag);
+
+  --color-accent: var(--cv-accent);
+  --color-accent-strong: var(--cv-accent-strong);
+
+  --color-panel: var(--cv-panel);
+  --color-panel-raised: var(--cv-panel-raised);
+  --color-panel-sunken: var(--cv-panel-sunken);
+  --color-panel-rule: var(--cv-panel-rule);
+  --color-panel-ink: var(--cv-panel-ink);
+  --color-panel-ink-soft: var(--cv-panel-ink-soft);
+  --color-panel-ink-muted: var(--cv-panel-ink-muted);
+  --color-panel-accent: var(--cv-panel-accent);
+
+  --font-sans:
+    "Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+}

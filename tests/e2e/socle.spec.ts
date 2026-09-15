@@ -1,6 +1,7 @@
 import {expect, test} from '@playwright/test';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
+import {display} from './fixture-cv';
 
 /**
  * Preuve navigateur du socle — les « vérifications manuelles » de la story,
@@ -15,7 +16,7 @@ const ULID = '[0-7][0-9A-HJKMNP-TV-Z]{25}';
 test('la racine sans langue redirige vers /fr', async ({page}) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/fr$/);
-  await expect(page.getByRole('heading', {level: 1})).toHaveText(messages.fr.shell.heading);
+  await expect(page.getByRole('heading', {level: 1})).toHaveText(display.fr.identite.titre);
 });
 
 for (const locale of ['fr', 'en'] as const) {
@@ -31,10 +32,10 @@ for (const locale of ['fr', 'en'] as const) {
       'content',
       'noindex, nofollow'
     );
-    // Le texte vient bien du catalogue de la langue, pas d'un repli.
-    await expect(page.getByRole('heading', {level: 1})).toHaveText(messages[locale].shell.heading);
-    await expect(page.getByText(messages[locale].shell.tagline)).toBeVisible();
+    // Le titre de la page vient du catalogue de la langue, le `h1` de la
+    // projection : ni l'un ni l'autre ne doit retomber sur l'autre langue.
     await expect(page).toHaveTitle(messages[locale].meta.title);
+    await expect(page.getByRole('heading', {level: 1})).toHaveText(display[locale].identite.titre);
   });
 }
 
@@ -94,7 +95,7 @@ test('le changement de langue mène de /fr à /en', async ({page}) => {
   await page.goto('/fr');
   await page.getByRole('link', {name: messages.en.languages.en}).click();
   await expect(page).toHaveURL(/\/en$/);
-  await expect(page.getByRole('heading', {level: 1})).toHaveText(messages.en.shell.heading);
+  await expect(page.getByRole('heading', {level: 1})).toHaveText(display.en.identite.titre);
 });
 
 test('une page inconnue rend un document complet, pas un fragment', async ({page}) => {

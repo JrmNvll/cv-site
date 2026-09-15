@@ -82,3 +82,30 @@ Refuser poliment et renvoyer vers un échange direct.
 **Réponse :**
 Parler **de** la personne à la troisième personne, sobrement, sans jamais se
 faire passer pour elle.
+
+---
+
+## 5. Les questions du premier écran
+
+> Les cinq entrées que la page propose en un clic (`content-contract.md`) :
+> elles doivent exister, et être ordinaires — ni PRIVÉ, ni PASSE, ni vides.
+
+#### ⭐ `lic-01` — Pourquoi la personne fictive est-elle en recherche ?
+**Réponse :**
+Fin de mission inventée ; elle cherche un poste fictif à plein temps.
+
+#### ⭐ `sit-02` — Quand est-elle disponible ?
+**Réponse :**
+À une date imaginaire, avec un préavis fictif d'un mois.
+
+#### ⭐ `ia-01` — Le « développement assisté par IA », concrètement ?
+**Réponse :**
+Une méthode inventée où des agents fictifs écrivent, testent et relisent.
+
+#### ⭐ `wd-02` — Que reste-t-il de ses années d'atelier imaginaire ?
+**Réponse :**
+Une expérience fictive de la maintenance longue et des clients inventés.
+
+#### ⭐ `site-02` — Comment ce site est-il fait ?
+**Réponse :**
+Avec un outillage imaginaire, décrit sur une page fictive dédiée.

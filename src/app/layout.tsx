@@ -22,7 +22,9 @@ export default async function RootLayout({children}: {children: ReactNode}) {
 
   return (
     <html lang={locale}>
-      <body className="min-h-screen bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
+      {/* Toutes les couleurs viennent des jetons de `globals.css`, qui portent
+          seuls la bascule clair/sombre : aucun `dark:` ici ni ailleurs. */}
+      <body className="min-h-screen bg-surface font-sans text-[16px] leading-[1.6] text-ink antialiased">
         {children}
       </body>
     </html>

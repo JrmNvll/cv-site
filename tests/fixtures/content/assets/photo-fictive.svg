@@ -1,6 +1,0 @@
-<!-- FIXTURE DE TEST — image fictive, aucune personne réelle (AD-2). -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Portrait fictif">
-  <rect width="64" height="64" fill="#dfe3e8" />
-  <circle cx="32" cy="24" r="12" fill="#9aa5b1" />
-  <path d="M8 64c0-13.3 10.7-24 24-24s24 10.7 24 24z" fill="#9aa5b1" />
-</svg>

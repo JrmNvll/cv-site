@@ -245,20 +245,96 @@ describe('ce qui ne mérite qu’un avertissement', () => {
   });
 
   it('démarre sans photo quand le fichier est introuvable', () => {
-    const {content, warnings} = loadContent(contentDir({'assets/photo-fictive.svg': null}), {
+    const {content, warnings} = loadContent(contentDir({'assets/photo-fictive.jpg': null}), {
       now: NOW
     });
     expect(content.cv.display.fr.identite.photo).toBe(false);
+    expect(content.restricted.photo).toBeNull();
     expect(warnings.map(formatIssue).join('\n')).toContain('identite.photo');
   });
 
   it('refuse de suivre un chemin de photo qui sort de CONTENT_DIR', () => {
     const dir = contentDir({
-      'cv.yaml': (source) => source.replace('assets/photo-fictive.svg', '../../hors-perimetre.svg')
+      'cv.yaml': (source) => source.replace('assets/photo-fictive.jpg', '../../hors-perimetre.jpg')
     });
     const {content, warnings} = loadContent(dir, {now: NOW});
     expect(content.cv.display.fr.identite.photo).toBe(false);
+    expect(content.restricted.photo).toBeNull();
     expect(warnings.map(formatIssue).join('\n')).toContain('CONTENT_DIR');
+  });
+});
+
+/**
+ * Ce que `CONTENT_DIR` contient et qu'aucune projection ne porte (AD-8) : le
+ * chemin de la photo et le téléphone. Ils restent dans `restricted`, hors de
+ * `content.cv`, parce que ce qui est dans `cv` est précisément ce qui sort.
+ */
+describe('ce qui ne sort que par une route nommée', () => {
+  it('garde la photo — chemin, type, octets et version — hors de cv', () => {
+    const {content} = loadContent(FIXTURES, {now: NOW});
+    const photo = content.restricted.photo!;
+
+    expect(photo.mime).toBe('image/jpeg');
+    expect(photo.path).toContain('photo-fictive.jpg');
+    expect(photo.bytes.byteLength).toBe(readFileSync(photo.path).byteLength);
+    // Un condensé des octets, pas une date : la même photo déployée ailleurs
+    // garde le même ETag, et les navigateurs leur `304`.
+    expect(photo.etag).toMatch(/^"[0-9a-f]{16}"$/);
+    expect(photo.etag).toBe(loadContent(contentDir(), {now: NOW}).content.restricted.photo!.etag);
+    // La projection n'en annonce que la présence, jamais le chemin.
+    expect(content.cv.display.fr.identite.photo).toBe(true);
+    expect(JSON.stringify(content.cv)).not.toContain('photo-fictive.jpg');
+  });
+
+  it('lit les octets une fois : la photo survit à la disparition du fichier (AD-2)', () => {
+    const dir = contentDir();
+    const {content} = loadContent(dir, {now: NOW});
+    const photo = content.restricted.photo!;
+
+    rmSync(photo.path, {force: true});
+    expect(photo.bytes.byteLength).toBeGreaterThan(0);
+  });
+
+  it('démarre sans photo, avec un avertissement, quand le fichier est illisible', () => {
+    // Un répertoire portant une extension d'image : `existsSync` le voit, la
+    // lecture échoue (EISDIR). Avertissement, pas arrêt.
+    const dir = contentDir({'assets/photo-fictive.jpg': null});
+    mkdirSync(join(dir, 'assets/photo-fictive.jpg'));
+
+    const {content, warnings} = loadContent(dir, {now: NOW});
+
+    expect(content.restricted.photo).toBeNull();
+    expect(content.cv.display.fr.identite.photo).toBe(false);
+    expect(warnings.map(formatIssue).join('\n')).toMatch(/identite\.photo.*illisible/);
+  });
+
+  it("refuse une photo dont l'extension n'est pas un type d'image connu", () => {
+    const dir = contentDir({
+      'assets/photo-fictive.txt': 'ceci nʼest pas une image',
+      'cv.yaml': (source) =>
+        source.replace('assets/photo-fictive.jpg', 'assets/photo-fictive.txt')
+    });
+    const {content, warnings} = loadContent(dir, {now: NOW});
+
+    // Servir un fichier arbitraire de CONTENT_DIR sous un type deviné serait
+    // pire qu'une page sans photo.
+    expect(content.restricted.photo).toBeNull();
+    expect(content.cv.display.fr.identite.photo).toBe(false);
+    expect(warnings.map(formatIssue).join('\n')).toContain("type d'image inconnu");
+  });
+
+  it('garde le téléphone hors des deux projections, et le rend accessible à la route', () => {
+    const {content} = loadContent(FIXTURES, {now: NOW});
+
+    expect(content.restricted.telephone).toBe('+41 00 000 00 07');
+    expect(JSON.stringify(content.cv)).not.toContain('+41 00 000 00 07');
+  });
+
+  it('rend `null` plutôt que `undefined` quand cv.yaml nʼa pas de téléphone', () => {
+    const dir = contentDir({
+      'cv.yaml': (source) => source.replace('  telephone: "+41 00 000 00 07"\n', '')
+    });
+    expect(loadContent(dir, {now: NOW}).content.restricted.telephone).toBeNull();
   });
 });
 
@@ -281,7 +357,7 @@ describe('journalisation des avertissements', () => {
 });
 
 describe('surface publique de la couche', () => {
-  it("n'expose que les projections, les corpus, les entrées et les statuts", async () => {
+  it("n'expose que les projections, les corpus, les entrées, les statuts et les deux à-la-demande", async () => {
     const surface = await import('@/content');
     expect(Object.keys(surface).sort()).toEqual(
       [
@@ -289,6 +365,9 @@ describe('surface publique de la couche', () => {
         'LANGS',
         'QA_STATUSES',
         'agentProjection',
+        // Hors projection, servis seulement par une route nommée (AD-8) :
+        'contactPhone',
+        'photo',
         'corpus',
         'displayProjection',
         'ensureContent',
@@ -301,12 +380,32 @@ describe('surface publique de la couche', () => {
   it('sert le même contenu gelé à chaque appel : une seule lecture disque', async () => {
     const {corpus, displayProjection, agentProjection, qaEntry, qaStatus} = await import('@/content');
     expect(corpus('fr')).toBe(corpus('fr'));
-    expect(displayProjection('fr')).toBe(displayProjection('fr'));
-    expect(displayProjection('en')).not.toBe(displayProjection('fr'));
+    // La projection est réassemblée à chaque lecture — pour l'âge, voir plus
+    // bas — mais tout ce qu'elle porte reste le même objet gelé.
+    expect(displayProjection('fr').experiences).toBe(displayProjection('fr').experiences);
+    expect(Object.isFrozen(displayProjection('fr').experiences)).toBe(true);
+    expect(displayProjection('en').experiences).not.toBe(displayProjection('fr').experiences);
     expect(agentProjection('fr').identite.source).toBe('cv:identite');
     expect(qaEntry('fr', 'par-01')?.etoile).toBe(true);
     expect(qaStatus('fr', 'sal-01')).toBe('PRIVÉ');
     expect(qaStatus('fr', 'inconnu-99')).toBeUndefined();
+  });
+
+  it('recalcule lʼâge à chaque lecture : un anniversaire ne demande pas de redémarrage', async () => {
+    const {displayProjection, agentProjection} = await import('@/content');
+    // Camille Durand, fixture, née le 1988-04-12.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2030-04-11T12:00:00Z'));
+      expect(displayProjection('fr').identite.age).toBe(41);
+      vi.setSystemTime(new Date('2030-04-12T12:00:00Z'));
+      expect(displayProjection('fr').identite.age).toBe(42);
+      expect(agentProjection('en').identite.age).toBe(42);
+      // La date elle-même, elle, reste celle de la projection.
+      expect(displayProjection('fr').identite.date_naissance).toBe('1988-04-12');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -364,7 +463,7 @@ describe('index par identifiant', () => {
 describe('photo absente du fichier', () => {
   it('signale un champ identite.photo totalement absent', () => {
     const dir = contentDir({
-      'cv.yaml': (source) => source.replace('  photo: assets/photo-fictive.svg\n', '')
+      'cv.yaml': (source) => source.replace('  photo: assets/photo-fictive.jpg\n', '')
     });
     const {content, warnings} = loadContent(dir, {now: NOW});
     expect(content.cv.display.fr.identite.photo).toBe(false);

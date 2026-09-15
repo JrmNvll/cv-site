@@ -18,8 +18,9 @@
 // projet par construction (AD-2). Sans cette annotation, Turbopack conclut de
 // l'analyse statique qu'il doit tracer tout le dépôt et recopie les sources, les
 // tests et les fixtures dans `.next/standalone` — 22 Mo de trop sur le VPS.
+import {createHash} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
-import {resolve, sep} from 'node:path';
+import {extname, resolve, sep} from 'node:path';
 import {LineCounter, parseDocument} from 'yaml';
 import {buildProjections, type AgentProjection, type DisplayProjection} from './projections';
 import {parseQaFile, type QaEntry} from './qa-parser';
@@ -37,6 +38,46 @@ export type ContentIssue = {
   readonly message: string;
 };
 
+/**
+ * Types d'image acceptés pour la photo. Liste blanche : une extension inconnue
+ * vaut « pas de photo » plutôt qu'un `application/octet-stream` que le
+ * navigateur refuserait d'afficher — et qu'un fichier arbitraire de
+ * `CONTENT_DIR` servi sous un type deviné.
+ */
+const PHOTO_TYPES: Readonly<Record<string, string>> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml'
+};
+
+/**
+ * La photo, telle que seule la couche `content` la connaît — lue **une fois**,
+ * au chargement, comme tout le reste du contenu (AD-2). La route ne rouvre
+ * jamais le disque : ce qu'elle sert est ce qui a été validé au démarrage, et
+ * publier une nouvelle photo demande un redémarrage, comme pour `cv.yaml`.
+ */
+export type PhotoFile = {
+  /** Chemin absolu sous `CONTENT_DIR`. Ne sort d'aucune projection (AD-8). */
+  readonly path: string;
+  readonly mime: string;
+  readonly bytes: Uint8Array<ArrayBuffer>;
+  /**
+   * Condensé des octets : de quoi répondre `304`, et stable d'un déploiement
+   * à l'autre — une date de modification changerait à chaque copie.
+   */
+  readonly etag: string;
+};
+
+/**
+ * Au-delà, ce n'est plus une photo de CV. La limite protège la mémoire du
+ * processus, qui garde les octets pour toute sa durée de vie.
+ */
+const PHOTO_MAX_BYTES = 20 * 1024 * 1024;
+
 /** Contenu chargé, validé, projeté et gelé. */
 export type Content = {
   readonly dir: string;
@@ -46,6 +87,19 @@ export type Content = {
   };
   readonly qa: Readonly<Record<Lang, readonly QaEntry[]>>;
   readonly byId: Readonly<Record<Lang, Readonly<Record<string, QaEntry>>>>;
+  /**
+   * Ce que `cv.yaml` contient et qu'**aucune projection ne porte** (AD-8), mais
+   * que le serveur doit tout de même pouvoir servir sur geste explicite : le
+   * chemin de la photo et le numéro de téléphone.
+   *
+   * Séparé de `cv` exprès. `cv` est ce qui sort ; `restricted` est ce qui ne
+   * sort que par une route nommée, jamais par le rendu d'une page. Rien ici ne
+   * doit être passé à un composant.
+   */
+  readonly restricted: {
+    readonly photo: PhotoFile | null;
+    readonly telephone: string | null;
+  };
 };
 
 export type LoadResult = {readonly content: Content; readonly warnings: readonly ContentIssue[]};
@@ -106,9 +160,15 @@ function index(entries: readonly QaEntry[]): Record<string, QaEntry> {
   return byId;
 }
 
-/** Gel récursif : le contenu est en lecture seule pour tout le reste du site. */
+/**
+ * Gel récursif : le contenu est en lecture seule pour tout le reste du site.
+ * Les octets de la photo font exception par nécessité — un tableau typé ne se
+ * gèle pas (`TypeError`) ; c'est `restricted`, pas une projection, et sa
+ * référence, elle, est gelée avec l'objet qui la porte.
+ */
 function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  if (ArrayBuffer.isView(value)) return value;
   Object.freeze(value);
   for (const item of Object.values(value as Record<string, unknown>)) deepFreeze(item);
   return value;
@@ -217,8 +277,9 @@ export function loadContent(dir: string, options: LoadOptions = {}): LoadResult 
     warnings.push({file: CV_FILE, field, message: 'champ inconnu du schéma : ignoré, jamais projeté'});
   }
 
-  // Photo : seule sa présence est projetée, jamais son chemin (AD-8).
-  let hasPhoto = false;
+  // Photo : seule sa présence est projetée, jamais son chemin (AD-8). Le chemin
+  // reste ici, dans `restricted`, où seule la route `/api/photo` ira le chercher.
+  let photoFile: PhotoFile | null = null;
   const photo = cvOutcome.cv.identite.photo;
   if (photo === undefined) {
     warnings.push({
@@ -228,6 +289,7 @@ export function loadContent(dir: string, options: LoadOptions = {}): LoadResult 
     });
   } else {
     const target = insideContentDir(dir, photo);
+    const mime = PHOTO_TYPES[extname(photo).toLowerCase()];
     if (target === null) {
       warnings.push({
         file: CV_FILE,
@@ -240,10 +302,46 @@ export function loadContent(dir: string, options: LoadOptions = {}): LoadResult 
         field: 'identite.photo',
         message: 'fichier introuvable : la projection est servie sans photo'
       });
+    } else if (mime === undefined) {
+      warnings.push({
+        file: CV_FILE,
+        field: 'identite.photo',
+        message: `type d'image inconnu (${extname(photo) || 'sans extension'}) : la projection est servie sans photo`
+      });
     } else {
-      hasPhoto = true;
+      // Un fichier illisible — droits, répertoire portant une extension
+      // d'image — ou déraisonnable vaut un avertissement, jamais un arrêt :
+      // la page se rend sans photo, comme pour un champ absent.
+      let bytes: Uint8Array<ArrayBuffer> | null = null;
+      try {
+        bytes = new Uint8Array(readFileSync(/*turbopackIgnore: true*/ target));
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code ?? 'erreur de lecture';
+        warnings.push({
+          file: CV_FILE,
+          field: 'identite.photo',
+          message: `fichier illisible (${code}) : la projection est servie sans photo`
+        });
+      }
+      if (bytes !== null && bytes.byteLength > PHOTO_MAX_BYTES) {
+        warnings.push({
+          file: CV_FILE,
+          field: 'identite.photo',
+          message: `fichier trop lourd (${Math.round(bytes.byteLength / 1048576)} Mo, maximum ${PHOTO_MAX_BYTES / 1048576}) : la projection est servie sans photo`
+        });
+        bytes = null;
+      }
+      if (bytes !== null) {
+        photoFile = {
+          path: target,
+          mime,
+          bytes,
+          etag: `"${createHash('sha1').update(bytes).digest('hex').slice(0, 16)}"`
+        };
+      }
     }
   }
+  const hasPhoto = photoFile !== null;
 
   const qa: Record<Lang, QaEntry[]> = {fr: [], en: []};
   /** Le fichier est-il là ? Un fichier présent mais muet n'est pas un fichier absent. */
@@ -351,7 +449,10 @@ export function loadContent(dir: string, options: LoadOptions = {}): LoadResult 
       agent: {fr: projections.fr.agent, en: projections.en.agent}
     },
     qa,
-    byId
+    byId,
+    // Un numéro fait d'espaces n'en est pas un : la route répondra `404`,
+    // pas un lien `tel:` vide.
+    restricted: {photo: photoFile, telephone: cvOutcome.cv.contact.telephone?.trim() || null}
   });
 
   return {content, warnings: Object.freeze(warnings)};

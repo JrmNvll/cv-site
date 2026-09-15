@@ -8,6 +8,7 @@
 import {describe, expect, it} from 'vitest';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
+import {HERO_QUESTIONS, MATCH_QUESTION} from '@/app/[locale]/_components/hero-questions';
 import {routing} from '@/i18n/routing';
 
 type Catalog = {[key: string]: string | Catalog};
@@ -46,20 +47,68 @@ describe('catalogues de messages', () => {
     expect(empty).toEqual([]);
   });
 
-  it('porte les clés dont la coquille a besoin', () => {
+  it('porte les clés dont la page a besoin', () => {
     for (const locale of Object.keys(catalogs)) {
       const keys = flatten(catalogs[locale]!);
       expect(keys).toEqual(
         expect.arrayContaining([
           'meta.title',
           'meta.description',
-          'shell.heading',
-          'shell.tagline',
-          'shell.underConstruction',
           'languages.label',
+          'languages.fr',
+          'languages.en',
+          'header.contact',
+          'header.linkedin',
+          'phone.reveal',
+          'phone.pending',
+          'phone.label',
+          'phone.unavailable',
+          'identity.photoAlt',
+          'identity.years',
+          'identity.companies',
+          'assistant.eyebrow',
+          'assistant.intro',
+          'assistant.placeholder',
+          'assistant.inactive',
+          'sections.career',
+          'sections.skills',
+          'sections.assets',
+          'sections.spokenLanguages',
+          'sections.education',
+          'sections.practical',
+          'career.present',
+          'career.environment',
+          'practical.age',
+          'education.option',
+          'education.equivalence',
           'notFound.heading'
         ])
       );
+    }
+  });
+
+  /**
+   * Les six questions du hero sont des **libellés d'interface** attachés à des
+   * entrées du corpus, par une correspondance qui ne se devine pas
+   * (`content-contract.md`). Un libellé manquant afficherait le chemin de sa
+   * clé — « assistant.questions.wd-02 » — sur le premier écran du site.
+   */
+  it('porte un libellé pour chacune des six questions du hero', () => {
+    for (const locale of Object.keys(catalogs)) {
+      const keys = flatten(catalogs[locale]!);
+      for (const id of [...HERO_QUESTIONS, MATCH_QUESTION]) {
+        expect(keys).toContain(`assistant.questions.${id}`);
+      }
+    }
+  });
+
+  it("n'annonce aucune question de plus que les six prévues", () => {
+    const attendues = [...HERO_QUESTIONS, MATCH_QUESTION].map((id) => `assistant.questions.${id}`);
+    for (const locale of Object.keys(catalogs)) {
+      const posees = flatten(catalogs[locale]!).filter((path) =>
+        path.startsWith('assistant.questions.')
+      );
+      expect(posees.sort()).toEqual([...attendues].sort());
     }
   });
 });

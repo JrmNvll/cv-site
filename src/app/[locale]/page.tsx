@@ -1,12 +1,36 @@
 /**
- * Page racine de la langue courante. Elle deviendra le CV lui-même : il n'y a
- * pas de page d'accueil distincte. Pour l'instant, coquille de vérification.
+ * La page CV — direction A. Il n'y a pas d'accueil distinct : cette page *est*
+ * le CV.
+ *
+ * Deux règles gouvernent tout ce qui suit :
+ *
+ *  - **Tout le texte de CV vient de `displayProjection(lang)`**, et rien
+ *    d'autre. Aucun composant n'écrit un nom, une date, un employeur ou une
+ *    compétence ; ce que les composants écrivent — titres de sections, libellés
+ *    des six questions, bouton du téléphone — vit dans `messages/*.json`.
+ *    `tests/unit/page-projection.test.ts` refuse la moindre exception.
+ *  - **L'ordre de lecture est celui de `CAP-1`** : identité, positionnement IA,
+ *    assistant, puis seulement le parcours — donc l'historique WinDev *après*
+ *    le repositionnement, jamais avant.
+ *
+ * `force-dynamic` n'est pas un réglage de performance. Sans lui, Next
+ * pré-rendrait `/fr` et `/en` au build : le contenu de `CONTENT_DIR` serait figé
+ * dans l'artefact au lieu d'être lu au démarrage (AD-2), et un redémarrage ne
+ * suffirait plus à publier une correction du CV. Il faut **en plus** différer
+ * l'import de `@/content` — voir le commentaire dans le corps de la fonction.
  */
 import {hasLocale} from 'next-intl';
-import {getTranslations, setRequestLocale} from 'next-intl/server';
+import {setRequestLocale} from 'next-intl/server';
 import {notFound} from 'next/navigation';
-import {Link} from '@/i18n/navigation';
-import {routing, type Locale} from '@/i18n/routing';
+import {routing} from '@/i18n/routing';
+import {AssistantPanel} from './_components/assistant-panel';
+import {CareerSection} from './_components/career-section';
+import {EducationSection} from './_components/education-section';
+import {IdentityBlock} from './_components/identity-block';
+import {SiteHeader} from './_components/site-header';
+import {SkillsSection} from './_components/skills-section';
+
+export const dynamic = 'force-dynamic';
 
 export default async function LocaleHomePage({params}: {params: Promise<{locale: string}>}) {
   const {locale} = await params;
@@ -15,27 +39,36 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
   }
   setRequestLocale(locale);
 
-  const t = await getTranslations('shell');
-  const tLanguages = await getTranslations('languages');
+  // Import **différé**, et non statique : `force-dynamic` empêche le *rendu*
+  // au build, pas le **chargement** du module — Next lit ses exports pendant
+  // « Collecting page data ». Un import statique entraînerait donc `@/env`,
+  // dont le parsage Zod a lieu au chargement, et le build réclamerait une clé
+  // API et un chemin de contenu, ce que `next.config.ts` refuse. Le spécifieur
+  // reste un littéral, donc analysable par `tests/unit/layers.test.ts`.
+  const {displayProjection} = await import('@/content');
+  const cv = displayProjection(locale);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-6 px-6 py-16">
-      <h1 className="text-3xl font-semibold tracking-tight">{t('heading')}</h1>
-      <p className="text-lg text-neutral-700 dark:text-neutral-300">{t('tagline')}</p>
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">{t('underConstruction')}</p>
-      <nav aria-label={tLanguages('label')} className="flex gap-4 text-sm">
-        {routing.locales.map((target: Locale) => (
-          <Link
-            key={target}
-            href="/"
-            locale={target}
-            aria-current={target === locale ? 'page' : undefined}
-            className="underline underline-offset-4"
-          >
-            {tLanguages(target)}
-          </Link>
-        ))}
-      </nav>
-    </main>
+    <div className="mx-auto w-full max-w-[1280px] px-5 sm:px-8 lg:px-[72px]">
+      <SiteHeader identite={cv.identite} contact={cv.contact} locale={locale} />
+
+      <main>
+        {/* Le premier écran : l'identité et l'assistant, côte à côte. */}
+        <div className="grid gap-10 py-10 lg:grid-cols-2 lg:gap-12 lg:py-[72px]">
+          <IdentityBlock identite={cv.identite} profil={cv.profil} experiences={cv.experiences} />
+          <AssistantPanel />
+        </div>
+
+        <CareerSection experiences={cv.experiences} />
+        <SkillsSection
+          competences={cv.competences}
+          atouts={cv.atouts}
+          langues={cv.langues}
+          identite={cv.identite}
+          contact={cv.contact}
+        />
+        <EducationSection formation={cv.formation} />
+      </main>
+    </div>
   );
 }

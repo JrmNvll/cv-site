@@ -43,6 +43,7 @@ export type ProjectedExperience = {
 export type ProjectedFormation = {
   readonly id: string;
   readonly diplome: string;
+  readonly option?: string;
   readonly etablissement?: string;
   readonly academie?: string;
   readonly annee?: string;
@@ -70,7 +71,7 @@ type Identite = {
   readonly age?: number;
 };
 
-type Contact = {readonly email: string; readonly linkedin?: string};
+type Contact = {readonly email: string; readonly localite?: string; readonly linkedin?: string};
 
 /** Ce que la page reçoit. Ni téléphone, ni adresse, ni chemin de fichier. */
 export type DisplayProjection = {
@@ -238,6 +239,8 @@ export function buildProjections(
 
   const contact: Contact = compact({
     email: cv.contact.email,
+    // La localité, jamais l'adresse : `contact.adresse` n'est pas lue ici.
+    localite: text(cv.contact.localite, 'contact.localite'),
     linkedin: absoluteUrl(cv.contact.linkedin)
   } as Contact);
 
@@ -275,6 +278,7 @@ export function buildProjections(
     projected: compact({
       id: entry.id,
       diplome: text(entry.diplome, `formation.${entry.id}.diplome`) ?? '',
+      option: text(entry.option, `formation.${entry.id}.option`),
       etablissement: entry.etablissement,
       academie: entry.academie,
       annee: asText(entry.annee),

@@ -83,3 +83,30 @@ Decline politely and point towards a direct conversation.
 **Réponse :**
 Speak **about** the person in the third person, plainly, never impersonating
 her.
+
+---
+
+## 5. First-screen questions
+
+> The five entries the page offers in one click (`content-contract.md`): they
+> must exist and be ordinary — neither PRIVÉ, nor PASSE, nor empty.
+
+#### ⭐ `lic-01` — Why is the fictional person looking for a job?
+**Réponse :**
+An invented end of assignment; she is looking for a fictional full-time role.
+
+#### ⭐ `sit-02` — When is she available?
+**Réponse :**
+On an imaginary date, with a fictional one-month notice.
+
+#### ⭐ `ia-01` — "AI-assisted development", concretely?
+**Réponse :**
+An invented method where fictional agents write, test and review.
+
+#### ⭐ `wd-02` — What remains of her imaginary workshop years?
+**Réponse :**
+A fictional experience of long-term maintenance and invented clients.
+
+#### ⭐ `site-02` — How is this site built?
+**Réponse :**
+With imaginary tooling, described on a dedicated fictional page.

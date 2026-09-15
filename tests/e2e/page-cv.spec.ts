@@ -12,6 +12,7 @@ import {
   yearOf
 } from '../../src/app/[locale]/_components/format';
 import {display, rawCv, LANGS, type Lang} from './fixture-cv';
+import {heroLabel, heroLabels} from './hero-labels';
 
 /**
  * Preuve navigateur de la page CV — chaque ligne de la matrice de la story,
@@ -184,9 +185,12 @@ for (const {name, viewport} of VIEWPORTS) {
       expect(positions.parcours).toBeGreaterThan(positions.assistant);
     });
 
-    test('lʼassistant est en place et inerte : six questions, un champ, aucune réponse', async ({
+    test('lʼassistant répond aux cinq questions préparées ; la sixième et le champ restent désactivés', async ({
       page
     }) => {
+      // Le test « inerte » de la story 3, inversé par la story 5 (et non
+      // supprimé) : un assistant muet ne doit plus passer la suite en silence.
+      // La story 7 activera la sixième puce, la story 6 le champ.
       await page.goto('/fr');
       // Sous `lg`, l'assistant vit dans le tiroir : on l'ouvre par la barre.
       // Au-dessus, la barre n'existe pas et le panneau est dans le premier écran.
@@ -199,13 +203,18 @@ for (const {name, viewport} of VIEWPORTS) {
       }
       const panneau = page.getByRole('region', {name: messages.fr.assistant.eyebrow});
 
-      const questions = Object.values(messages.fr.assistant.questions);
+      const questions = heroLabels('fr');
       expect(questions).toHaveLength(6);
-      for (const libelle of questions) {
+      const preparees = questions.slice(0, 5);
+      const annonce = heroLabel('fr', 'annonce');
+      for (const libelle of preparees) {
         const bouton = panneau.getByRole('button', {name: libelle, exact: true});
         await expect(bouton).toBeVisible();
-        await expect(bouton).toBeDisabled();
+        await expect(bouton).toBeEnabled();
       }
+      const sixieme = panneau.getByRole('button', {name: annonce, exact: true});
+      await expect(sixieme).toBeVisible();
+      await expect(sixieme).toBeDisabled();
 
       const champ = panneau.getByRole('textbox');
       await expect(champ).toBeVisible();

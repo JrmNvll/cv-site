@@ -8,31 +8,48 @@
  * sert les deux — d'où `titleId` : deux copies dans le document, une visible
  * par largeur d'écran, et un identifiant ne peut pas être porté deux fois.
  *
- * **Inerte, et il le dit.** Les six questions et le champ de saisie sont là,
- * dessinés comme ils le seront ; rien ne répond encore (stories 5 et 6). Les
- * commandes sont donc `disabled` plutôt que muettes : un bouton qui ne fait
- * rien quand on clique dessus est pire qu'un bouton visiblement hors service, et
- * un état `disabled` est annoncé par un lecteur d'écran là où l'absence de
- * réaction ne l'est pas. Une ligne d'état, sous les commandes, dit pourquoi.
+ * **Le cadre est serveur, les puces sont client.** Titre, intro, champ libre et
+ * ligne d'état sont rendus ici ; les cinq puces et la zone de réponse vivent
+ * dans `hero-questions-client.tsx`, qui ne reçoit que des libellés et des
+ * identifiants — la réponse arrive par la route, après un clic, jamais dans le
+ * HTML servi. Le champ libre (story 6) et la sixième puce (story 7) restent
+ * `disabled` plutôt que muets : un bouton qui ne fait rien quand on clique
+ * dessus est pire qu'un bouton visiblement hors service, et un état `disabled`
+ * est annoncé par un lecteur d'écran. La ligne d'état dit ce qui répond et ce
+ * qui ne répond pas encore.
  *
  * **Les libellés sont de l'interface, pas du contenu** : ils vivent dans
  * `messages/*.json`. La correspondance libellé → entrée du corpus, elle, vit
  * dans `hero-questions.ts` — `content-contract.md` la fixe et prévient qu'elle
- * ne se devine pas.
+ * ne se devine pas. Le libellé de `wd-02` porte un nombre d'années **calculé**
+ * depuis les expériences (`careerYears`), jamais écrit : la maquette disait
+ * « 20 ans », et ce chiffre aurait dérivé d'un an chaque année.
  */
-import {getTranslations} from 'next-intl/server';
-import {HERO_ROWS, MATCH_QUESTION} from './hero-questions';
-
-const CHIP =
-  'max-w-full rounded-full border border-panel-rule bg-panel-raised px-3 py-1.5 text-left text-[13px] text-panel-ink disabled:cursor-not-allowed disabled:opacity-70';
+import {getLocale, getTranslations} from 'next-intl/server';
+import {careerYears, type CountableExperience} from './format';
+import {HERO_ROWS, MATCH_QUESTION, YEARS_QUESTION} from './hero-questions';
+import {HeroQuestionsClient} from './hero-questions-client';
 
 export type AssistantPanelProps = {
   /** L'identifiant du titre, unique dans le document — `aria-labelledby`. */
   readonly titleId: string;
+  /** Les expériences projetées : le libellé de `wd-02` en déduit ses années. */
+  readonly experiences: readonly CountableExperience[];
 };
 
-export async function AssistantPanel({titleId}: AssistantPanelProps) {
-  const t = await getTranslations('assistant');
+export async function AssistantPanel({titleId, experiences}: AssistantPanelProps) {
+  const [t, locale] = await Promise.all([getTranslations(), getLocale()]);
+
+  // Sans date lisible dans les expériences, il n'y a pas de nombre à écrire :
+  // un libellé sans chiffre plutôt qu'un chiffre inventé.
+  const years = careerYears(experiences, new Date());
+  const label = (id: string): string => {
+    if (id !== YEARS_QUESTION) return t(`assistant.questions.${id}`);
+    return years === undefined
+      ? t('assistant.yearsUnknown')
+      : t(`assistant.questions.${id}`, {years});
+  };
+  const rows = HERO_ROWS.map((row) => row.map((id) => ({id, label: label(id)})));
 
   return (
     <section
@@ -58,41 +75,36 @@ export async function AssistantPanel({titleId}: AssistantPanelProps) {
           id={titleId}
           className="text-[12px] font-semibold tracking-[0.08em] text-panel-accent uppercase"
         >
-          {t('eyebrow')}
+          {t('assistant.eyebrow')}
         </h2>
       </div>
 
-      <p className="mt-1 text-[13.5px] leading-relaxed text-panel-ink-soft">{t('intro')}</p>
+      <p className="mt-1 text-[13.5px] leading-relaxed text-panel-ink-soft">{t('assistant.intro')}</p>
 
-      <div className="mt-3.5 flex flex-col gap-1.5">
-        {HERO_ROWS.map((row) => (
-          <div key={row.join('-')} className="flex flex-wrap gap-1.5">
-            {row.map((id) => (
-              <button key={id} type="button" disabled className={CHIP}>
-                {t(`questions.${id}`)}
-              </button>
-            ))}
-          </div>
-        ))}
-        <div className="flex flex-wrap gap-1.5">
-          {/* La sixième : elle n'interroge pas le corpus, elle ouvrira
-              l'évaluation d'adéquation (CAP-4). D'où l'accent. */}
-          <button
-            type="button"
-            disabled
-            className="max-w-full rounded-full border border-panel-accent bg-panel-accent px-3 py-1.5 text-left text-[13px] font-semibold text-panel disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {t(`questions.${MATCH_QUESTION}`)}
-          </button>
-        </div>
-      </div>
+      <HeroQuestionsClient
+        lang={locale}
+        rows={rows}
+        matchLabel={t(`assistant.questions.${MATCH_QUESTION}`)}
+        labels={{
+          loading: t('assistant.loading'),
+          answerSource: t('assistant.answerSource'),
+          back: t('assistant.back'),
+          inactive: t('assistant.inactive'),
+          withoutScript: t('assistant.withoutScript')
+        }}
+        errors={{
+          unavailable: t('errors.unavailable'),
+          invalid_input: t('errors.invalid_input'),
+          content_unavailable: t('errors.content_unavailable')
+        }}
+      />
 
       <div className="mt-3.5 flex items-center gap-3 rounded-md border border-panel-rule bg-panel-sunken px-3 py-2">
         <input
           type="text"
           disabled
-          placeholder={t('placeholder')}
-          aria-label={t('eyebrow')}
+          placeholder={t('assistant.placeholder')}
+          aria-label={t('assistant.eyebrow')}
           className="min-w-0 grow bg-transparent text-[14px] text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
         />
         <svg
@@ -111,8 +123,6 @@ export async function AssistantPanel({titleId}: AssistantPanelProps) {
           <polyline points="12 5 19 12 12 19" />
         </svg>
       </div>
-
-      <p className="mt-2.5 text-[12px] text-panel-ink-muted">{t('inactive')}</p>
     </section>
   );
 }

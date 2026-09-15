@@ -90,22 +90,39 @@ faire passer pour elle.
 > Les cinq entrées que la page propose en un clic (`content-contract.md`) :
 > elles doivent exister, et être ordinaires — ni PRIVÉ, ni PASSE, ni vides.
 
+> Chaque corps porte un mot-sentinelle (`Sentinelle-corps-…`) et une construction
+> du sous-ensemble Markdown rendu par la page : le test navigateur cherche le
+> premier dans le document servi (il ne doit pas y être) et le second dans le
+> panneau (il doit y être rendu, pas affiché en brut).
+
 #### ⭐ `lic-01` — Pourquoi la personne fictive est-elle en recherche ?
 **Réponse :**
-Fin de mission inventée ; elle cherche un poste fictif à plein temps.
+Fin de mission inventée ; elle cherche un poste fictif à plein temps, **dès maintenant**. Sentinelle-corps-lic01.
 
 #### ⭐ `sit-02` — Quand est-elle disponible ?
 **Réponse :**
-À une date imaginaire, avec un préavis fictif d'un mois.
+À une date imaginaire, avec un préavis fictif d'un mois. Sentinelle-corps-sit02.
 
 #### ⭐ `ia-01` — Le « développement assisté par IA », concrètement ?
 **Réponse :**
-Une méthode inventée où des agents fictifs écrivent, testent et relisent.
+Une méthode inventée où des agents fictifs :
+
+- écrivent la spécification ;
+- testent le code ;
+- relisent le résultat.
+
+Sentinelle-corps-ia01.
 
 #### ⭐ `wd-02` — Que reste-t-il de ses années d'atelier imaginaire ?
 **Réponse :**
-Une expérience fictive de la maintenance longue et des clients inventés.
+Une expérience fictive de la *maintenance longue* et des clients inventés. Sentinelle-corps-wd02.
 
 #### ⭐ `site-02` — Comment ce site est-il fait ?
 **Réponse :**
-Avec un outillage imaginaire, décrit sur une page fictive dédiée.
+Avec un outillage imaginaire, en trois temps :
+
+1. cadrer ;
+2. construire ;
+3. relire.
+
+Sentinelle-corps-site02.

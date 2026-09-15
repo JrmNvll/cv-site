@@ -8,8 +8,9 @@
  * (`assistant.questions.<id>`) — jamais dans le contenu.
  *
  * Module séparé du panneau exprès : il ne dépend de rien, donc un test peut le
- * lire sans monter le rendu, et la story 5 pourra s'y brancher pour restituer la
- * réponse écrite par Jérémie sans appeler le modèle.
+ * lire sans monter le rendu, et la route `/api/questions/<id>` s'y branche pour
+ * restituer la réponse écrite par Jérémie sans appeler le modèle — elle ne sert
+ * que ces cinq identifiants, et rien d'autre du corpus.
  */
 
 /** Les cinq questions adossées au corpus, dans l'ordre du contrat de contenu. */
@@ -17,12 +18,25 @@ export const HERO_QUESTIONS = ['lic-01', 'sit-02', 'ia-01', 'wd-02', 'site-02'] 
 
 export type HeroQuestion = (typeof HERO_QUESTIONS)[number];
 
+/** Vrai si la valeur est l'un des cinq identifiants — la liste est close. */
+export function isHeroQuestion(value: unknown): value is HeroQuestion {
+  return typeof value === 'string' && (HERO_QUESTIONS as readonly string[]).includes(value);
+}
+
 /**
  * La sixième n'interroge pas le corpus : elle ouvrira l'évaluation d'adéquation
  * à une annonce (`CAP-4`), qui appelle le modèle. D'où un identifiant à part,
  * et l'accent visuel qui la distingue des cinq autres.
  */
 export const MATCH_QUESTION = 'annonce';
+
+/**
+ * La question dont le libellé porte un nombre d'années — calculé depuis les
+ * expériences (`careerYears`), jamais écrit : « 20 ans » aurait dérivé d'un an
+ * chaque année. Sans années calculables, le libellé `assistant.yearsUnknown`
+ * prend sa place.
+ */
+export const YEARS_QUESTION: HeroQuestion = 'wd-02';
 
 /**
  * Regroupement visuel de la maquette : deux questions courtes, une longue, deux

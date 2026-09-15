@@ -15,14 +15,17 @@
  * (AD-14) et une seule source pour l'adresse (AD-15).
  *
  * **Surface publique.** `touchSession()` est le seul point d'entrée qui crée ou
- * prolonge une session ; `findVisitor()` et `findSession()` sont la lecture
- * minimale dont les tests et l'admin à venir ont besoin ; `ensureJournal()`
- * ouvre la base à l'amorçage sans en rendre la connexion — l'application n'a
- * pas à la tenir. Seuls les tests passent par `./db` pour ouvrir une base
- * temporaire.
+ * prolonge une session ; `addExchange()` le seul qui insère un échange —
+ * finalisé d'emblée, pour les réponses servies sans appel au modèle ; la
+ * réservation puis la finalisation d'un échange qui appelle le modèle (AD-6)
+ * viendront avec la passerelle. `findVisitor()`, `findSession()` et
+ * `findExchange()` sont la lecture minimale dont les tests et l'admin à venir
+ * ont besoin ; `ensureJournal()` ouvre la base à l'amorçage sans en rendre la
+ * connexion — l'application n'a pas à la tenir. Seuls les tests passent par
+ * `./db` pour ouvrir une base temporaire.
  */
 import type {DatabaseSync} from 'node:sqlite';
-import {isUlid} from '@/lib/ulid';
+import {isUlid, ulid} from '@/lib/ulid';
 import {journal} from './db';
 
 /**
@@ -230,5 +233,171 @@ export function findSession(id: string): Session | undefined {
     lang: row.lang,
     startedAt: row.started_at,
     lastSeenAt: row.last_seen_at
+  };
+}
+
+import type {ExchangeKind, ExchangeStatus} from './schema';
+
+export {EXCHANGE_KINDS, EXCHANGE_STATUSES} from './schema';
+export type {ExchangeKind, ExchangeStatus} from './schema';
+
+/** Ce que l'appelant sait d'un échange déjà répondu — jamais la requête. */
+export type AddExchangeInput = {
+  /** La session à laquelle l'échange se rattache, un ULID validé par l'appelant. */
+  readonly sessionId: string;
+  /**
+   * `hero` seulement : un échange inséré déjà répondu, sans jetons ni coût.
+   * Les échanges `chat` et `match` suivent la séquence d'AD-6 — réservation
+   * en `pending`, puis finalisation — que la story 6 apporte ; les accepter
+   * ici journaliserait un appel au modèle comme s'il avait été gratuit.
+   */
+  readonly kind: 'hero';
+  readonly question: string;
+  readonly answer: string;
+  /** Les clés de citation, `qa:<id>` ou `cv:<chemin>` (AD-4). */
+  readonly sources: readonly string[];
+  /** Résultat du contrôle des citations — vrai d'office pour une réponse écrite. */
+  readonly citationOk: boolean;
+  readonly latencyMs: number;
+  /** L'instant de l'échange ; par défaut, maintenant. Sert aux tests. */
+  readonly now?: Date;
+};
+
+export type Exchange = {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly kind: ExchangeKind;
+  readonly status: ExchangeStatus;
+  readonly question: string;
+  readonly answer: string | null;
+  readonly sources: readonly string[] | null;
+  readonly citationOk: boolean | null;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  readonly cacheReadTokens: number | null;
+  readonly cacheCreationTokens: number | null;
+  readonly costMicroUsd: number | null;
+  readonly latencyMs: number | null;
+  /** ISO 8601 UTC. */
+  readonly at: string;
+};
+
+/**
+ * Insère un échange **déjà répondu** — le cas des questions du premier écran :
+ * la réponse est celle du corpus, aucun jeton n'a été consommé, le coût est
+ * nul et les citations sont exactes par construction (AD-7 : insertion, rien
+ * d'autre). `status = 'done'` d'emblée, les quatre compteurs de jetons à `NULL`
+ * : ils n'existent que pour un appel au modèle, et un zéro y ferait croire à un
+ * appel gratuit.
+ *
+ * La session doit exister : la clé étrangère le garantit, et un échange sans
+ * session est refusé par la base — l'appelant a créé ou prolongé la session
+ * juste avant (`touchSession`), il ne reste qu'à s'y rattacher. L'identifiant
+ * est un ULID daté de l'instant de l'échange, comme les autres.
+ */
+export function addExchange(input: AddExchangeInput): {readonly id: string} {
+  if (!isUlid(input.sessionId)) {
+    throw new TypeError('addExchange : sessionId doit être un ULID validé');
+  }
+  if (input.kind !== 'hero') {
+    throw new TypeError(`addExchange : kind « ${String(input.kind)} » — seul hero s'insère déjà répondu`);
+  }
+  if (input.question.trim() === '' || input.answer.trim() === '') {
+    // `NOT NULL` laisse passer une chaîne vide : un échange sans texte serait
+    // indiscernable d'une vraie réponse pour l'admin.
+    throw new TypeError('addExchange : question et answer ne peuvent pas être vides');
+  }
+  const now = input.now ?? new Date();
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('addExchange : now doit être une date valide');
+  }
+  // Une latence qui n'est pas un nombre fini n'est pas une mesure : zéro.
+  const latency = Number.isFinite(input.latencyMs) ? Math.max(0, Math.round(input.latencyMs)) : 0;
+  const id = ulid(now.getTime());
+  const db = journal();
+
+  transaction(db, () => {
+    db.prepare(
+      `INSERT INTO exchange (id, session_id, kind, status, question, answer, sources, citation_ok,
+                             input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                             cost_micro_usd, latency_ms, at)
+       VALUES (?, ?, ?, 'done', ?, ?, ?, ?, NULL, NULL, NULL, NULL, 0, ?, ?)`
+    ).run(
+      id,
+      input.sessionId,
+      input.kind,
+      input.question,
+      input.answer,
+      JSON.stringify(input.sources),
+      input.citationOk ? 1 : 0,
+      latency,
+      now.toISOString()
+    );
+  });
+  return {id};
+}
+
+/**
+ * Les `sources` d'une ligne, relues depuis leur JSON. Une valeur qui n'est pas
+ * un tableau de chaînes — impossible par ce module, mais la colonne est du
+ * texte — vaut `null` plutôt qu'une forme que le type ne promet pas.
+ */
+function parseSources(value: string | null): readonly string[] | null {
+  if (value === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+      ? (parsed as string[])
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Un échange par identifiant, ou `undefined`. */
+export function findExchange(id: string): Exchange | undefined {
+  const row = journal()
+    .prepare(
+      `SELECT id, session_id, kind, status, question, answer, sources, citation_ok,
+              input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+              cost_micro_usd, latency_ms, at
+       FROM exchange WHERE id = ?`
+    )
+    .get(id) as
+    | {
+        id: string;
+        session_id: string;
+        kind: ExchangeKind;
+        status: ExchangeStatus;
+        question: string;
+        answer: string | null;
+        sources: string | null;
+        citation_ok: number | null;
+        input_tokens: number | null;
+        output_tokens: number | null;
+        cache_read_tokens: number | null;
+        cache_creation_tokens: number | null;
+        cost_micro_usd: number | null;
+        latency_ms: number | null;
+        at: string;
+      }
+    | undefined;
+  if (row === undefined) return undefined;
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    kind: row.kind,
+    status: row.status,
+    question: row.question,
+    answer: row.answer,
+    sources: parseSources(row.sources),
+    citationOk: row.citation_ok === null ? null : row.citation_ok === 1,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheCreationTokens: row.cache_creation_tokens,
+    costMicroUsd: row.cost_micro_usd,
+    latencyMs: row.latency_ms,
+    at: row.at
   };
 }

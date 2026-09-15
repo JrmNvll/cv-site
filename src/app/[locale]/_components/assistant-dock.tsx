@@ -16,12 +16,14 @@
  * défile dans son propre cadre, la barre reste au-dessus pour refermer.
  */
 import {getTranslations} from 'next-intl/server';
-import {AssistantPanel} from './assistant-panel';
+import {AssistantPanel, type AssistantPanelProps} from './assistant-panel';
 
 /** Hauteur de la barre : ce que la page réserve en bas pour ne rien cacher dessous. */
 export const DOCK_BAR_HEIGHT_CLASS = 'pb-14';
 
-export async function AssistantDock() {
+export type AssistantDockProps = Pick<AssistantPanelProps, 'experiences'>;
+
+export async function AssistantDock({experiences}: AssistantDockProps) {
   const t = await getTranslations('assistant');
 
   return (
@@ -69,7 +71,7 @@ export async function AssistantDock() {
           si les questions dépassent. */}
       <div className="fixed inset-x-0 bottom-[3.25rem] max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-t-2xl bg-panel shadow-[0_-12px_40px_rgba(0,0,0,0.35)]">
         <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-panel-rule" aria-hidden="true" />
-        <AssistantPanel titleId="assistant-titre-tiroir" />
+        <AssistantPanel titleId="assistant-titre-tiroir" experiences={experiences} />
       </div>
     </details>
   );

@@ -69,7 +69,7 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
               <IdentityProfile profil={cv.profil} experiences={cv.experiences} />
             </div>
             <div className="hidden lg:col-span-5 lg:block">
-              <AssistantPanel titleId="assistant-titre" />
+              <AssistantPanel titleId="assistant-titre" experiences={cv.experiences} />
             </div>
           </div>
         </div>
@@ -86,7 +86,7 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
         <ReferencesSection references={cv.references} />
       </main>
 
-      <AssistantDock />
+      <AssistantDock experiences={cv.experiences} />
     </div>
   );
 }

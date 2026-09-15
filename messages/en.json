@@ -33,15 +33,25 @@
     "eyebrow": "Ask me anything",
     "intro": "It answers with my own words — nothing invented.",
     "placeholder": "…or write your own question",
-    "inactive": "The questions are in place; the assistant itself is not wired up yet.",
+    "inactive": "The prepared questions answer; the free-text field and the job ad, not yet.",
+    "loading": "One moment…",
+    "answerSource": "An answer I wrote myself — no call to the model.",
+    "back": "Back to the questions",
     "questions": {
       "lic-01": "Why is he looking?",
       "sit-02": "When is he available?",
       "ia-01": "What does “AI-assisted development” actually mean?",
-      "wd-02": "What is left of his 20 years?",
+      "wd-02": "What is left of his {years, plural, one {# year} other {# years}}?",
       "site-02": "How was this site built?",
       "annonce": "Paste your job ad → I'll tell you what matches"
-    }
+    },
+    "yearsUnknown": "What is left of his WinDev years?",
+    "withoutScript": "The prepared questions need JavaScript to answer; the CV itself reads without it."
+  },
+  "errors": {
+    "unavailable": "The answer is unavailable right now — try again later.",
+    "invalid_input": "Invalid request: reload the page and try again.",
+    "content_unavailable": "This answer is not available at the moment."
   },
   "sections": {
     "career": "Career",

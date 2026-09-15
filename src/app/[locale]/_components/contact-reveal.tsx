@@ -21,6 +21,7 @@
  *     muet.
  */
 import {useEffect, useRef, useState, useSyncExternalStore} from 'react';
+import {timeoutSignal} from './timeout-signal';
 
 /**
  * « Sommes-nous côté navigateur, après hydratation ? »
@@ -96,7 +97,7 @@ export function ContactReveal({endpoint, labels}: ContactRevealProps) {
     try {
       const response = await fetch(endpoint, {
         headers: {accept: 'application/json'},
-        signal: AbortSignal.timeout(DELAI_MS)
+        signal: timeoutSignal(DELAI_MS)
       });
       if (!response.ok) throw new Error(`réponse ${response.status}`);
       const contact = parseContact(await response.json());

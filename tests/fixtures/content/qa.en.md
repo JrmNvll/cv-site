@@ -91,22 +91,38 @@ her.
 > The five entries the page offers in one click (`content-contract.md`): they
 > must exist and be ordinary — neither PRIVÉ, nor PASSE, nor empty.
 
+> Each body carries a sentinel word (`Sentinel-body-…`) and one construct of the
+> Markdown subset the page renders: the browser test looks for the former in the
+> served document (it must not be there) and for the latter in the panel.
+
 #### ⭐ `lic-01` — Why is the fictional person looking for a job?
 **Réponse :**
-An invented end of assignment; she is looking for a fictional full-time role.
+An invented end of assignment; she is looking for a fictional full-time role, **right now**. Sentinel-body-lic01.
 
 #### ⭐ `sit-02` — When is she available?
 **Réponse :**
-On an imaginary date, with a fictional one-month notice.
+On an imaginary date, with a fictional one-month notice. Sentinel-body-sit02.
 
 #### ⭐ `ia-01` — "AI-assisted development", concretely?
 **Réponse :**
-An invented method where fictional agents write, test and review.
+An invented method where fictional agents:
+
+- write the specification;
+- test the code;
+- review the result.
+
+Sentinel-body-ia01.
 
 #### ⭐ `wd-02` — What remains of her imaginary workshop years?
 **Réponse :**
-A fictional experience of long-term maintenance and invented clients.
+A fictional experience of *long-term maintenance* and invented clients. Sentinel-body-wd02.
 
 #### ⭐ `site-02` — How is this site built?
 **Réponse :**
-With imaginary tooling, described on a dedicated fictional page.
+With imaginary tooling, in three steps:
+
+1. frame;
+2. build;
+3. review.
+
+Sentinel-body-site02.

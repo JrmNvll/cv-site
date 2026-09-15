@@ -33,15 +33,25 @@
     "eyebrow": "Posez-moi vos questions",
     "intro": "Il répond avec mes propres réponses — rien d'inventé.",
     "placeholder": "…ou écrivez votre propre question",
-    "inactive": "Les questions sont en place ; l'assistant, lui, n'est pas encore branché.",
+    "inactive": "Les questions préparées répondent ; le champ libre et l'annonce, pas encore.",
+    "loading": "Un instant…",
+    "answerSource": "Réponse écrite par mes soins, sans appel au modèle.",
+    "back": "Retour aux questions",
     "questions": {
       "lic-01": "Pourquoi est-il en recherche ?",
       "sit-02": "Quand est-il disponible ?",
       "ia-01": "Le « développement assisté par IA », concrètement ?",
-      "wd-02": "Que reste-t-il de ses 20 ans ?",
+      "wd-02": "Que reste-t-il de ses {years, plural, one {# an} other {# ans}} ?",
       "site-02": "Comment ce site est-il fait ?",
       "annonce": "Collez votre annonce → je vous dis ce qui correspond"
-    }
+    },
+    "yearsUnknown": "Que reste-t-il de ses années WinDev ?",
+    "withoutScript": "Les questions préparées ont besoin de JavaScript pour répondre ; le CV, lui, se lit sans."
+  },
+  "errors": {
+    "unavailable": "Réponse indisponible pour le moment — réessayez plus tard.",
+    "invalid_input": "Demande invalide : rechargez la page et réessayez.",
+    "content_unavailable": "Cette réponse n'est pas disponible pour le moment."
   },
   "sections": {
     "career": "Parcours",

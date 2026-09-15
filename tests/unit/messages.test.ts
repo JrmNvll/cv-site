@@ -74,6 +74,11 @@ describe('catalogues de messages', () => {
           'assistant.intro',
           'assistant.placeholder',
           'assistant.inactive',
+          'assistant.loading',
+          'assistant.answerSource',
+          'assistant.back',
+          'errors.unavailable',
+          'errors.invalid_input',
           'sections.career',
           'sections.skills',
           'sections.assets',
@@ -85,6 +90,9 @@ describe('catalogues de messages', () => {
           'practical.age',
           'education.option',
           'education.equivalence',
+          'assistant.yearsUnknown',
+          'assistant.withoutScript',
+          'errors.content_unavailable',
           'education.proof',
           'career.certificate',
           'sections.references',
@@ -120,6 +128,20 @@ describe('catalogues de messages', () => {
         path.startsWith('assistant.questions.')
       );
       expect(posees.sort()).toEqual([...attendues].sort());
+    }
+  });
+
+  /**
+   * « Que reste-t-il de ses 20 ans ? » : le chiffre est le résultat de
+   * `careerYears` sur le contenu réel, pas une valeur à recopier — sinon il
+   * faudrait penser à l'incrémenter chaque année (report de la story 3).
+   */
+  it('ne recopie aucun nombre dʼannées dans le libellé de wd-02 : il est paramétré', () => {
+    for (const locale of Object.keys(catalogs)) {
+      const libelle = String(valueAt(catalogs[locale]!, 'assistant.questions.wd-02'));
+      // Un pluriel ICU sur `years` : « 1 an », « 20 ans » — et aucun chiffre écrit.
+      expect(libelle).toMatch(/\{years, plural,/);
+      expect(libelle).not.toMatch(/\d/);
     }
   });
 });

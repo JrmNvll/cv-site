@@ -64,9 +64,20 @@ function applySchema(db: DatabaseSync): void {
   const {user_version: version} = db.prepare('PRAGMA user_version').get() as {
     user_version: number;
   };
-  if (version > SCHEMA_VERSION) {
+  if (version > SCHEMA_VERSION || version < 0) {
+    // Plus récente que ce code, ou une valeur qu'aucune version n'a jamais
+    // écrite : dans les deux cas, ce n'est pas une base qu'on sait lire.
     throw new Error(
-      `schéma en version ${version}, ce code ne connaît que la version ${SCHEMA_VERSION} — la base a été écrite par une version plus récente du site`
+      `schéma en version ${version}, ce code ne connaît que la version ${SCHEMA_VERSION} — la base a été écrite par une version plus récente du site, ou n'est pas la sienne`
+    );
+  }
+  if (version > 0 && version < SCHEMA_VERSION) {
+    // Une base d'une version antérieure : le DDL ne rejoue que des `IF NOT
+    // EXISTS`, il ne retoucherait pas une contrainte déjà posée, et aucune
+    // migration n'existe encore. Aucune base de production n'a été écrite
+    // avant la mise en ligne : celle-ci se recrée, elle ne se convertit pas.
+    throw new Error(
+      `schéma en version ${version}, ce code attend la version ${SCHEMA_VERSION} — schéma changé avant la mise en ligne, recréer usage.db (supprimer le fichier et ses compagnons -wal et -shm, puis redémarrer)`
     );
   }
   if (version === 0) {

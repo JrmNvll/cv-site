@@ -117,7 +117,13 @@ describe('recordVisit', () => {
       lang: 'en'
     });
 
-    expect(result).toEqual({outcome: 'created', visitorCreated: true});
+    // Le résultat porte aussi les identifiants validés : une seule lecture des cookies.
+    expect(result).toEqual({
+      outcome: 'created',
+      visitorCreated: true,
+      visitorId: VISITOR_ID,
+      sessionId: SESSION_ID
+    });
     expect(journal.touchSession).toHaveBeenCalledTimes(1);
     expect(journal.touchSession).toHaveBeenCalledWith({
       visitorId: VISITOR_ID,

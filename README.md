@@ -116,22 +116,30 @@ porte d'entrée de la configuration ; `src/content/` le seul module qui lit
 
 ## Le journal des visites
 
-Chaque document servi — page, 404 — et chaque geste réel du visiteur (le
-téléphone, à ce stade) passent par [`journal.touchSession()`](./src/journal/index.ts)
+Chaque document servi — page, 404 — et chaque geste réel du visiteur (les
+coordonnées à la demande, une question du premier écran) passent par
+[`journal.touchSession()`](./src/journal/index.ts)
 (AD-14) : la première apparition d'un `cv_session` crée la session, avec
 l'adresse, le navigateur, la provenance et la langue ; les suivantes ne font
 qu'avancer `last_seen_at`. Un `cv_visitor` jamais vu est un nouveau visiteur,
 qu'il vienne d'un cookie effacé ou d'un identifiant choisi : les cookies ne sont
 pas signés, et c'est une décision — l'identité de visiteur est une étiquette du
 journal, pas une autorisation. Une session présentée avec le cookie d'un autre
-visiteur n'est pas écrite.
+visiteur n'est pas écrite. Une question du premier écran insère en plus un
+`exchange` de sorte `hero` (`journal.addExchange()`), finalisé d'emblée : coût
+nul, aucun jeton, la clé de citation de l'entrée en source.
 
-Trois choses à savoir :
+Ce qu'il faut savoir :
 
 - **`usage.db` vit dans `DATA_DIR`, chemin absolu, répertoire existant et
   inscriptible.** Le site ne le crée pas : il refuse de démarrer, comme pour un
   contenu invalide. En mode WAL, SQLite pose `usage.db-wal` et `usage.db-shm` à
   côté ; les trois sont ignorés par Git.
+- **Le schéma est versionné** (`PRAGMA user_version`, version 2 depuis la story
+  5 : `exchange.kind` admet `hero`). Une base plus récente que le code est
+  refusée ; une base plus ancienne aussi, tant qu'aucun mécanisme de migration
+  n'existe — avant la mise en ligne, une `usage.db` d'une version antérieure se
+  recrée : supprimer le fichier et ses compagnons `-wal` et `-shm`, redémarrer.
 - **Le journal n'efface rien** (AD-7) : insertions, plus une liste fermée de
   colonnes modifiables — ici `session.last_seen_at`, rien d'autre.
   `tests/unit/journal.test.ts` relit les sources de `src/journal/` et y refuse
@@ -177,6 +185,17 @@ demande n'est pas rendu du tout sans JavaScript — le courriel, lui, reste là.
 `tests/e2e/no-leak.spec.ts` relit le document réellement servi et y cherche
 chaque valeur hors liste blanche de la fixture : téléphone, adresse, tiers,
 chemins de fichiers.
+
+**Les cinq questions du premier écran répondent sans appeler le modèle** (CAP-2).
+`GET /api/questions/<id>?lang=fr|en` ne sert que les cinq identifiants de
+[`hero-questions.ts`](./src/app/[locale]/_components/hero-questions.ts), dans la
+langue que la page demande, et rend le corps de l'entrée **tel qu'écrit**, en
+Markdown, rendu côté client par un sous-ensemble maîtrisé
+([`markdown.tsx`](./src/app/[locale]/_components/markdown.tsx) : paragraphes,
+listes, gras, italique — tout le reste en texte, jamais de HTML injecté). Une
+entrée `PRIVÉ`, `PASSE` ou vide vaut `404`. Sans JavaScript, les puces restent
+désactivées ; la sixième (l'annonce à coller) et le champ libre le restent dans
+tous les cas, jusqu'aux stories qui les branchent.
 
 **Le rendu est dynamique, et doit le rester.** `/fr` et `/en` portent
 `export const dynamic = 'force-dynamic'`, et atteignent `@/content` par un

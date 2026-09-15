@@ -1,8 +1,9 @@
 /**
  * Le schéma de `usage.db` — les trois entités du squelette d'architecture
  * (`erDiagram` de l'`ARCHITECTURE-SPINE`), créées ensemble dès la première
- * ouverture. `exchange` reste vide jusqu'à la story « échanges » : la table
- * existe pour que le schéma soit posé une fois, pas par morceaux.
+ * ouverture. `exchange` reçoit ses premières lignes avec les questions du
+ * premier écran (`kind = 'hero'`, coût nul) ; `chat` et `match` viennent avec
+ * les stories qui appellent le modèle.
  *
  * Conventions (AD-7 et « Identifiants & dates ») :
  *  - tables et colonnes en `snake_case`, identifiants ULID en texte ;
@@ -19,11 +20,36 @@
  */
 
 /**
- * Version du schéma, portée par `PRAGMA user_version`. Une évolution future
- * l'incrémente et ajoute sa migration ; le code refuse d'ouvrir une base plus
- * récente que ce qu'il connaît.
+ * Version du schéma, portée par `PRAGMA user_version`. Le code refuse d'ouvrir
+ * une base plus récente que ce qu'il connaît — et, tant qu'aucune base de
+ * production n'existe, une base plus ancienne aussi : il n'y a pas encore de
+ * mécanisme de migration (`deferred-work.md`), le DDL idempotent ne retouche
+ * pas une contrainte déjà posée, et une base d'avant la mise en ligne se recrée.
+ *
+ * Historique :
+ *  - 1 : les trois tables, `exchange.kind` limité à `chat` et `match` ;
+ *  - 2 : `exchange.kind` admet `hero` — les questions du premier écran, servies
+ *    sans appel au modèle.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/**
+ * Les sortes d'échange, liste close. `hero` : une des questions du premier
+ * écran, servie sans appel au modèle ; `chat` et `match` : les deux routes qui
+ * l'appellent (AD-16). Le `CHECK` du DDL est **dérivé** de cette liste : une
+ * seule vérité, pas deux à tenir à la main.
+ */
+export const EXCHANGE_KINDS = ['chat', 'match', 'hero'] as const;
+export type ExchangeKind = (typeof EXCHANGE_KINDS)[number];
+
+/** Les états d'un échange (AD-6, AD-16) — même règle. */
+export const EXCHANGE_STATUSES = ['pending', 'done', 'model_error'] as const;
+export type ExchangeStatus = (typeof EXCHANGE_STATUSES)[number];
+
+/** `'a', 'b'` — la liste telle qu'un `CHECK (x IN (…))` l'attend. */
+function sqlList(values: readonly string[]): string {
+  return values.map((value) => `'${value}'`).join(', ');
+}
 
 /**
  * Réglages de connexion, appliqués à **chaque** ouverture, dans cet ordre :
@@ -75,8 +101,8 @@ CREATE INDEX IF NOT EXISTS session_last_seen_at ON session(last_seen_at);
 CREATE TABLE IF NOT EXISTS exchange (
   id                     TEXT PRIMARY KEY,
   session_id             TEXT NOT NULL REFERENCES session(id),
-  kind                   TEXT NOT NULL CHECK (kind IN ('chat', 'match')),
-  status                 TEXT NOT NULL CHECK (status IN ('pending', 'done', 'model_error')),
+  kind                   TEXT NOT NULL CHECK (kind IN (${sqlList(EXCHANGE_KINDS)})),
+  status                 TEXT NOT NULL CHECK (status IN (${sqlList(EXCHANGE_STATUSES)})),
   question               TEXT NOT NULL,
   answer                 TEXT,
   sources                TEXT,

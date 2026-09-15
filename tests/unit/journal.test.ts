@@ -1,6 +1,7 @@
 /**
  * AD-7 / AD-14 — le journal : ce que `touchSession()` écrit, ce qu'il refuse
- * d'écrire, et ce que le module ne peut pas faire du tout.
+ * d'écrire, ce qu'`addExchange()` insère (story 5 : un échange à coût nul), et
+ * ce que le module ne peut pas faire du tout.
  *
  * Chaque ligne de la matrice de la story est rejouée sur une base temporaire,
  * ouverte par la même fonction que l'application (`openJournal`) et fermée
@@ -17,8 +18,18 @@ import {fileURLToPath} from 'node:url';
 import {afterAll, afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {closeJournal, JOURNAL_FILE, openJournal} from '@/journal/db';
 import {BUSY_TIMEOUT_MS, DDL, SCHEMA_VERSION} from '@/journal/schema';
-import {findSession, findVisitor, touchSession, type TouchSessionInput} from '@/journal';
-import {ulid} from '@/lib/ulid';
+import {
+  addExchange,
+  EXCHANGE_KINDS,
+  EXCHANGE_STATUSES,
+  findExchange,
+  findSession,
+  findVisitor,
+  touchSession,
+  type AddExchangeInput,
+  type TouchSessionInput
+} from '@/journal';
+import {isUlid, ulid, ulidTime} from '@/lib/ulid';
 
 const JOURNAL_SOURCES = fileURLToPath(new URL('../../src/journal', import.meta.url));
 const NOW = new Date('2026-09-15T10:00:00.000Z');
@@ -251,9 +262,121 @@ describe('identifiants invalides', () => {
 });
 
 describe('lecture', () => {
-  it('rend undefined pour un visiteur ou une session inconnus', () => {
+  it('rend undefined pour un visiteur, une session ou un échange inconnus', () => {
     expect(findVisitor(ulid())).toBeUndefined();
     expect(findSession(ulid())).toBeUndefined();
+    expect(findExchange(ulid())).toBeUndefined();
+  });
+});
+
+describe('échange servi sans appel au modèle (story 5)', () => {
+  /** Une session ouverte, puis un échange `hero` à y rattacher. */
+  function echange(overrides: Partial<AddExchangeInput> = {}): AddExchangeInput {
+    const session = visite();
+    touchSession(session);
+    return {
+      sessionId: session.sessionId,
+      kind: 'hero',
+      question: 'Question fictive du corpus ?',
+      answer: 'Corps **fictif**, tel quel.',
+      sources: ['qa:lic-01'],
+      citationOk: true,
+      latencyMs: 3.6,
+      now: LATER,
+      ...overrides
+    };
+  }
+
+  it('refuse ce qui nʼest pas une mesure ni un texte', () => {
+    expect(() => addExchange(echange({question: '  '}))).toThrowError(/vides/);
+    expect(() => addExchange(echange({answer: ''}))).toThrowError(/vides/);
+    expect(() => addExchange(echange({now: new Date('pas une date')}))).toThrowError(/date valide/);
+    // Une latence qui n'est pas un nombre fini vaut zéro, pas NULL ni Infinity.
+    const {id} = addExchange(echange({latencyMs: Number.NaN}));
+    expect(findExchange(id)!.latencyMs).toBe(0);
+  });
+  it('insère une ligne done, à coût nul, sans jetons, avec ses sources en JSON', () => {
+    const entree = echange();
+
+    const {id} = addExchange(entree);
+
+    expect(isUlid(id)).toBe(true);
+    // L'identifiant est daté de l'instant de l'échange, comme les autres.
+    expect(ulidTime(id)).toBe(LATER.getTime());
+    expect(count('exchange')).toBe(1);
+    expect(findExchange(id)).toEqual({
+      id,
+      sessionId: entree.sessionId,
+      kind: 'hero',
+      status: 'done',
+      question: 'Question fictive du corpus ?',
+      answer: 'Corps **fictif**, tel quel.',
+      sources: ['qa:lic-01'],
+      citationOk: true,
+      inputTokens: null,
+      outputTokens: null,
+      cacheReadTokens: null,
+      cacheCreationTokens: null,
+      costMicroUsd: 0,
+      latencyMs: 4,
+      at: LATER.toISOString()
+    });
+    // En base, `sources` est un tableau JSON de chaînes (AD-7), `citation_ok` un entier.
+    const brut = db
+      .prepare('SELECT sources, citation_ok, cost_micro_usd FROM exchange WHERE id = ?')
+      .get(id) as {sources: string; citation_ok: number; cost_micro_usd: number};
+    expect(JSON.parse(brut.sources)).toEqual(['qa:lic-01']);
+    expect(brut.citation_ok).toBe(1);
+    expect(brut.cost_micro_usd).toBe(0);
+  });
+
+  it('horodate à lʼinstant courant par défaut', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(LATER);
+    const {id} = addExchange(echange({now: undefined}));
+    vi.useRealTimers();
+
+    expect(findExchange(id)!.at).toBe(LATER.toISOString());
+  });
+
+  it('refuse un échange sans session : la clé étrangère est appliquée par la base', () => {
+    expect(() => addExchange(echange({sessionId: ulid()}))).toThrowError(/FOREIGN KEY/);
+    expect(count('exchange')).toBe(0);
+  });
+
+  it('refuse un identifiant de session qui nʼest pas un ULID, sans rien écrire', () => {
+    expect(() => addExchange(echange({sessionId: 'pas-un-ulid'}))).toThrowError(TypeError);
+    expect(count('exchange')).toBe(0);
+  });
+
+  it('nʼadmet que les trois sortes du schéma : chat, match, hero — et nʼinsère déjà répondu que hero', () => {
+    expect([...EXCHANGE_KINDS].sort()).toEqual(['chat', 'hero', 'match']);
+    expect(() => addExchange(echange({kind: 'autre' as 'hero'}))).toThrowError(/seul hero/);
+    // Un échange `chat` inséré `done` sans jetons ferait passer un appel au
+    // modèle pour gratuit : c'est la séquence d'AD-6 qui l'écrira (story 6).
+    expect(() => addExchange(echange({kind: 'chat' as 'hero'}))).toThrowError(/seul hero/);
+    // Et la base elle-même refuse une sorte inconnue : la contrainte est en base, pas seulement en code.
+    const session = visite();
+    touchSession(session);
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO exchange (id, session_id, kind, status, question, at)
+           VALUES (?, ?, 'autre', 'done', 'q', ?)`
+        )
+        .run(ulid(), session.sessionId, NOW.toISOString())
+    ).toThrowError(/CHECK/);
+    expect(count('exchange')).toBe(0);
+  });
+
+  it('accepte plusieurs échanges sur une même session, et une réponse sans citation', () => {
+    const entree = echange();
+    const premier = addExchange(entree);
+    const second = addExchange({...entree, sources: [], citationOk: false, now: NOW});
+
+    expect(premier.id).not.toBe(second.id);
+    expect(count('exchange')).toBe(2);
+    expect(findExchange(second.id)).toMatchObject({sources: [], citationOk: false, at: NOW.toISOString()});
   });
 });
 
@@ -336,6 +459,48 @@ describe('ouverture', () => {
 
     expect(() => openJournal(autre)).toThrowError(new RegExp(`version ${SCHEMA_VERSION + 1}`));
     // La base n'est pas restée ouverte : le journal peut être rouvert ailleurs.
+    db = openJournal(path);
+  });
+
+  it('refuse une base en version 1 — schéma changé avant la mise en ligne, à recréer', () => {
+    // Le DDL de la version 1 : `exchange.kind` sans `hero`. Rejouer le DDL
+    // courant n'y changerait rien (`IF NOT EXISTS`), et aucune migration
+    // n'existe : la base d'avant la mise en ligne se recrée, elle ne se convertit pas.
+    closeJournal();
+    const ancienne = join(dataDir(), JOURNAL_FILE);
+    const v1 = new DatabaseSync(ancienne);
+    v1.exec(DDL.replace("CHECK (kind IN ('chat', 'match', 'hero'))", "CHECK (kind IN ('chat', 'match'))"));
+    v1.exec('PRAGMA user_version = 1');
+    v1.close();
+
+    expect(() => openJournal(ancienne)).toThrowError(/version 1/);
+    expect(() => openJournal(ancienne)).toThrowError(/recréer usage\.db/);
+    expect(() => openJournal(ancienne)).toThrowError(/DATA_DIR/);
+    // Rien n'a été tamponné ni modifié : la base reste en version 1.
+    const relue = new DatabaseSync(ancienne, {readOnly: true});
+    expect((relue.prepare('PRAGMA user_version').get() as {user_version: number}).user_version).toBe(1);
+    relue.close();
+    db = openJournal(path);
+  });
+
+  it('est en version 2 : lʼéchange admet la sorte hero', () => {
+    expect(SCHEMA_VERSION).toBe(2);
+    expect(DDL).toContain("CHECK (kind IN ('chat', 'match', 'hero'))");
+  });
+
+  it('dérive les CHECK du DDL des listes closes du code : une seule vérité', () => {
+    const cite = (values: readonly string[]) => values.map((value) => `'${value}'`).join(', ');
+    expect(DDL).toContain(`CHECK (kind IN (${cite(EXCHANGE_KINDS)}))`);
+    expect(DDL).toContain(`CHECK (status IN (${cite(EXCHANGE_STATUSES)}))`);
+  });
+
+  it('refuse une version de schéma négative : ce nʼest pas une base à nous', () => {
+    closeJournal();
+    const etrange = new DatabaseSync(path);
+    etrange.exec('PRAGMA user_version = -1');
+    etrange.close();
+    expect(() => openJournal(path)).toThrowError(/version -1/);
+    rmSync(path, {force: true});
     db = openJournal(path);
   });
 

@@ -14,7 +14,13 @@
  */
 import sharp from 'sharp';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {PHOTO_CSS_SIZE, PHOTO_SCALES, photoScale, photoSrcSet} from '@/app/api/photo/sizes';
+import {
+  PHOTO_CSS_HEIGHT,
+  PHOTO_CSS_WIDTH,
+  PHOTO_SCALES,
+  photoScale,
+  photoSrcSet
+} from '@/app/api/photo/sizes';
 
 const contenu = vi.hoisted(() => ({
   photo: vi.fn(),
@@ -81,7 +87,7 @@ describe('GET /api/photo', () => {
     expect(dynamiquePhone).toBe('force-dynamic');
   });
 
-  it('sert le carré découpé à la densité demandée, sans EXIF, dans le format dʼorigine', async () => {
+  it('sert le portrait découpé à la densité demandée, sans EXIF, dans le format dʼorigine', async () => {
     contenu.photo.mockReturnValue({bytes: PORTRAIT, mime: 'image/jpeg', etag: ETAG_PORTRAIT});
 
     for (const scale of PHOTO_SCALES) {
@@ -95,8 +101,8 @@ describe('GET /api/photo', () => {
       const meta = await sharp(octets).metadata();
       expect([meta.format, meta.width, meta.height]).toEqual([
         'jpeg',
-        PHOTO_CSS_SIZE * scale,
-        PHOTO_CSS_SIZE * scale
+        PHOTO_CSS_WIDTH * scale,
+        PHOTO_CSS_HEIGHT * scale
       ]);
       expect(meta.exif).toBeUndefined();
       expect(Buffer.from(octets).includes('Sentinelle-EXIF-Fictive')).toBe(false);
@@ -107,7 +113,7 @@ describe('GET /api/photo', () => {
     contenu.photo.mockReturnValue({bytes: PORTRAIT, mime: 'image/jpeg', etag: ETAG_PORTRAIT});
 
     const meta = await sharp(new Uint8Array(await (await getPhoto(requete())).arrayBuffer())).metadata();
-    expect(meta.width).toBe(PHOTO_CSS_SIZE * 2);
+    expect(meta.width).toBe(PHOTO_CSS_WIDTH * 2);
 
     for (const refuse of ['0', '4', 'abc']) {
       const reponse = await getPhoto(requete({}, refuse));

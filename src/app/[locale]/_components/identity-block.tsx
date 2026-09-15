@@ -14,7 +14,7 @@
  */
 import {getTranslations} from 'next-intl/server';
 import type {DisplayProjection} from '@/content';
-import {PHOTO_CSS_SIZE, photoSrcSet} from '@/app/api/photo/sizes';
+import {PHOTO_CSS_HEIGHT, PHOTO_CSS_WIDTH, photoSrcSet} from '@/app/api/photo/sizes';
 import {careerYears, employerCount, joinParts} from './format';
 
 export type IdentityBlockProps = {
@@ -44,17 +44,19 @@ export async function IdentityBlock({identite, profil, experiences}: IdentityBlo
       <div className="flex flex-wrap items-start gap-6">
         {identite.photo ? (
           // `next/image` n'apporterait rien ici : la photo vient d'une route qui
-          // lit CONTENT_DIR et la sert déjà découpée au carré, à chaque densité
+          // lit CONTENT_DIR et la sert déjà découpée au cadre, à chaque densité
           // (`srcset`). Le VPS n'a pas à faire tourner un optimiseur générique
-          // pour une seule image. `h-26 w-26` = PHOTO_CSS_SIZE.
+          // pour une seule image. Le cadre CSS est celui de `sizes.ts`, en style
+          // plutôt qu'en classe : une seule source pour les deux.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src="/api/photo"
             srcSet={photoSrcSet()}
             alt={t('photoAlt', {name})}
-            width={PHOTO_CSS_SIZE}
-            height={PHOTO_CSS_SIZE}
-            className="h-26 w-26 shrink-0 rounded-[3px] object-cover"
+            width={PHOTO_CSS_WIDTH}
+            height={PHOTO_CSS_HEIGHT}
+            style={{width: PHOTO_CSS_WIDTH, height: PHOTO_CSS_HEIGHT}}
+            className="shrink-0 rounded-[3px] object-cover"
           />
         ) : null}
         {/* `xl:flex-1` : la photo passe à gauche du titre, comme la maquette,

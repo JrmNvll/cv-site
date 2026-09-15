@@ -9,12 +9,13 @@
  * le visiteur ne choisit pas ce qu'il lit, seulement à quelle taille.
  *
  * **Servie découpée, jamais telle quelle.** Une image matricielle est réduite
- * au carré affiché par la page, à la densité demandée. Trois raisons :
+ * au cadre affiché par la page — un portrait 3:4 — à la densité demandée. Trois
+ * raisons :
  *  - la netteté : réduire 600 px en 104 px est un travail que les navigateurs
  *    font mal, et que `sharp` fait bien, une fois ;
  *  - les métadonnées : l'original porte de l'EXIF (logiciel, date de prise de
  *    vue…) ; le redimensionnement le retire, la page n'a pas à le publier ;
- *  - le poids : 340 Ko pour un carré de 104 px, c'était trente fois trop.
+ *  - le poids : 340 Ko pour un cadre de 104 px de large, c'était trente fois trop.
  * Un SVG est vectoriel : il est servi tel quel, quelle que soit la densité.
  * Si le redimensionnement échoue — fichier corrompu, format que `sharp` ne lit
  * pas — la route répond `404` et journalise : servir l'original « en secours »
@@ -35,7 +36,7 @@
  */
 import sharp from 'sharp';
 import type {ServedPhoto} from '@/content';
-import {PHOTO_CSS_SIZE, photoScale, type PhotoScale} from './sizes';
+import {PHOTO_CSS_HEIGHT, PHOTO_CSS_WIDTH, photoScale, type PhotoScale} from './sizes';
 
 /**
  * Jamais rendue au build : elle lit `CONTENT_DIR`, qui n'existe qu'à l'exécution.
@@ -91,7 +92,8 @@ function variantEtag(etag: string, scale: PhotoScale): string {
 }
 
 async function resize(image: ServedPhoto, scale: PhotoScale): Promise<Variant | null> {
-  const side = PHOTO_CSS_SIZE * scale;
+  const width = PHOTO_CSS_WIDTH * scale;
+  const height = PHOTO_CSS_HEIGHT * scale;
   try {
     // `rotate()` sans argument applique l'orientation EXIF avant que le
     // redimensionnement ne la retire ; le format de sortie reste celui
@@ -99,7 +101,7 @@ async function resize(image: ServedPhoto, scale: PhotoScale): Promise<Variant | 
     // n'a pas à bouger.
     const bytes = await sharp(image.bytes)
       .rotate()
-      .resize(side, side, {fit: 'cover', position: 'centre'})
+      .resize(width, height, {fit: 'cover', position: 'centre'})
       .toBuffer();
     // `sharp` rend un `Buffer`, dont le `ArrayBuffer` peut être partagé ; la
     // copie donne le `Uint8Array<ArrayBuffer>` propre que `Response` exige.

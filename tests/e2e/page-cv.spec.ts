@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import {expect, test, type Page} from '@playwright/test';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
-import {PHOTO_CSS_SIZE} from '../../src/app/api/photo/sizes';
+import {PHOTO_CSS_HEIGHT, PHOTO_CSS_WIDTH} from '../../src/app/api/photo/sizes';
 import {careerYears, employerCount, joinParts, periodLabel, yearOf} from '../../src/app/[locale]/_components/format';
 import {display, rawCv, LANGS, type Lang} from './fixture-cv';
 
@@ -251,7 +251,7 @@ test.describe('la photo', () => {
       .toBe(true);
   });
 
-  test('est réellement découpée par lʼartefact de production : carré, sans EXIF', async ({
+  test('est réellement découpée par lʼartefact de production : portrait 3:4, sans EXIF', async ({
     page,
     request
   }) => {
@@ -265,7 +265,7 @@ test.describe('la photo', () => {
       const octets = await reponse.body();
       expect(String(octets.byteLength)).toBe(reponse.headers()['content-length']);
       const meta = await sharp(octets).metadata();
-      expect([meta.width, meta.height]).toEqual([PHOTO_CSS_SIZE * scale, PHOTO_CSS_SIZE * scale]);
+      expect([meta.width, meta.height]).toEqual([PHOTO_CSS_WIDTH * scale, PHOTO_CSS_HEIGHT * scale]);
       expect(meta.exif).toBeUndefined();
       expect(octets.includes('Sentinelle-EXIF-Fixture-Fictive')).toBe(false);
     }
@@ -276,7 +276,12 @@ test.describe('la photo', () => {
     const image = page.getByRole('img');
     await expect
       .poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
-      .toBe(PHOTO_CSS_SIZE);
+      .toBe(PHOTO_CSS_WIDTH);
+    // Et le cadre affiché a exactement les proportions servies : rien à rogner.
+    expect(await image.evaluate((node) => [node.clientWidth, node.clientHeight])).toEqual([
+      PHOTO_CSS_WIDTH,
+      PHOTO_CSS_HEIGHT
+    ]);
     expect(await image.evaluate((node: HTMLImageElement) => node.currentSrc)).toContain('/api/photo?s=1');
   });
 

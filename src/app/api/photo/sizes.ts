@@ -2,14 +2,19 @@
  * Les tailles auxquelles la photo est servie — sans `sharp`, pour que la page
  * puisse importer ce module sans embarquer l'outil de redimensionnement.
  *
- * La photo n'est affichée qu'à **une** taille : le carré de 104 px CSS de
- * `identity-block.tsx` (`h-26 w-26`). Servir l'original de 600 px pour ce
- * carré obligeait le navigateur à le réduire de près de six fois, et Chrome le
- * fait mal sur un tel rapport : Jérémie voyait sa photo « pixelisée ». La route
- * sert donc le carré déjà découpé, à 1×, 2× et 3× la taille CSS, et la page
- * les déclare en `srcset` — chaque écran reçoit sa densité, rien de plus.
+ * La photo n'est affichée qu'à **une** taille : le cadre de 104 × 139 px CSS
+ * de `identity-block.tsx`. Servir l'original de 600 px pour ce cadre obligeait
+ * le navigateur à le réduire de près de six fois, et Chrome le fait mal sur un
+ * tel rapport : Jérémie voyait sa photo « pixelisée ». La route sert donc le
+ * cadre déjà découpé, à 1×, 2× et 3× la taille CSS, et la page les déclare en
+ * `srcset` — chaque écran reçoit sa densité, rien de plus.
+ *
+ * Un **portrait 3:4**, pas un carré : un carré rognait le haut ou le bas d'un
+ * visage — retour de Jérémie. Un portrait d'identité est proche de ce ratio,
+ * le découpage n'y touche presque rien.
  */
-export const PHOTO_CSS_SIZE = 104;
+export const PHOTO_CSS_WIDTH = 104;
+export const PHOTO_CSS_HEIGHT = 139;
 
 export const PHOTO_SCALES = [1, 2, 3] as const;
 export type PhotoScale = (typeof PHOTO_SCALES)[number];

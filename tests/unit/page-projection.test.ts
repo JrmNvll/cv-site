@@ -106,7 +106,7 @@ describe('aucun texte de CV nʼest écrit dans un composant', () => {
 
   it('cherche bien ce quʼil dit chercher', () => {
     // Sonde : si la recherche était inopérante, ce test-ci passerait aussi.
-    expect(valeursDeCv).toContain('Développeuse logiciel');
+    expect(valeursDeCv).toContain('Développement assisté par IA — Développeuse logiciel & web');
     expect(valeursDeCv.some((value) => value.includes('Société Fictive SA'))).toBe(true);
   });
 
@@ -132,7 +132,8 @@ describe('aucun texte de CV nʼest écrit dans un composant', () => {
         'page.tsx',
         '_components/career-section.tsx',
         '_components/education-section.tsx',
-        '_components/identity-block.tsx',
+        '_components/identity-heading.tsx',
+        '_components/identity-profile.tsx',
         '_components/references-section.tsx',
         '_components/site-header.tsx',
         '_components/skills-section.tsx'

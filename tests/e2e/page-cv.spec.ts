@@ -170,6 +170,15 @@ for (const {name, viewport} of VIEWPORTS) {
       page
     }) => {
       await page.goto('/fr');
+      // Sous `lg`, l'assistant vit dans le tiroir : on l'ouvre par la barre.
+      // Au-dessus, la barre n'existe pas et le panneau est dans le premier écran.
+      const barre = page.locator('summary');
+      if (viewport.width < 1024) {
+        await expect(barre).toBeVisible();
+        await barre.click();
+      } else {
+        await expect(barre).toBeHidden();
+      }
       const panneau = page.getByRole('region', {name: messages.fr.assistant.eyebrow});
 
       const questions = Object.values(messages.fr.assistant.questions);
@@ -185,8 +194,92 @@ for (const {name, viewport} of VIEWPORTS) {
       await expect(champ).toBeDisabled();
       await expect(panneau.getByText(messages.fr.assistant.inactive)).toBeVisible();
     });
+
+    test('le premier écran suit la mise en page validée le 2026-09-15', async ({page}) => {
+      await page.goto('/fr');
+      const h1 = page.getByRole('heading', {level: 1});
+      const mesure = await h1.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          lignes: Math.round(element.getBoundingClientRect().height / parseFloat(style.lineHeight)),
+          deborde: element.scrollWidth > element.clientWidth
+        };
+      });
+      expect(mesure.deborde).toBe(false);
+
+      if (viewport.width >= 1024) {
+        // Le titre sur une seule ligne, la photo à sa gauche ; le panneau
+        // commence sous le titre, à droite du profil.
+        expect(mesure.lignes).toBe(1);
+        const titre = await h1.boundingBox();
+        const panneau = await page
+          .getByRole('region', {name: messages.fr.assistant.eyebrow})
+          .boundingBox();
+        const profil = await page.getByText(display.fr.profil, {exact: true}).boundingBox();
+        expect(panneau!.y).toBeGreaterThan(titre!.y + titre!.height);
+        expect(panneau!.x).toBeGreaterThan(profil!.x + profil!.width - 1);
+      } else {
+        // Sur téléphone, le titre se replie et la photo est au-dessus.
+        expect(mesure.lignes).toBeGreaterThan(1);
+        const photo = await page.getByRole('img').boundingBox();
+        const titre = await h1.boundingBox();
+        expect(titre!.y).toBeGreaterThanOrEqual(photo!.y + photo!.height);
+      }
+    });
   });
 }
+
+test.describe('lʼassistant sur téléphone', () => {
+  test.use({viewport: {width: 390, height: 844}});
+
+  test('est une barre fixe en bas dʼécran, qui ouvre et referme le tiroir', async ({page}) => {
+    await page.goto('/fr');
+    const barre = page.locator('summary');
+    await expect(barre).toBeVisible();
+    // Fixée en bas de la fenêtre, quelle que soit la position de défilement.
+    const boite = await barre.boundingBox();
+    expect(Math.round(boite!.y + boite!.height)).toBe(844);
+
+    const question = page.getByRole('button', {
+      name: messages.fr.assistant.questions['lic-01'],
+      exact: true
+    });
+    await expect(question).toBeHidden();
+
+    await barre.click();
+    await expect(question).toBeVisible();
+    // La barre reste au-dessus du tiroir pour le refermer.
+    await barre.click();
+    await expect(question).toBeHidden();
+  });
+
+  test('ne cache rien de la page sous la barre : la dernière section reste atteignable', async ({
+    page
+  }) => {
+    await page.goto('/fr');
+    const derniere = page.locator('section[aria-labelledby="references"]');
+    await derniere.scrollIntoViewIfNeeded();
+    const section = await derniere.boundingBox();
+    const barre = await page.locator('summary').boundingBox();
+    // Le bas de la dernière section est au-dessus de la barre, pas dessous.
+    expect(section!.y + section!.height).toBeLessThanOrEqual(barre!.y + 1);
+  });
+
+  test.describe('sans JavaScript', () => {
+    test.use({javaScriptEnabled: false});
+
+    test('le tiroir sʼouvre quand même : cʼest un <details> natif', async ({page}) => {
+      await page.goto('/fr');
+      const question = page.getByRole('button', {
+        name: messages.fr.assistant.questions['lic-01'],
+        exact: true
+      });
+      await expect(question).toBeHidden();
+      await page.locator('summary').click();
+      await expect(question).toBeVisible();
+    });
+  });
+});
 
 test('une expérience sans activité ni employeur se rend sans ponctuation orpheline', async ({
   page
@@ -460,7 +553,9 @@ test.describe('sans JavaScript', () => {
     // L'assistant est un supplément, pas une condition : ses questions restent
     // lisibles, et le bouton du téléphone — qui ne pourrait rien faire — n'est
     // pas rendu du tout.
-    await expect(page.getByText(messages.fr.assistant.eyebrow)).toBeVisible();
+    // Le titre du panneau, par son rôle : le texte existe aussi dans la barre
+    // et le tiroir du téléphone, masqués à cette largeur.
+    await expect(page.getByRole('heading', {name: messages.fr.assistant.eyebrow})).toBeVisible();
     await expect(page.getByRole('button', {name: messages.fr.phone.reveal})).toHaveCount(0);
     // Même règle pour les coordonnées d'une référence : le nom reste, le bouton non.
     for (const reference of cv.references) {

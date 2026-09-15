@@ -472,10 +472,16 @@ describe('replis de langue dans cv.yaml', () => {
     // anglais — même règle que pour les corpus Q/R (AD-5).
     const dir = contentDir({
       'cv.yaml': (source) =>
-        source.replace('    en: Software developer', "    en: ''")
+        source.replace(
+          '    en: AI-Assisted Development — Software & Web Developer',
+          "    en: ''"
+        )
     });
     const {content, warnings} = loadContent(dir, {now: NOW});
-    expect(content.cv.agent.en.identite.titre).toBe('Développeuse logiciel');
+    // Repli sur le français, journalisé.
+    expect(content.cv.agent.en.identite.titre).toBe(
+      'Développement assisté par IA — Développeuse logiciel & web'
+    );
     const message = warnings.map(formatIssue).join('\n');
     expect(message).toContain('identite.titre');
     expect(message).toContain('« en »');

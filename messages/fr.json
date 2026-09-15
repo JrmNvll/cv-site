@@ -31,7 +31,7 @@
   },
   "assistant": {
     "eyebrow": "Posez-moi vos questions",
-    "intro": "Un assistant répond à partir des réponses que j'ai écrites moi-même. Il ne peut rien inventer : hors de ce qu'il sait, il vous renvoie vers moi.",
+    "intro": "Il répond avec mes propres réponses — rien d'inventé.",
     "placeholder": "…ou écrivez votre propre question",
     "inactive": "Les questions sont en place ; l'assistant, lui, n'est pas encore branché.",
     "questions": {

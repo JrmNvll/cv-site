@@ -47,8 +47,12 @@ describe('résolution bilingue', () => {
   });
 
   it("applique la résolution jusqu'aux feuilles des deux projections", () => {
-    expect(fr.display.identite.titre).toBe('Développeuse logiciel');
-    expect(en.display.identite.titre).toBe('Software developer');
+    expect(fr.display.identite.titre).toBe(
+      'Développement assisté par IA — Développeuse logiciel & web'
+    );
+    expect(en.display.identite.titre).toBe(
+      'AI-Assisted Development — Software & Web Developer'
+    );
     expect(fr.agent.competences[2]!.items).toEqual(['Revue croisée', 'Tests automatisés']);
     expect(en.agent.competences[2]!.items).toEqual(['Cross review', 'Automated testing']);
     expect(en.display.experiences[1]!.lieu).toBe('Parental leave');

@@ -1,5 +1,12 @@
 /**
- * L'emplacement de l'assistant — la moitié du premier écran, direction A.
+ * L'emplacement de l'assistant — compact, sous le titre, direction A révisée.
+ *
+ * Mise en page validée par Jérémie le 2026-09-15 : sur écran large, le panneau
+ * occupe 5/12 du premier écran, juste sous le titre, à droite du profil ; sur
+ * téléphone, il vit dans un tiroir ouvert depuis une barre fixe en bas d'écran
+ * (`assistant-dock.tsx`), pour que le CV vienne d'abord. Le même composant
+ * sert les deux — d'où `titleId` : deux copies dans le document, une visible
+ * par largeur d'écran, et un identifiant ne peut pas être porté deux fois.
  *
  * **Inerte, et il le dit.** Les six questions et le champ de saisie sont là,
  * dessinés comme ils le seront ; rien ne répond encore (stories 5 et 6). Les
@@ -7,10 +14,6 @@
  * rien quand on clique dessus est pire qu'un bouton visiblement hors service, et
  * un état `disabled` est annoncé par un lecteur d'écran là où l'absence de
  * réaction ne l'est pas. Une ligne d'état, sous les commandes, dit pourquoi.
- *
- * Il est construit maintenant et pas à la story 6 parce que la direction A fait
- * reposer le premier écran sur sa présence : une page bâtie sans lui, puis
- * réaménagée, serait faite deux fois.
  *
  * **Les libellés sont de l'interface, pas du contenu** : ils vivent dans
  * `messages/*.json`. La correspondance libellé → entrée du corpus, elle, vit
@@ -21,21 +24,26 @@ import {getTranslations} from 'next-intl/server';
 import {HERO_ROWS, MATCH_QUESTION} from './hero-questions';
 
 const CHIP =
-  'max-w-full rounded-full border border-panel-rule bg-panel-raised px-4 py-2 text-left text-[14px] text-panel-ink disabled:cursor-not-allowed disabled:opacity-70';
+  'max-w-full rounded-full border border-panel-rule bg-panel-raised px-3 py-1.5 text-left text-[13px] text-panel-ink disabled:cursor-not-allowed disabled:opacity-70';
 
-export async function AssistantPanel() {
+export type AssistantPanelProps = {
+  /** L'identifiant du titre, unique dans le document — `aria-labelledby`. */
+  readonly titleId: string;
+};
+
+export async function AssistantPanel({titleId}: AssistantPanelProps) {
   const t = await getTranslations('assistant');
 
   return (
     <section
-      aria-labelledby="assistant-titre"
-      className="flex flex-col rounded-md bg-panel p-6 text-panel-ink sm:p-8"
+      aria-labelledby={titleId}
+      className="flex flex-col rounded-md bg-panel p-5 text-panel-ink sm:p-6"
     >
       <div className="flex items-center gap-2.5">
         <svg
           viewBox="0 0 24 24"
-          width="18"
-          height="18"
+          width="16"
+          height="16"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.6"
@@ -47,20 +55,18 @@ export async function AssistantPanel() {
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
         <h2
-          id="assistant-titre"
-          className="text-[13px] font-semibold tracking-[0.08em] text-panel-accent uppercase"
+          id={titleId}
+          className="text-[12px] font-semibold tracking-[0.08em] text-panel-accent uppercase"
         >
           {t('eyebrow')}
         </h2>
       </div>
 
-      <p className="mt-1.5 max-w-[42ch] text-[15px] leading-relaxed text-panel-ink-soft">
-        {t('intro')}
-      </p>
+      <p className="mt-1 text-[13.5px] leading-relaxed text-panel-ink-soft">{t('intro')}</p>
 
-      <div className="mt-5 flex flex-col gap-2">
+      <div className="mt-3.5 flex flex-col gap-1.5">
         {HERO_ROWS.map((row) => (
-          <div key={row.join('-')} className="flex flex-wrap gap-2">
+          <div key={row.join('-')} className="flex flex-wrap gap-1.5">
             {row.map((id) => (
               <button key={id} type="button" disabled className={CHIP}>
                 {t(`questions.${id}`)}
@@ -68,31 +74,31 @@ export async function AssistantPanel() {
             ))}
           </div>
         ))}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {/* La sixième : elle n'interroge pas le corpus, elle ouvrira
               l'évaluation d'adéquation (CAP-4). D'où l'accent. */}
           <button
             type="button"
             disabled
-            className="max-w-full rounded-full border border-panel-accent bg-panel-accent px-4 py-2 text-left text-[14px] font-semibold text-panel disabled:cursor-not-allowed disabled:opacity-70"
+            className="max-w-full rounded-full border border-panel-accent bg-panel-accent px-3 py-1.5 text-left text-[13px] font-semibold text-panel disabled:cursor-not-allowed disabled:opacity-70"
           >
             {t(`questions.${MATCH_QUESTION}`)}
           </button>
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-3 rounded-md border border-panel-rule bg-panel-sunken px-4 py-3">
+      <div className="mt-3.5 flex items-center gap-3 rounded-md border border-panel-rule bg-panel-sunken px-3 py-2">
         <input
           type="text"
           disabled
           placeholder={t('placeholder')}
           aria-label={t('eyebrow')}
-          className="min-w-0 grow bg-transparent text-[15px] text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
+          className="min-w-0 grow bg-transparent text-[14px] text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
         />
         <svg
           viewBox="0 0 24 24"
-          width="18"
-          height="18"
+          width="16"
+          height="16"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.8"
@@ -106,7 +112,7 @@ export async function AssistantPanel() {
         </svg>
       </div>
 
-      <p className="mt-3 text-[13px] text-panel-ink-muted">{t('inactive')}</p>
+      <p className="mt-2.5 text-[12px] text-panel-ink-muted">{t('inactive')}</p>
     </section>
   );
 }

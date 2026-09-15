@@ -31,7 +31,7 @@
   },
   "assistant": {
     "eyebrow": "Ask me anything",
-    "intro": "An assistant answers from the replies I wrote myself. It cannot invent anything: beyond what it knows, it points you back to me.",
+    "intro": "It answers with my own words — nothing invented.",
     "placeholder": "…or write your own question",
     "inactive": "The questions are in place; the assistant itself is not wired up yet.",
     "questions": {

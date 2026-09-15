@@ -28,9 +28,11 @@ identite:
     en: Swiss
   permis: null
   photo: assets/photo-fictive.jpg
+  # Aussi long que le vrai (~60 caractères) : le titre doit tenir sur une
+  # ligne sur écran large, et la taille fluide est calibrée pour cette longueur.
   titre:
-    fr: Développeuse logiciel
-    en: Software developer
+    fr: Développement assisté par IA — Développeuse logiciel & web
+    en: AI-Assisted Development — Software & Web Developer
   sous_titre:
     fr: Applications métier et outillage interne
     en: Line-of-business applications and internal tooling

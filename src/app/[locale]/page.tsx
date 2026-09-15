@@ -23,10 +23,12 @@ import {hasLocale} from 'next-intl';
 import {setRequestLocale} from 'next-intl/server';
 import {notFound} from 'next/navigation';
 import {routing} from '@/i18n/routing';
+import {AssistantDock, DOCK_BAR_HEIGHT_CLASS} from './_components/assistant-dock';
 import {AssistantPanel} from './_components/assistant-panel';
 import {CareerSection} from './_components/career-section';
 import {EducationSection} from './_components/education-section';
-import {IdentityBlock} from './_components/identity-block';
+import {IdentityHeading} from './_components/identity-heading';
+import {IdentityProfile} from './_components/identity-profile';
 import {ReferencesSection} from './_components/references-section';
 import {SiteHeader} from './_components/site-header';
 import {SkillsSection} from './_components/skills-section';
@@ -50,14 +52,26 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
   const cv = displayProjection(locale);
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] px-5 sm:px-8 lg:px-[72px]">
+    // La marge basse réserve, sous `lg`, la hauteur de la barre fixe de
+    // l'assistant : rien de la page ne doit rester caché dessous.
+    <div className={`mx-auto w-full max-w-[1280px] px-5 sm:px-8 lg:px-[72px] ${DOCK_BAR_HEIGHT_CLASS} lg:pb-0`}>
       <SiteHeader identite={cv.identite} contact={cv.contact} locale={locale} />
 
       <main>
-        {/* Le premier écran : l'identité et l'assistant, côte à côte. */}
-        <div className="grid gap-10 py-10 lg:grid-cols-2 lg:gap-12 lg:py-[72px]">
-          <IdentityBlock identite={cv.identite} profil={cv.profil} experiences={cv.experiences} />
-          <AssistantPanel />
+        {/* Le premier écran, mise en page validée le 2026-09-15 : le titre sur
+            toute la largeur, puis le profil à gauche et l'assistant à droite
+            (5/12). Sous `lg`, l'assistant n'est pas ici : il vit dans la barre
+            fixe en bas d'écran (`AssistantDock`), pour que le CV vienne d'abord. */}
+        <div className="flex flex-col gap-8 py-10 lg:gap-9 lg:py-14">
+          <IdentityHeading identite={cv.identite} />
+          <div className="grid gap-10 lg:grid-cols-12 lg:gap-12">
+            <div className="lg:col-span-7">
+              <IdentityProfile profil={cv.profil} experiences={cv.experiences} />
+            </div>
+            <div className="hidden lg:col-span-5 lg:block">
+              <AssistantPanel titleId="assistant-titre" />
+            </div>
+          </div>
         </div>
 
         <CareerSection experiences={cv.experiences} />
@@ -71,6 +85,8 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
         <EducationSection formation={cv.formation} />
         <ReferencesSection references={cv.references} />
       </main>
+
+      <AssistantDock />
     </div>
   );
 }

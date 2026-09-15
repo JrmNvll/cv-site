@@ -145,7 +145,13 @@ describe('aucun champ hors liste blanche par sa clé non plus', () => {
     expect(Object.keys(identite).sort()).toEqual(
       ['age', 'date_naissance', 'nationalite', 'nom', 'photo', 'prenom', 'sous_titre', 'titre'].sort()
     );
-    expect(Object.keys(contact).sort()).toEqual(['email', 'linkedin', 'localite'].sort());
+    // Le courriel n'est plus dans ce que la page reçoit : il sort par une route.
+    expect(Object.keys(contact).sort()).toEqual(['linkedin', 'localite'].sort());
+  });
+
+  it.each(LANGS)('display (%s) ne porte pas le courriel — le modèle, si', (lang) => {
+    expect(JSON.stringify(projections[lang]!.display)).not.toContain('camille.durand@exemple.invalid');
+    expect(projections[lang]!.agent.contact.email).toBe('camille.durand@exemple.invalid');
   });
 
   it.each(LANGS)('agent (%s) ne porte ni photo ni téléphone', (lang) => {

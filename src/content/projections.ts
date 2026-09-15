@@ -74,6 +74,14 @@ type Identite = {
 type Contact = {readonly email: string; readonly localite?: string; readonly linkedin?: string};
 
 /**
+ * Ce que la page reçoit du contact : LinkedIn et la localité. Le courriel,
+ * comme le téléphone, n'est jamais dans le HTML servi — il sort par
+ * `/api/contact/email`, sur geste explicite (AD-8, amendé le 2026-09-15). Le
+ * modèle, lui, le connaît : un recruteur qui le demande l'obtient.
+ */
+type DisplayContact = Omit<Contact, 'email'>;
+
+/**
  * Une référence, telle que la page la montre : un nom, une fonction, et la
  * **présence** de coordonnées — jamais les coordonnées elles-mêmes, qui
  * restent dans `restricted` et ne sortent que par une route (AD-8).
@@ -88,7 +96,7 @@ export type ProjectedReference = {
 /** Ce que la page reçoit. Ni téléphone, ni adresse, ni chemin de fichier. */
 export type DisplayProjection = {
   readonly identite: Identite & {readonly photo: boolean};
-  readonly contact: Contact;
+  readonly contact: DisplayContact;
   readonly profil: string;
   readonly langues: readonly ProjectedLangue[];
   readonly competences: readonly ProjectedCompetence[];
@@ -256,12 +264,12 @@ export function buildProjections(
     age: ageFrom(dateNaissance, now)
   } as Identite);
 
-  const contact: Contact = compact({
-    email: cv.contact.email,
+  const displayContact: DisplayContact = compact({
     // La localité, jamais l'adresse : `contact.adresse` n'est pas lue ici.
     localite: text(cv.contact.localite, 'contact.localite'),
     linkedin: absoluteUrl(cv.contact.linkedin)
-  } as Contact);
+  } as DisplayContact);
+  const contact: Contact = {email: cv.contact.email, ...displayContact};
 
   const profil = text(cv.profil, 'profil') ?? '';
 
@@ -336,7 +344,7 @@ export function buildProjections(
 
   const display: DisplayProjection = {
     identite: {...identite, photo: options.hasPhoto},
-    contact,
+    contact: displayContact,
     profil,
     langues,
     competences,

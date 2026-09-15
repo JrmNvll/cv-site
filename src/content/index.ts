@@ -140,6 +140,16 @@ export function contactPhone(): string | null {
 }
 
 /**
+ * Le courriel — même règle que le numéro depuis le 2026-09-15 : hors de la
+ * projection d'affichage, servi par `/api/contact/email` sur geste explicite.
+ * Il reste dans la projection `agent` : la page refuse le moissonnage, pas la
+ * question. Requis par le schéma, donc jamais `null`.
+ */
+export function contactEmail(): string {
+  return content().restricted.email;
+}
+
+/**
  * Les coordonnées d'une référence — la seconde exception, de même nature que le
  * téléphone, et pour des données de tiers (AD-8, amendé le 2026-09-15). La
  * route `/api/references/<id>/contact` est son seul appelant légitime. `null`

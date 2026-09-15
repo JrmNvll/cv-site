@@ -13,10 +13,16 @@
     "linkedin": "LinkedIn"
   },
   "phone": {
-    "reveal": "Show the number",
+    "reveal": "Show his mobile number",
     "pending": "One moment…",
     "label": "Phone",
-    "unavailable": "The number is unavailable right now — please email me instead."
+    "unavailable": "The number is unavailable right now — try again later, or reach out on LinkedIn."
+  },
+  "email": {
+    "reveal": "Show his email",
+    "pending": "One moment…",
+    "label": "Email",
+    "unavailable": "The email is unavailable right now — try again later, or reach out on LinkedIn."
   },
   "identity": {
     "photoAlt": "Portrait of {name}",

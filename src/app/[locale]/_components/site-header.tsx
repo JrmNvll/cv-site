@@ -1,9 +1,11 @@
 /**
- * La barre : le nom, la langue, les coordonnées publiées.
+ * La barre : le nom, la langue, les coordonnées.
  *
- * Coordonnées publiées = courriel et LinkedIn, et rien d'autre (contrainte du
- * SPEC). Le téléphone n'est pas ici : il est demandé par `ContactReveal`, qui ne
- * rend rien tant que le visiteur n'a pas cliqué. Aucune adresse postale.
+ * En clair, LinkedIn — et rien d'autre. Le courriel et le numéro sont demandés
+ * par `ContactReveal`, qui ne rend rien tant que le visiteur n'a pas cliqué :
+ * ni l'un ni l'autre ne sont dans le HTML servi (AD-8, amendé le 2026-09-15).
+ * Sans JavaScript, LinkedIn reste le seul moyen de contact affiché — et
+ * l'assistant, lui aussi, sait donner le courriel. Aucune adresse postale.
  */
 import {getTranslations} from 'next-intl/server';
 import type {DisplayProjection} from '@/content';
@@ -38,13 +40,29 @@ export async function SiteHeader({identite, contact, locale}: SiteHeaderProps) {
           names={names}
         />
         <ul aria-label={t('header.contact')} className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <li className="min-w-0">
-            <a
-              href={`mailto:${contact.email}`}
-              className="break-all text-accent underline-offset-4 hover:text-accent-strong hover:underline"
-            >
-              {contact.email}
-            </a>
+          {/* `empty:hidden` : sans JavaScript, `ContactReveal` ne rend rien — et un
+              élément de liste vide laisserait un écart de grille visible. */}
+          <li className="empty:hidden">
+            <ContactReveal
+              endpoint="/api/contact/email"
+              labels={{
+                reveal: t('email.reveal'),
+                pending: t('email.pending'),
+                label: t('email.label'),
+                unavailable: t('email.unavailable')
+              }}
+            />
+          </li>
+          <li className="empty:hidden">
+            <ContactReveal
+              endpoint="/api/contact/phone"
+              labels={{
+                reveal: t('phone.reveal'),
+                pending: t('phone.pending'),
+                label: t('phone.label'),
+                unavailable: t('phone.unavailable')
+              }}
+            />
           </li>
           {contact.linkedin === undefined ? null : (
             <li>
@@ -58,19 +76,6 @@ export async function SiteHeader({identite, contact, locale}: SiteHeaderProps) {
               </a>
             </li>
           )}
-          {/* `empty:hidden` : sans JavaScript, `ContactReveal` ne rend rien — et un
-              élément de liste vide laisserait deux écarts de grille visibles. */}
-          <li className="empty:hidden">
-            <ContactReveal
-              endpoint="/api/contact/phone"
-              labels={{
-                reveal: t('phone.reveal'),
-                pending: t('phone.pending'),
-                label: t('phone.label'),
-                unavailable: t('phone.unavailable')
-              }}
-            />
-          </li>
         </ul>
       </div>
     </header>

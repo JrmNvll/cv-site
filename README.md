@@ -169,6 +169,7 @@ que par une adresse nommée (AD-8) :
 | --- | --- | --- |
 | `GET /api/photo?s=1\|2\|3` | `identite.photo`, lue une fois au démarrage — jamais son chemin — **découpée au cadre affiché** (portrait 3:4) à la densité demandée (`sharp`), métadonnées EXIF retirées ; un SVG est servi tel quel ; un fichier que `sharp` ne lit pas vaut `404`, jamais l'original | `private, no-cache` + `ETag` par variante |
 | `GET /api/contact/phone` | `contact.telephone`, après un geste du visiteur, inséré côté client | `private, no-store` |
+| `GET /api/contact/email` | Le courriel de Jérémie, même règle que le numéro depuis le 2026-09-15 : hors du HTML, sur geste explicite — le modèle, lui, le connaît | `private, no-store` |
 | `GET /api/references/<id>/contact` | Le courriel et le numéro d'une référence — données de tiers, avec l'accord de la personne — jamais dans le HTML ni dans le contexte du modèle ; la page n'en montre que le nom et la fonction | `private, no-store` |
 
 Le téléphone n'est donc **jamais** dans le HTML servi, et le bouton qui le

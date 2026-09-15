@@ -337,6 +337,15 @@ describe('ce qui ne sort que par une route nommée', () => {
     expect(loadContent(dir, {now: NOW}).content.restricted.telephone).toBeNull();
   });
 
+  it('garde le courriel hors de display, pour la route — et dans agent', async () => {
+    const {content} = loadContent(FIXTURES, {now: NOW});
+    expect(content.restricted.email).toBe('camille.durand@exemple.invalid');
+    expect(JSON.stringify(content.cv.display)).not.toContain('camille.durand@exemple.invalid');
+    expect(content.cv.agent.fr.contact.email).toBe('camille.durand@exemple.invalid');
+    const {contactEmail} = await import('@/content');
+    expect(contactEmail()).toBe('camille.durand@exemple.invalid');
+  });
+
   it('garde les coordonnées des références hors de cv, par identifiant', () => {
     const {content} = loadContent(FIXTURES, {now: NOW});
 
@@ -388,6 +397,7 @@ describe('surface publique de la couche', () => {
         'QA_STATUSES',
         'agentProjection',
         // Hors projection, servis seulement par une route nommée (AD-8) :
+        'contactEmail',
         'contactPhone',
         'photo',
         'referenceContact',

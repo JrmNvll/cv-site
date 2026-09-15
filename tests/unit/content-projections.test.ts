@@ -75,7 +75,8 @@ describe('âge calculé', () => {
 describe('projection display — ce que la page reçoit', () => {
   it("porte l'identité et le contact publiables", () => {
     expect(fr.display.identite.prenom).toBe('Camille');
-    expect(fr.display.contact.email).toBe('camille.durand@exemple.invalid');
+    expect(fr.display.contact).not.toHaveProperty('email');
+    expect(fr.agent.contact.email).toBe('camille.durand@exemple.invalid');
     expect(fr.display.contact.linkedin).toBeDefined();
   });
 

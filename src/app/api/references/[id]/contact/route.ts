@@ -13,7 +13,7 @@
  * privé.
  */
 import type {NextRequest} from 'next/server';
-import {localeOfReferer, recordVisit} from '@/app/_lib/visit';
+import {contactRoute} from '@/app/_lib/contact-route';
 
 /**
  * Jamais rendue au build. `force-dynamic` ne suffit pas : Next charge le module
@@ -40,26 +40,10 @@ export async function GET(
     return Response.json({error: 'inconnue'}, {status: 404, headers: HEADERS});
   }
 
-  // Un geste réel du visiteur : sa session est prolongée s'il présente ses
-  // cookies (AD-14), comme pour le téléphone.
-  await recordVisit({
-    cookies: request.cookies,
-    headers: request.headers,
-    lang: localeOfReferer(request.headers.get('referer'), request.headers.get('host'))
-  });
-
-  const {referenceContact} = await import('@/content');
-  const contact = referenceContact(id);
   // Référence inconnue, ou sans coordonnée dans `cv.yaml` : la page n'a pas
-  // proposé de bouton, mais la route le dit aussi clairement.
-  if (contact === null) {
-    return Response.json({error: 'inconnue'}, {status: 404, headers: HEADERS});
-  }
-  return Response.json(
-    {
-      ...(contact.telephone === null ? {} : {telephone: contact.telephone}),
-      ...(contact.email === null ? {} : {email: contact.email})
-    },
-    {headers: HEADERS}
-  );
+  // proposé de bouton, mais la route le dit aussi clairement (404).
+  return contactRoute(request, async () => {
+    const {referenceContact} = await import('@/content');
+    return referenceContact(id);
+  });
 }

@@ -1,16 +1,15 @@
 /**
  * Le numéro de téléphone, à la demande — AD-8.
  *
- * C'est **la seule exception** aux deux projections, et elle est délibérée : le
- * numéro est exclu de `display` comme de `agent`, donc il n'apparaît ni dans le
- * HTML servi ni dans le contexte du modèle. Il reste pourtant une coordonnée que
- * Jérémie publie — simplement, elle n'est envoyée qu'après un geste explicite du
- * visiteur, et insérée côté client (`_components/contact-reveal.tsx`).
- *
- * `no-store` : rien ne doit rester du numéro dans un cache, fût-il privé.
+ * C'est l'une des exceptions délibérées aux deux projections : le numéro est
+ * exclu de `display` comme de `agent`, donc il n'apparaît ni dans le HTML servi
+ * ni dans le contexte du modèle. Il reste pourtant une coordonnée que Jérémie
+ * publie — simplement, elle n'est envoyée qu'après un geste explicite du
+ * visiteur, et insérée côté client (`_components/contact-reveal.tsx`). La
+ * mécanique commune vit dans `app/_lib/contact-route.ts`.
  */
 import type {NextRequest} from 'next/server';
-import {localeOfReferer, recordVisit} from '@/app/_lib/visit';
+import {contactRoute} from '@/app/_lib/contact-route';
 
 /**
  * Jamais rendue au build. `force-dynamic` ne suffit pas : Next charge le module
@@ -21,25 +20,9 @@ import {localeOfReferer, recordVisit} from '@/app/_lib/visit';
  */
 export const dynamic = 'force-dynamic';
 
-const HEADERS = {'Cache-Control': 'private, no-store'};
-
 export async function GET(request: NextRequest): Promise<Response> {
-  // Un geste réel du visiteur : sa session est prolongée s'il présente ses
-  // cookies (AD-14). Sans cookies — `curl`, ou un navigateur qui les refuse —
-  // rien n'est appelé et la route répond exactement pareil. Le proxy ne voit
-  // pas les routes : ce sont les cookies tels que le navigateur les envoie.
-  await recordVisit({
-    cookies: request.cookies,
-    headers: request.headers,
-    lang: localeOfReferer(request.headers.get('referer'), request.headers.get('host'))
+  return contactRoute(request, async () => {
+    const {contactPhone} = await import('@/content');
+    return {telephone: contactPhone()};
   });
-
-  const {contactPhone} = await import('@/content');
-  const telephone = contactPhone();
-  // `cv.yaml` peut ne pas en déclarer : le bouton dira l'indisponibilité, et le
-  // courriel reste à côté.
-  if (telephone === null || telephone === '') {
-    return Response.json({error: 'absent'}, {status: 404, headers: HEADERS});
-  }
-  return Response.json({telephone}, {headers: HEADERS});
 }

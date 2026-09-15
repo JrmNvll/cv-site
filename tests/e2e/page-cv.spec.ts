@@ -50,14 +50,17 @@ for (const {name, viewport} of VIEWPORTS) {
         await expect(page.getByText(cv.profil, {exact: true})).toBeVisible();
         await expect(page.getByText(`${cv.identite.prenom} ${cv.identite.nom}`)).toBeVisible();
 
-        // Coordonnées publiées : courriel et LinkedIn, et rien d'autre.
-        await expect(page.getByRole('link', {name: cv.contact.email})).toHaveAttribute(
-          'href',
-          `mailto:${cv.contact.email}`
-        );
+        // En clair : LinkedIn, et rien d'autre. Courriel et numéro sont des
+        // boutons, dans cet ordre, avant LinkedIn.
         await expect(
           page.getByRole('link', {name: messages[locale].header.linkedin})
         ).toHaveAttribute('href', cv.contact.linkedin!);
+        const coordonnees = page.getByRole('list', {name: messages[locale].header.contact});
+        await expect(coordonnees.getByRole('listitem')).toHaveText([
+          messages[locale].email.reveal,
+          messages[locale].phone.reveal,
+          messages[locale].header.linkedin
+        ]);
 
         // Les deux chiffres du bandeau : calculés depuis la projection, avec les
         // mêmes fonctions que la page — jamais recopiés.
@@ -394,7 +397,19 @@ test.describe('le téléphone', () => {
     liberer!();
     await expect(page.getByRole('status')).toHaveText(messages.fr.phone.unavailable);
     await expect(page.getByRole('button', {name: messages.fr.phone.reveal})).toHaveCount(0);
-    await expect(page.getByRole('link', {name: display.fr.contact.email})).toBeVisible();
+    // LinkedIn reste là, en clair : c'est vers lui que le message renvoie.
+    await expect(page.getByRole('link', {name: messages.fr.header.linkedin})).toBeVisible();
+  });
+
+  test('le courriel suit la même règle : absent du document, révélé au clic', async ({page}) => {
+    const attendu = (rawCv.contact as {email: string}).email;
+    await page.goto('/fr');
+    expect(await page.content()).not.toContain(attendu);
+
+    await page.getByRole('button', {name: messages.fr.email.reveal}).click();
+    const lien = page.getByRole('link', {name: attendu});
+    await expect(lien).toHaveAttribute('href', `mailto:${attendu}`);
+    await expect(lien).toBeFocused();
   });
 
   test('traite une réponse sans numéro comme un échec', async ({page}) => {
@@ -437,7 +452,10 @@ test.describe('sans JavaScript', () => {
         page.getByRole('heading', {name: competence.categorie, exact: true})
       ).toBeVisible();
     }
-    await expect(page.getByRole('link', {name: cv.contact.email})).toBeVisible();
+    // Sans JavaScript, LinkedIn est le seul contact affiché : les boutons du
+    // courriel et du numéro n'existent pas.
+    await expect(page.getByRole('link', {name: messages.fr.header.linkedin})).toBeVisible();
+    await expect(page.getByRole('button', {name: messages.fr.email.reveal})).toHaveCount(0);
 
     // L'assistant est un supplément, pas une condition : ses questions restent
     // lisibles, et le bouton du téléphone — qui ne pourrait rien faire — n'est

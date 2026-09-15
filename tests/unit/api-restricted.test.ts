@@ -26,6 +26,7 @@ import {
 const contenu = vi.hoisted(() => ({
   photo: vi.fn(),
   contactPhone: vi.fn(),
+  contactEmail: vi.fn(),
   referenceContact: vi.fn()
 }));
 // Le journal aussi : la route du téléphone prolonge la session (AD-14), et ce
@@ -39,6 +40,7 @@ type Route = typeof import('@/app/api/photo/route');
 let photoRoute: Route;
 let getPhoto: Route['GET'];
 const {GET: getPhone, dynamic: dynamiquePhone} = await import('@/app/api/contact/phone/route');
+const {GET: getEmail, dynamic: dynamiqueEmail} = await import('@/app/api/contact/email/route');
 const {GET: getReference, dynamic: dynamiqueReference} = await import(
   '@/app/api/references/[id]/contact/route'
 );
@@ -284,6 +286,33 @@ describe('GET /api/contact/phone', () => {
     const reponse = await getPhone(appelTelephone());
 
     expect(reponse.status).toBe(200);
+    expect(journal.touchSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/contact/email', () => {
+  it('nʼest jamais rendue au build (AD-2)', () => {
+    expect(dynamiqueEmail).toBe('force-dynamic');
+  });
+
+  it('rend le courriel, sans aucun cache, et prolonge la session avec des cookies', async () => {
+    contenu.contactEmail.mockReturnValue('camille.durand@exemple.invalid');
+    journal.touchSession.mockReturnValue({outcome: 'prolonged', visitorCreated: false});
+
+    const reponse = await getEmail(
+      appelTelephone('cv_visitor=01K4EXAMPVSTR0000000000000; cv_session=01K4EXAMPSESS0000000000000.1757930400000')
+    );
+
+    expect(reponse.status).toBe(200);
+    expect(reponse.headers.get('cache-control')).toContain('no-store');
+    expect(await reponse.json()).toEqual({email: 'camille.durand@exemple.invalid'});
+    expect(journal.touchSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('répond 404 sans courriel, et sans cookies ne touche pas au journal', async () => {
+    contenu.contactEmail.mockReturnValue('');
+    const reponse = await getEmail(appelTelephone());
+    expect(reponse.status).toBe(404);
     expect(journal.touchSession).not.toHaveBeenCalled();
   });
 });

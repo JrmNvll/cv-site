@@ -23,6 +23,8 @@ const HORS_HTML = [
   'identite.lieu_naissance',
   'identite.photo',
   'contact.telephone',
+  // Le courriel aussi, depuis le 2026-09-15 : une route, sur geste explicite.
+  'contact.email',
   'contact.adresse',
   // Nom et fonction d'une référence s'affichent ; ses coordonnées, jamais.
   'references[].telephone',

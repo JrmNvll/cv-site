@@ -13,10 +13,16 @@
     "linkedin": "LinkedIn"
   },
   "phone": {
-    "reveal": "Afficher le numéro",
+    "reveal": "Afficher son n° de natel",
     "pending": "Un instant…",
     "label": "Téléphone",
-    "unavailable": "Numéro indisponible pour le moment — écrivez-moi par courriel."
+    "unavailable": "Numéro indisponible pour le moment — réessayez plus tard, ou passez par LinkedIn."
+  },
+  "email": {
+    "reveal": "Afficher son email",
+    "pending": "Un instant…",
+    "label": "Courriel",
+    "unavailable": "Courriel indisponible pour le moment — réessayez plus tard, ou passez par LinkedIn."
   },
   "identity": {
     "photoAlt": "Portrait de {name}",

@@ -90,7 +90,7 @@ export type Content = {
   /**
    * Ce que `cv.yaml` contient et qu'**aucune projection ne porte** (AD-8), mais
    * que le serveur doit tout de même pouvoir servir sur geste explicite : le
-   * chemin de la photo et le numéro de téléphone.
+   * chemin de la photo, le numéro de téléphone, les coordonnées des références.
    *
    * Séparé de `cv` exprès. `cv` est ce qui sort ; `restricted` est ce qui ne
    * sort que par une route nommée, jamais par le rendu d'une page. Rien ici ne
@@ -99,7 +99,15 @@ export type Content = {
   readonly restricted: {
     readonly photo: PhotoFile | null;
     readonly telephone: string | null;
+    /** Par identifiant de référence ; `null` pour une coordonnée absente. */
+    readonly references: Readonly<Record<string, ReferenceContact>>;
   };
+};
+
+/** Les coordonnées d'un tiers — servies par `/api/references/<id>/contact`, jamais rendues. */
+export type ReferenceContact = {
+  readonly telephone: string | null;
+  readonly email: string | null;
 };
 
 export type LoadResult = {readonly content: Content; readonly warnings: readonly ContentIssue[]};
@@ -451,8 +459,19 @@ export function loadContent(dir: string, options: LoadOptions = {}): LoadResult 
     qa,
     byId,
     // Un numéro fait d'espaces n'en est pas un : la route répondra `404`,
-    // pas un lien `tel:` vide.
-    restricted: {photo: photoFile, telephone: cvOutcome.cv.contact.telephone?.trim() || null}
+    // pas un lien `tel:` vide. Même règle pour les coordonnées des références.
+    restricted: {
+      photo: photoFile,
+      telephone: cvOutcome.cv.contact.telephone?.trim() || null,
+      references: Object.freeze(
+        Object.fromEntries(
+          (cvOutcome.cv.references ?? []).map((entry) => [
+            entry.id,
+            {telephone: entry.telephone?.trim() || null, email: entry.email?.trim() || null}
+          ])
+        )
+      )
+    }
   });
 
   return {content, warnings: Object.freeze(warnings)};

@@ -25,7 +25,8 @@ import {
 
 const contenu = vi.hoisted(() => ({
   photo: vi.fn(),
-  contactPhone: vi.fn()
+  contactPhone: vi.fn(),
+  referenceContact: vi.fn()
 }));
 // Le journal aussi : la route du téléphone prolonge la session (AD-14), et ce
 // qui est prouvé ici, c'est qu'elle ne le fait qu'avec des cookies.
@@ -38,6 +39,19 @@ type Route = typeof import('@/app/api/photo/route');
 let photoRoute: Route;
 let getPhoto: Route['GET'];
 const {GET: getPhone, dynamic: dynamiquePhone} = await import('@/app/api/contact/phone/route');
+const {GET: getReference, dynamic: dynamiqueReference} = await import(
+  '@/app/api/references/[id]/contact/route'
+);
+
+/** Un appel à la route des coordonnées d'une référence, avec ou sans cookies. */
+function appelReference(id: string, cookie?: string) {
+  const request = new NextRequest(`http://127.0.0.1:3000/api/references/${id}/contact`, {
+    headers: cookie
+      ? {cookie, host: '127.0.0.1:3000', referer: 'http://127.0.0.1:3000/fr'}
+      : {host: '127.0.0.1:3000'}
+  });
+  return getReference(request, {params: Promise.resolve({id})});
+}
 
 /** Un appel à la route du téléphone, avec ou sans cookies de visite. */
 function appelTelephone(cookie?: string): NextRequest {
@@ -271,5 +285,67 @@ describe('GET /api/contact/phone', () => {
 
     expect(reponse.status).toBe(200);
     expect(journal.touchSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/references/[id]/contact', () => {
+  const COOKIES =
+    'cv_visitor=01K4EXAMPVSTR0000000000000; cv_session=01K4EXAMPSESS0000000000000.1757930400000';
+
+  it('nʼest jamais rendue au build (AD-2)', () => {
+    expect(dynamiqueReference).toBe('force-dynamic');
+  });
+
+  it('rend les coordonnées de la référence, sans aucun cache', async () => {
+    contenu.referenceContact.mockReturnValue({
+      telephone: '+41 00 000 00 08',
+      email: 'referente-fictive@exemple.invalid'
+    });
+
+    const reponse = await appelReference('reference-fictive');
+
+    expect(reponse.status).toBe(200);
+    expect(reponse.headers.get('cache-control')).toContain('no-store');
+    expect(await reponse.json()).toEqual({
+      telephone: '+41 00 000 00 08',
+      email: 'referente-fictive@exemple.invalid'
+    });
+    expect(contenu.referenceContact).toHaveBeenCalledWith('reference-fictive');
+  });
+
+  it('omet une coordonnée absente plutôt que de rendre null', async () => {
+    contenu.referenceContact.mockReturnValue({telephone: null, email: 'seule@exemple.invalid'});
+
+    expect(await (await appelReference('reference-fictive')).json()).toEqual({
+      email: 'seule@exemple.invalid'
+    });
+  });
+
+  it('répond 404 pour une référence inconnue ou sans coordonnées', async () => {
+    contenu.referenceContact.mockReturnValue(null);
+
+    const reponse = await appelReference('inconnue');
+
+    expect(reponse.status).toBe(404);
+    expect(await reponse.json()).not.toHaveProperty('email');
+  });
+
+  it('refuse un identifiant qui nʼa pas la forme du contrat, sans rien lire ni journaliser', async () => {
+    for (const id of ['../secret', 'Daniel Vallon', 'a_b', '', 'ID']) {
+      expect((await appelReference(id, COOKIES)).status, `id « ${id} »`).toBe(404);
+    }
+    expect(contenu.referenceContact).not.toHaveBeenCalled();
+    expect(journal.touchSession).not.toHaveBeenCalled();
+  });
+
+  it('prolonge la session du visiteur qui présente ses cookies — un geste réel (AD-14)', async () => {
+    contenu.referenceContact.mockReturnValue({telephone: '+41 00 000 00 08', email: null});
+    journal.touchSession.mockReturnValue({outcome: 'prolonged', visitorCreated: false});
+
+    expect((await appelReference('reference-fictive', COOKIES)).status).toBe(200);
+    expect(journal.touchSession).toHaveBeenCalledTimes(1);
+    expect(journal.touchSession).toHaveBeenCalledWith(
+      expect.objectContaining({visitorId: '01K4EXAMPVSTR0000000000000', lang: 'fr'})
+    );
   });
 });

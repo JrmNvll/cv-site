@@ -81,6 +81,11 @@ describe('catalogues de messages', () => {
           'practical.age',
           'education.option',
           'education.equivalence',
+          'sections.references',
+          'references.reveal',
+          'references.pending',
+          'references.label',
+          'references.unavailable',
           'notFound.heading'
         ])
       );

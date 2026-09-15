@@ -168,7 +168,8 @@ formation:
     dans_cv: false
 
 references:
-  - nom: Referente-Fictive-Personne
+  - id: reference-fictive
+    nom: Referente-Fictive-Personne
     fonction:
       fr: Responsable-ReferenceFictive
       en: Fictional-Reference-Manager

@@ -200,10 +200,17 @@ export const cvSchema = z.object({
     })
   ).superRefine(uniqueIds('formation')),
 
-  /** Données de tiers : hors des deux projections, sans exception (AD-8). */
+  /**
+   * Données de tiers (AD-8, amendé le 2026-09-15) : le nom et la fonction
+   * s'affichent ; `telephone` et `email` ne sortent d'aucune projection et ne
+   * sont servis que par `/api/references/<id>/contact`, sur geste explicite.
+   * L'identifiant stable nomme la route. `present_dans` limite l'affichage aux
+   * langues listées ; absent, la référence figure dans toutes.
+   */
   references: z
     .array(
       z.object({
+        id: stableId,
         nom: z.string(),
         fonction: localizedText.optional(),
         telephone: z.string().optional(),
@@ -211,6 +218,7 @@ export const cvSchema = z.object({
         present_dans: z.array(z.string()).optional()
       })
     )
+    .superRefine(uniqueIds('references'))
     .optional(),
 
   certificats_travail: z

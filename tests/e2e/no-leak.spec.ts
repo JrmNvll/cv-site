@@ -24,7 +24,9 @@ const HORS_HTML = [
   'identite.photo',
   'contact.telephone',
   'contact.adresse',
-  'references',
+  // Nom et fonction d'une référence s'affichent ; ses coordonnées, jamais.
+  'references[].telephone',
+  'references[].email',
   'certificats_travail[].signataire',
   'certificats_travail[].fichier',
   'certificats_travail[].periode_attestee',
@@ -97,7 +99,8 @@ test('trouve bien des sentinelles à chercher — sinon le test ne prouve rien',
   expect(sentinelles.length).toBeGreaterThanOrEqual(12);
   // Sonde : si la recherche était inopérante, ce test-ci passerait aussi.
   expect(sentinelles).toContain('+41 00 000 00 07');
-  expect(sentinelles).toContain('Referente-Fictive-Personne');
+  expect(sentinelles).toContain('+41 00 000 00 08');
+  expect(sentinelles).toContain('referente-fictive@exemple.invalid');
   expect(sentinelles).toContain('Signataire-CertificatFictif');
   expect(sentinelles).toContain('dossier-fictif/diplome-fictif.pdf');
 });

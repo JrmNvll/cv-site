@@ -336,6 +336,28 @@ describe('ce qui ne sort que par une route nommée', () => {
     });
     expect(loadContent(dir, {now: NOW}).content.restricted.telephone).toBeNull();
   });
+
+  it('garde les coordonnées des références hors de cv, par identifiant', () => {
+    const {content} = loadContent(FIXTURES, {now: NOW});
+
+    expect(content.restricted.references).toEqual({
+      'reference-fictive': {telephone: '+41 00 000 00 08', email: 'referente-fictive@exemple.invalid'}
+    });
+    // Rien de ces coordonnées dans ce qui sort — ni display, ni agent.
+    expect(JSON.stringify(content.cv)).not.toContain('+41 00 000 00 08');
+    expect(JSON.stringify(content.cv)).not.toContain('referente-fictive@exemple.invalid');
+  });
+
+  it('referenceContact rend null pour un identifiant inconnu ou sans aucune coordonnée', async () => {
+    const {referenceContact} = await import('@/content');
+    expect(referenceContact('reference-fictive')).toEqual({
+      telephone: '+41 00 000 00 08',
+      email: 'referente-fictive@exemple.invalid'
+    });
+    expect(referenceContact('inconnue')).toBeNull();
+    expect(referenceContact('constructor')).toBeNull();
+    expect(referenceContact('__proto__')).toBeNull();
+  });
 });
 
 describe('journalisation des avertissements', () => {
@@ -368,6 +390,7 @@ describe('surface publique de la couche', () => {
         // Hors projection, servis seulement par une route nommée (AD-8) :
         'contactPhone',
         'photo',
+        'referenceContact',
         'corpus',
         'displayProjection',
         'ensureContent',

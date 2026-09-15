@@ -133,6 +133,15 @@ for (const {name, viewport} of VIEWPORTS) {
         await expect(pratique.getByText(String(cv.identite.age!), {exact: false})).toBeVisible();
         await expect(pratique.getByText(cv.contact.localite!, {exact: true})).toBeVisible();
 
+        // Références : le nom et la fonction, et rien de plus dans le document.
+        const references = page.locator('section[aria-labelledby="references"]');
+        for (const reference of cv.references) {
+          await expect(references.getByText(reference.nom, {exact: true})).toBeVisible();
+          if (reference.fonction !== undefined) {
+            await expect(references.getByText(reference.fonction, {exact: true})).toBeVisible();
+          }
+        }
+
         expect(await debordeHorizontalement(page)).toBe(false);
       });
     }
@@ -302,6 +311,47 @@ test.describe('la photo', () => {
   });
 });
 
+test.describe('les coordonnées dʼune référence', () => {
+  const reference = (rawCv.references as {id: string; telephone: string; email: string}[])[0]!;
+
+  test('nʼapparaissent quʼaprès un geste explicite, courriel et numéro en liens', async ({page}) => {
+    await page.goto('/fr');
+    // Avant le clic : rien de ces coordonnées dans le document rendu.
+    const html = await page.content();
+    expect(html).not.toContain(reference.telephone);
+    expect(html).not.toContain(reference.email);
+
+    const section = page.locator('section[aria-labelledby="references"]');
+    await section.getByRole('button', {name: messages.fr.references.reveal}).click();
+
+    const courriel = section.getByRole('link', {name: reference.email});
+    await expect(courriel).toHaveAttribute('href', `mailto:${reference.email}`);
+    await expect(courriel).toBeFocused();
+    await expect(
+      section.getByRole('link', {name: new RegExp(reference.telephone.replace(/[+]/g, '\\+'))})
+    ).toHaveAttribute('href', `tel:${reference.telephone.replace(/[^+0-9]/g, '')}`);
+  });
+
+  test('sont servies par la route, sans cache, et jamais par le serveur', async ({request}) => {
+    const reponse = await request.get(`/api/references/${reference.id}/contact`);
+    expect(reponse.status()).toBe(200);
+    expect(reponse.headers()['cache-control']).toContain('no-store');
+    expect(await reponse.json()).toEqual({telephone: reference.telephone, email: reference.email});
+
+    expect((await request.get('/api/references/inconnue/contact')).status()).toBe(404);
+  });
+
+  test('disent leur indisponibilité quand la route échoue', async ({page}) => {
+    await page.route('**/api/references/**', (route) =>
+      route.fulfill({status: 404, contentType: 'application/json', body: '{}'})
+    );
+    await page.goto('/fr');
+    const section = page.locator('section[aria-labelledby="references"]');
+    await section.getByRole('button', {name: messages.fr.references.reveal}).click();
+    await expect(section.getByRole('status')).toHaveText(messages.fr.references.unavailable);
+  });
+});
+
 test.describe('le téléphone', () => {
   test('nʼapparaît quʼaprès un geste explicite', async ({page}) => {
     const attendu = (rawCv.contact as {telephone: string}).telephone;
@@ -394,6 +444,11 @@ test.describe('sans JavaScript', () => {
     // pas rendu du tout.
     await expect(page.getByText(messages.fr.assistant.eyebrow)).toBeVisible();
     await expect(page.getByRole('button', {name: messages.fr.phone.reveal})).toHaveCount(0);
+    // Même règle pour les coordonnées d'une référence : le nom reste, le bouton non.
+    for (const reference of cv.references) {
+      await expect(page.getByText(reference.nom, {exact: true})).toBeVisible();
+    }
+    await expect(page.getByRole('button', {name: messages.fr.references.reveal})).toHaveCount(0);
   });
 
   test('le changement de langue fonctionne toujours : ce sont des liens', async ({page}) => {

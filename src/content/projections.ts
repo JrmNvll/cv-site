@@ -73,6 +73,18 @@ type Identite = {
 
 type Contact = {readonly email: string; readonly localite?: string; readonly linkedin?: string};
 
+/**
+ * Une référence, telle que la page la montre : un nom, une fonction, et la
+ * **présence** de coordonnées — jamais les coordonnées elles-mêmes, qui
+ * restent dans `restricted` et ne sortent que par une route (AD-8).
+ */
+export type ProjectedReference = {
+  readonly id: string;
+  readonly nom: string;
+  readonly fonction?: string;
+  readonly contact: boolean;
+};
+
 /** Ce que la page reçoit. Ni téléphone, ni adresse, ni chemin de fichier. */
 export type DisplayProjection = {
   readonly identite: Identite & {readonly photo: boolean};
@@ -84,6 +96,8 @@ export type DisplayProjection = {
   readonly experiences: readonly ProjectedExperience[];
   /** `formation[dans_cv=false]` est absente de l'affichage — AD-8. */
   readonly formation: readonly ProjectedFormation[];
+  /** Nom et fonction seulement ; `present_dans` filtre par langue — AD-8. */
+  readonly references: readonly ProjectedReference[];
 };
 
 /** Ce que le modèle reçoit. Ni photo, ni référence de tiers, ni chemin. */
@@ -175,6 +189,11 @@ export function absoluteUrl(value: string | undefined): string | undefined {
 }
 
 /** Écarte les clés sans valeur : une projection ne porte jamais `undefined`. */
+/** Une chaîne qui dit quelque chose : ni absente, ni faite d'espaces. */
+function hasText(value: string | undefined): boolean {
+  return value !== undefined && value.trim() !== '';
+}
+
 function compact<T extends Record<string, unknown>>(value: T): T {
   const kept: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
@@ -303,6 +322,18 @@ export function buildProjections(
 
   const argumentsCles = list(cv.lettre_motivation?.arguments_cles, 'lettre_motivation.arguments_cles');
 
+  const references: ProjectedReference[] = (cv.references ?? [])
+    .filter((entry) => entry.present_dans === undefined || entry.present_dans.includes(lang))
+    .map((entry) =>
+      compact({
+        id: entry.id,
+        nom: entry.nom,
+        fonction: text(entry.fonction, `references.${entry.id}.fonction`),
+        // La présence seulement : les valeurs ne quittent pas `restricted`.
+        contact: hasText(entry.telephone) || hasText(entry.email)
+      } as ProjectedReference)
+    );
+
   const display: DisplayProjection = {
     identite: {...identite, photo: options.hasPhoto},
     contact,
@@ -311,7 +342,8 @@ export function buildProjections(
     competences,
     atouts,
     experiences,
-    formation: formation.filter((entry) => entry.dans_cv).map((entry) => entry.projected)
+    formation: formation.filter((entry) => entry.dans_cv).map((entry) => entry.projected),
+    references
   };
 
   const agent: AgentProjection = {

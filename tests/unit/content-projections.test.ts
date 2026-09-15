@@ -95,10 +95,37 @@ describe('projection display — ce que la page reçoit', () => {
     expect(en.display.formation[0]!.option).toBe('Fictional option');
   });
 
-  it("n'a ni certificats de travail, ni arguments de lettre, ni références", () => {
+  it("n'a ni certificats de travail, ni arguments de lettre", () => {
     expect(fr.display).not.toHaveProperty('certificats_travail');
     expect(fr.display).not.toHaveProperty('lettre_motivation');
-    expect(fr.display).not.toHaveProperty('references');
+  });
+
+  it("d'une référence, ne porte que le nom, la fonction et la présence de coordonnées", () => {
+    // AD-8, amendé le 2026-09-15 : le tiers est nommé, ses coordonnées ne
+    // sortent que par la route — `contact` dit seulement qu'il y en a.
+    expect(fr.display.references).toEqual([
+      {id: 'reference-fictive', nom: 'Referente-Fictive-Personne', fonction: 'Responsable-ReferenceFictive', contact: true}
+    ]);
+    expect(en.display.references[0]!.fonction).toBe('Fictional-Reference-Manager');
+    expect(fr.agent).not.toHaveProperty('references');
+  });
+
+  it("filtre les références par langue avec `present_dans`, et dit l'absence de coordonnées", () => {
+    const seulementFr = cvSchema.parse({
+      ...cv,
+      references: [
+        {id: 'a', nom: 'Personne-A', present_dans: ['fr'], email: '  '},
+        {id: 'b', nom: 'Personne-B', telephone: '+41 00 000 00 09'}
+      ]
+    });
+    const projetee = (lang: 'fr' | 'en') =>
+      buildProjections(seulementFr, lang, {hasPhoto: false, now: NOW}).display.references;
+
+    expect(projetee('fr').map((entry) => [entry.id, entry.contact])).toEqual([
+      ['a', false],
+      ['b', true]
+    ]);
+    expect(projetee('en').map((entry) => entry.id)).toEqual(['b']);
   });
 });
 

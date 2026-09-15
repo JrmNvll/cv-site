@@ -43,7 +43,8 @@
     "assets": "Strengths",
     "spokenLanguages": "Languages",
     "education": "Education",
-    "practical": "Practical details"
+    "practical": "Practical details",
+    "references": "References"
   },
   "career": {
     "present": "today",
@@ -55,6 +56,12 @@
   "education": {
     "equivalence": "Swiss equivalence: {value}",
     "option": "Option: {value}"
+  },
+  "references": {
+    "reveal": "Show contact details",
+    "pending": "One moment…",
+    "label": "Contact details",
+    "unavailable": "Contact details unavailable for now — ask me by email."
   },
   "notFound": {
     "heading": "Page not found",

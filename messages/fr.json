@@ -43,7 +43,8 @@
     "assets": "Atouts",
     "spokenLanguages": "Langues",
     "education": "Formation",
-    "practical": "Informations pratiques"
+    "practical": "Informations pratiques",
+    "references": "Références"
   },
   "career": {
     "present": "aujourd'hui",
@@ -55,6 +56,12 @@
   "education": {
     "equivalence": "Équivalence suisse : {value}",
     "option": "Option : {value}"
+  },
+  "references": {
+    "reveal": "Afficher les coordonnées",
+    "pending": "Un instant…",
+    "label": "Coordonnées",
+    "unavailable": "Coordonnées indisponibles pour le moment — demandez-les-moi par courriel."
   },
   "notFound": {
     "heading": "Page introuvable",

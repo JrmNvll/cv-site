@@ -27,6 +27,7 @@ import {AssistantPanel} from './_components/assistant-panel';
 import {CareerSection} from './_components/career-section';
 import {EducationSection} from './_components/education-section';
 import {IdentityBlock} from './_components/identity-block';
+import {ReferencesSection} from './_components/references-section';
 import {SiteHeader} from './_components/site-header';
 import {SkillsSection} from './_components/skills-section';
 
@@ -68,6 +69,7 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
           contact={cv.contact}
         />
         <EducationSection formation={cv.formation} />
+        <ReferencesSection references={cv.references} />
       </main>
     </div>
   );

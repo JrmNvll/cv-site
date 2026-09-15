@@ -5,7 +5,7 @@
  * numéro est exclu de `display` comme de `agent`, donc il n'apparaît ni dans le
  * HTML servi ni dans le contexte du modèle. Il reste pourtant une coordonnée que
  * Jérémie publie — simplement, elle n'est envoyée qu'après un geste explicite du
- * visiteur, et insérée côté client (`_components/phone-reveal.tsx`).
+ * visiteur, et insérée côté client (`_components/contact-reveal.tsx`).
  *
  * `no-store` : rien ne doit rester du numéro dans un cache, fût-il privé.
  */

@@ -133,6 +133,7 @@ describe('aucun texte de CV nʼest écrit dans un composant', () => {
         '_components/career-section.tsx',
         '_components/education-section.tsx',
         '_components/identity-block.tsx',
+        '_components/references-section.tsx',
         '_components/site-header.tsx',
         '_components/skills-section.tsx'
       ].sort()
@@ -147,7 +148,14 @@ describe('aucun texte de CV nʼest écrit dans un composant', () => {
     // Et le rendu reste à la requête (AD-2) : sans cet export, Next pré-rendrait
     // `/fr` et `/en` au build, contenu figé dans l'artefact.
     expect(page).toMatch(/export const dynamic = 'force-dynamic'/);
-    for (const interdit of ['agentProjection', 'corpus', 'qaEntry', 'contactPhone', 'photo(']) {
+    for (const interdit of [
+      'agentProjection',
+      'corpus',
+      'qaEntry',
+      'contactPhone',
+      'referenceContact',
+      'photo('
+    ]) {
       expect(page.includes(interdit), `page.tsx ne doit pas appeler ${interdit}`).toBe(false);
     }
 

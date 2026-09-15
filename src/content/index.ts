@@ -16,12 +16,13 @@
  * à la première visite.
  */
 import {env} from '@/env';
-import {loadContent, logContentWarnings, type Content} from './load';
+import {loadContent, logContentWarnings, type Content, type ReferenceContact} from './load';
 import {ageFrom, type AgentProjection, type DisplayProjection} from './projections';
 import type {QaEntry, QaStatus} from './qa-parser';
 import type {Lang} from './schema';
 
 export {ContentError} from './load';
+export type {ReferenceContact} from './load';
 export {QA_STATUSES} from './qa-parser';
 export {LANGS} from './schema';
 export type {
@@ -136,4 +137,18 @@ export function photo(): ServedPhoto | null {
  */
 export function contactPhone(): string | null {
   return content().restricted.telephone;
+}
+
+/**
+ * Les coordonnées d'une référence — la seconde exception, de même nature que le
+ * téléphone, et pour des données de tiers (AD-8, amendé le 2026-09-15). La
+ * route `/api/references/<id>/contact` est son seul appelant légitime. `null`
+ * pour un identifiant inconnu, ou une référence sans aucune coordonnée.
+ */
+export function referenceContact(id: string): ReferenceContact | null {
+  const contact = Object.hasOwn(content().restricted.references, id)
+    ? content().restricted.references[id]!
+    : undefined;
+  if (contact === undefined || (contact.telephone === null && contact.email === null)) return null;
+  return contact;
 }

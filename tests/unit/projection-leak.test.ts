@@ -40,7 +40,10 @@ const HORS_LISTE_BLANCHE = [
   'identite.photo',
   'contact.telephone',
   'contact.adresse',
-  'references',
+  // Nom et fonction d'une référence s'affichent (AD-8, amendé le 2026-09-15) ;
+  // ses coordonnées, elles, ne sortent que par une route.
+  'references[].telephone',
+  'references[].email',
   'certificats_travail[].signataire',
   'certificats_travail[].fichier',
   'formation[].justificatif',
@@ -130,7 +133,8 @@ describe('aucun champ hors liste blanche ne sort', () => {
     expect(sentinelles).toContain('+41 00 000 00 07');
     expect(sentinelles).toContain('Signataire-CertificatFictif');
     expect(sentinelles).toContain('dossier-fictif/diplome-fictif.pdf');
-    expect(sentinelles).toContain('Referente-Fictive-Personne');
+    expect(sentinelles).toContain('+41 00 000 00 08');
+    expect(sentinelles).toContain('referente-fictive@exemple.invalid');
     expect(JSON.stringify(projections.fr!.display)).toContain('Camille');
   });
 });

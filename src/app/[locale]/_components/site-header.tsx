@@ -2,7 +2,7 @@
  * La barre : le nom, la langue, les coordonnées publiées.
  *
  * Coordonnées publiées = courriel et LinkedIn, et rien d'autre (contrainte du
- * SPEC). Le téléphone n'est pas ici : il est demandé par `PhoneReveal`, qui ne
+ * SPEC). Le téléphone n'est pas ici : il est demandé par `ContactReveal`, qui ne
  * rend rien tant que le visiteur n'a pas cliqué. Aucune adresse postale.
  */
 import {getTranslations} from 'next-intl/server';
@@ -10,7 +10,7 @@ import type {DisplayProjection} from '@/content';
 import {routing, type Locale} from '@/i18n/routing';
 import {joinParts} from './format';
 import {LanguageSwitch} from './language-switch';
-import {PhoneReveal} from './phone-reveal';
+import {ContactReveal} from './contact-reveal';
 
 export type SiteHeaderProps = {
   readonly identite: DisplayProjection['identite'];
@@ -58,10 +58,11 @@ export async function SiteHeader({identite, contact, locale}: SiteHeaderProps) {
               </a>
             </li>
           )}
-          {/* `empty:hidden` : sans JavaScript, `PhoneReveal` ne rend rien — et un
+          {/* `empty:hidden` : sans JavaScript, `ContactReveal` ne rend rien — et un
               élément de liste vide laisserait deux écarts de grille visibles. */}
           <li className="empty:hidden">
-            <PhoneReveal
+            <ContactReveal
+              endpoint="/api/contact/phone"
               labels={{
                 reveal: t('phone.reveal'),
                 pending: t('phone.pending'),

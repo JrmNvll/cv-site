@@ -100,6 +100,21 @@ describe('projection display — ce que la page reçoit', () => {
     expect(en.display.formation[0]!.option).toBe('Fictional option');
   });
 
+  it("dit, sous une expérience, qu'un certificat l'atteste — sa date, rien d'autre", () => {
+    const attestee = fr.display.experiences.find((entry) => entry.id === 'outillage-interne')!;
+    expect(attestee.certificat).toEqual({date: '2026-02-02'});
+    // Ni signataire, ni période attestée, ni fichier : la date seulement.
+    expect(Object.keys(attestee.certificat!)).toEqual(['date']);
+    expect(fr.display.experiences.find((entry) => entry.id === 'conge-parental')!.certificat).toBeUndefined();
+    // La projection du modèle, elle, garde ses certificats à part.
+    expect(fr.agent.experiences.find((entry) => entry.id === 'outillage-interne')).not.toHaveProperty('certificat');
+  });
+
+  it("annonce la présence d'un justificatif de diplôme, jamais son chemin", () => {
+    expect(fr.display.formation[0]!.justificatif).toBe(true);
+    expect(JSON.stringify(fr.display)).not.toContain('dossier-fictif');
+  });
+
   it("n'a ni certificats de travail, ni arguments de lettre", () => {
     expect(fr.display).not.toHaveProperty('certificats_travail');
     expect(fr.display).not.toHaveProperty('lettre_motivation');
@@ -186,7 +201,7 @@ describe('clés de citation cv: — AD-4', () => {
     expect(keys(en)).toEqual(keys(fr));
     expect(fr.agent.competences[0]!.source).toBe('cv:competences.langages-fictifs');
     expect(fr.agent.certificats_travail[0]!.source).toBe(
-      'cv:certificats_travail.certificat-societe-fictive'
+      'cv:certificats_travail.outillage-interne'
     );
   });
 

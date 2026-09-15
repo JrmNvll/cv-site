@@ -85,6 +85,8 @@ describe('catalogues de messages', () => {
           'practical.age',
           'education.option',
           'education.equivalence',
+          'education.proof',
+          'career.certificate',
           'sections.references',
           'references.reveal',
           'references.pending',

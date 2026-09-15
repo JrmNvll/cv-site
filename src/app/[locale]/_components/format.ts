@@ -48,6 +48,25 @@ export function yearOf(value: string | undefined): string | undefined {
 }
 
 /**
+ * Le mois et l'année d'une date de la projection, dans la langue de la page :
+ * « juin 2023 », « June 2023 ». Une valeur qui n'est pas une date ISO est
+ * rendue telle quelle — comme `yearOf`, mieux vaut montrer ce que le contenu
+ * dit que de le déformer. Formatée en UTC : la date d'un certificat est un
+ * jour, pas un instant, et ne doit pas glisser d'un mois selon le fuseau.
+ */
+export function monthYearLabel(value: string | undefined, locale: string): string | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const trimmed = value.trim();
+  const parsed = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(trimmed);
+  if (!parsed) return trimmed;
+  const date = new Date(Date.UTC(Number(parsed[1]), Number(parsed[2]) - 1, Number(parsed[3] ?? '1')));
+  if (Number.isNaN(date.getTime())) return trimmed;
+  return new Intl.DateTimeFormat(locale, {month: 'long', year: 'numeric', timeZone: 'UTC'}).format(
+    date
+  );
+}
+
+/**
  * La période d'une expérience : « 2018 — 2023 », « 2024 — aujourd'hui »,
  * « 2021 » si elle tient dans une seule année.
  *

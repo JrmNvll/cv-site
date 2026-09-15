@@ -22,6 +22,7 @@ import {parse} from 'yaml';
 import {describe, expect, it} from 'vitest';
 import {
   careerYears,
+  monthYearLabel,
   employerCount,
   joinParts,
   periodLabel,
@@ -221,6 +222,23 @@ describe('un champ optionnel absent ne laisse ni vide ni ponctuation orpheline',
 
   it('écrit une seule année quand la période tient dedans', () => {
     expect(periodLabel('2021-03', '2021-12', 'aujourd’hui')).toBe('2021');
+  });
+});
+
+describe('monthYearLabel', () => {
+  it('écrit le mois et lʼannée dans la langue de la page, sans glisser dʼun fuseau', () => {
+    expect(monthYearLabel('2023-06-30', 'fr')).toBe('juin 2023');
+    expect(monthYearLabel('2023-06-30', 'en')).toBe('June 2023');
+    expect(monthYearLabel('2026-09', 'fr')).toBe('septembre 2026');
+    // Le 1er du mois à minuit UTC reste dans son mois, quel que soit le fuseau du serveur.
+    expect(monthYearLabel('2024-01-01', 'fr')).toBe('janvier 2024');
+  });
+
+  it('rend telle quelle une valeur qui nʼest pas une date ISO, et rien pour rien', () => {
+    expect(monthYearLabel('2023', 'fr')).toBe('2023');
+    expect(monthYearLabel('été 2023', 'fr')).toBe('été 2023');
+    expect(monthYearLabel(undefined, 'fr')).toBeUndefined();
+    expect(monthYearLabel('  ', 'fr')).toBeUndefined();
   });
 });
 

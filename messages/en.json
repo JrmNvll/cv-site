@@ -54,14 +54,16 @@
   },
   "career": {
     "present": "today",
-    "environment": "Technical environment"
+    "environment": "Technical environment",
+    "certificate": "Work certificate · {date} — on request"
   },
   "practical": {
     "age": "{age} years old"
   },
   "education": {
     "equivalence": "Swiss equivalence: {value}",
-    "option": "Option: {value}"
+    "option": "Option: {value}",
+    "proof": "Diploma — supporting document on request"
   },
   "references": {
     "reveal": "Show contact details",

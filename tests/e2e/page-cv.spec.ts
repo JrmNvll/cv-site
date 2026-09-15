@@ -3,7 +3,14 @@ import {expect, test, type Page} from '@playwright/test';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
 import {PHOTO_CSS_HEIGHT, PHOTO_CSS_WIDTH} from '../../src/app/api/photo/sizes';
-import {careerYears, employerCount, joinParts, periodLabel, yearOf} from '../../src/app/[locale]/_components/format';
+import {
+  careerYears,
+  employerCount,
+  joinParts,
+  monthYearLabel,
+  periodLabel,
+  yearOf
+} from '../../src/app/[locale]/_components/format';
 import {display, rawCv, LANGS, type Lang} from './fixture-cv';
 
 /**
@@ -84,6 +91,14 @@ for (const {name, viewport} of VIEWPORTS) {
           if (experience.activite !== undefined) {
             await expect(bloc.getByText(experience.activite, {exact: true})).toBeVisible();
           }
+          // Le certificat de travail : dit, daté, sur demande — jamais servi.
+          if (experience.certificat !== undefined) {
+            const attendu = messages[locale].career.certificate.replace(
+              '{date}',
+              monthYearLabel(experience.certificat.date, locale)!
+            );
+            await expect(bloc.getByText(attendu, {exact: true})).toBeVisible();
+          }
           for (const realisation of experience.realisations ?? []) {
             await expect(page.getByText(realisation, {exact: true})).toBeVisible();
           }
@@ -128,6 +143,9 @@ for (const {name, viewport} of VIEWPORTS) {
           }
           if (diplome.etablissement !== undefined) {
             await expect(bloc.getByText(diplome.etablissement, {exact: true})).toBeVisible();
+          }
+          if (diplome.justificatif) {
+            await expect(bloc.getByText(messages[locale].education.proof, {exact: true})).toBeVisible();
           }
         }
 

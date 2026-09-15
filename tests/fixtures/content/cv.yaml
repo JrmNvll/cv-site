@@ -180,7 +180,9 @@ references:
     present_dans: [fr, en]
 
 certificats_travail:
-  - id: certificat-societe-fictive
+  # Un certificat porte l'`id` de l'expérience qu'il atteste : c'est ainsi que
+  # la page sait dire, sous l'expérience, qu'il existe.
+  - id: outillage-interne
     entreprise: Société Fictive SA
     date: 2026-02-02
     signataire: Signataire-CertificatFictif
@@ -197,7 +199,7 @@ certificats_travail:
 
   # `fonction_attestee` en chaîne et `points_cles` en liste simple : les formes
   # du fichier de référence.
-  - id: certificat-entreprise-imaginaire
+  - id: applications-gestion
     entreprise: Entreprise Imaginaire Sàrl
     date: 2021-02-28
     signataire: Contresignataire-CertificatFictif

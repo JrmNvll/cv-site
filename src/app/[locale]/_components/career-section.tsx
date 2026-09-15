@@ -10,9 +10,9 @@
  * `realisations` peuvent manquer. Chaque bloc est donc rendu **ou absent**,
  * jamais rendu vide : `joinParts` retire les séparateurs avec leur valeur.
  */
-import {getTranslations} from 'next-intl/server';
+import {getLocale, getTranslations} from 'next-intl/server';
 import type {DisplayProjection} from '@/content';
-import {joinParts, periodLabel} from './format';
+import {joinParts, monthYearLabel, periodLabel} from './format';
 
 export type CareerSectionProps = {
   readonly experiences: DisplayProjection['experiences'];
@@ -20,6 +20,7 @@ export type CareerSectionProps = {
 
 export async function CareerSection({experiences}: CareerSectionProps) {
   const t = await getTranslations();
+  const locale = await getLocale();
   if (experiences.length === 0) return null;
 
   return (
@@ -68,6 +69,16 @@ export async function CareerSection({experiences}: CareerSectionProps) {
                       <li key={`${rang}-${realisation}`}>{realisation}</li>
                     ))}
                   </ul>
+                )}
+                {/* Le certificat de travail existe ; il ne se télécharge pas ici
+                    (il porte un signataire) — il se demande. Décision du
+                    2026-09-15. */}
+                {experience.certificat === undefined ? null : (
+                  <p className="mt-2.5 text-[13px] text-ink-muted">
+                    {t('career.certificate', {
+                      date: monthYearLabel(experience.certificat.date, locale) ?? ''
+                    })}
+                  </p>
                 )}
               </div>
 

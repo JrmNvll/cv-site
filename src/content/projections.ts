@@ -38,6 +38,13 @@ export type ProjectedExperience = {
   readonly fin?: string;
   readonly environnement?: readonly string[];
   readonly realisations?: readonly string[];
+  /**
+   * La date du certificat de travail qui atteste cette expérience — celui qui
+   * porte le même `id` — et rien d'autre de lui : le fichier n'est jamais
+   * servi, la page dit seulement qu'il existe, sur demande (décision du
+   * 2026-09-15).
+   */
+  readonly certificat?: {readonly date: string};
 };
 
 export type ProjectedFormation = {
@@ -49,6 +56,8 @@ export type ProjectedFormation = {
   readonly annee?: string;
   readonly date_examen?: string;
   readonly equivalence_suisse?: string;
+  /** Un justificatif existe — sa présence seulement, jamais son chemin (AD-8). */
+  readonly justificatif: boolean;
 };
 
 export type ProjectedCertificat = {
@@ -304,6 +313,7 @@ export function buildProjections(
     dans_cv: entry.dans_cv,
     projected: compact({
       id: entry.id,
+      justificatif: entry.justificatif !== undefined,
       diplome: text(entry.diplome, `formation.${entry.id}.diplome`) ?? '',
       option: text(entry.option, `formation.${entry.id}.option`),
       etablissement: entry.etablissement,
@@ -342,6 +352,17 @@ export function buildProjections(
       } as ProjectedReference)
     );
 
+  // Sous une expérience, la page dit qu'un certificat de travail existe : celui
+  // qui porte le même `id`, dont seule la date sort (`content-contract.md`).
+  const dated = new Map(
+    certificats
+      .filter((entry) => entry.date !== undefined)
+      .map((entry) => [entry.id, {date: entry.date!}] as const)
+  );
+  const displayExperiences: ProjectedExperience[] = experiences.map((entry) =>
+    dated.has(entry.id) ? {...entry, certificat: dated.get(entry.id)!} : entry
+  );
+
   const display: DisplayProjection = {
     identite: {...identite, photo: options.hasPhoto},
     contact: displayContact,
@@ -349,7 +370,7 @@ export function buildProjections(
     langues,
     competences,
     atouts,
-    experiences,
+    experiences: displayExperiences,
     formation: formation.filter((entry) => entry.dans_cv).map((entry) => entry.projected),
     references
   };

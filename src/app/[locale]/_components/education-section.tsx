@@ -70,6 +70,11 @@ export async function EducationSection({formation}: EducationSectionProps) {
                 {diplome.etablissement === undefined ? null : (
                   <p className="mt-2.5 text-[15px] text-ink-soft">{diplome.etablissement}</p>
                 )}
+                {/* Le scan du diplôme porte une date et un lieu de naissance :
+                    il ne se sert pas, il se demande. */}
+                {diplome.justificatif ? (
+                  <p className="mt-2.5 text-[13px] text-ink-muted">{t('education.proof')}</p>
+                ) : null}
               </div>
             </li>
           );

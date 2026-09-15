@@ -1,9 +1,11 @@
+import {mkdirSync, rmSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {defineConfig, devices} from '@playwright/test';
 
 /**
  * Vérification navigateur du socle : redirection de langue, balise `noindex`,
- * cookies de visite. Playwright lance lui-même le serveur de développement.
+ * cookies de visite, journal des visites. Playwright construit et lance
+ * lui-même l'artefact de production.
  */
 // `||` et non `??` : une variable présente mais vide donnerait `http://:3000`.
 const HOST = process.env.HOSTNAME || '127.0.0.1';
@@ -22,6 +24,25 @@ const baseURL = `http://${HOST}:${PORT}`;
  */
 const FIXTURES = resolve(__dirname, 'tests/fixtures/content');
 const DATA = resolve(__dirname, 'tests/fixtures/data');
+
+/**
+ * `DATA_DIR` doit exister **avant** le démarrage : le site refuse de le créer
+ * et s'arrête s'il manque (AD-7, AD-9). Le répertoire est ignoré par Git
+ * (`data/`, `*.db*`), donc absent d'un clone neuf — et Playwright lance le
+ * serveur avant `globalSetup`, ce qui ne laisse que la configuration elle-même
+ * pour le créer. `usage.db` est effacé ici à chaque exécution : une base
+ * laissée par une autre branche, à un autre schéma, ferait refuser le
+ * démarrage, et chaque exécution repart de zéro.
+ */
+mkdirSync(DATA, {recursive: true});
+// Dans le processus principal seulement : Playwright recharge cette
+// configuration dans chaque worker, alors que le serveur tient déjà la base
+// ouverte — la supprimer là échouerait (EPERM sous Windows), et pour rien.
+if (process.env.TEST_WORKER_INDEX === undefined) {
+  for (const name of ['usage.db', 'usage.db-wal', 'usage.db-shm']) {
+    rmSync(resolve(DATA, name), {force: true});
+  }
+}
 
 export default defineConfig({
   testDir: './tests/e2e',

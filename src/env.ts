@@ -40,8 +40,19 @@ export const envSchema = z.object({
     isAbsolute,
     'CONTENT_DIR doit être un chemin absolu (voir .env.example)'
   ),
-  /** Répertoire des données : usage.db, hors dépôt (AD-7). */
-  DATA_DIR: required('DATA_DIR'),
+  /**
+   * Répertoire des données : usage.db, hors dépôt (AD-7).
+   *
+   * **Absolu, et vérifié comme tel**, pour la même raison que `CONTENT_DIR` :
+   * depuis `.next/standalone`, un chemin relatif désignerait un répertoire qui
+   * n'existe pas, et le journal refuserait de s'ouvrir en accusant le répertoire
+   * plutôt que la variable. Il doit exister et être inscriptible : le site ne le
+   * crée pas, il refuse de démarrer.
+   */
+  DATA_DIR: required('DATA_DIR').refine(
+    isAbsolute,
+    'DATA_DIR doit être un chemin absolu (voir .env.example)'
+  ),
   /** URL publique du site. */
   NEXT_PUBLIC_SITE_URL: z.url({
     // Restreint à http/https : `z.url()` seul accepterait `javascript:` ou `data:`.

@@ -143,6 +143,18 @@ describe('frontières de couches', () => {
     }
   }
 
+  it("l'amorçage peut ouvrir le journal ; le journal, lui, reste fermé aux autres couches", () => {
+    // Le journal s'ouvre au démarrage, comme le contenu (AD-7) : c'est la seule
+    // flèche que l'amorçage gagne. Il n'orchestre toujours rien.
+    expect(forbiddenLayers.bootstrap).not.toContain('journal');
+    expect(forbiddenLayers.bootstrap).not.toContain('content');
+    expect(forbiddenLayers.bootstrap).toEqual(expect.arrayContaining(['knowledge', 'agent', 'app']));
+    // Et le journal n'importe rien d'autre que ses propres types.
+    expect(forbiddenLayers.journal).toEqual(
+      expect.arrayContaining(['content', 'knowledge', 'agent', 'app'])
+    );
+  });
+
   it('le code partagé est bien soumis à une règle, et il en existe', () => {
     const sharedFiles = files.filter((file) => layerOf(file) === shared);
     expect(sharedFiles.length).toBeGreaterThan(0);

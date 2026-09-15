@@ -12,6 +12,7 @@
  * La couche `content` est donc simulée. C'est le seul moyen d'atteindre les
  * branches « absent » sans fabriquer un second serveur.
  */
+import {NextRequest} from 'next/server';
 import sharp from 'sharp';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {
@@ -26,13 +27,26 @@ const contenu = vi.hoisted(() => ({
   photo: vi.fn(),
   contactPhone: vi.fn()
 }));
+// Le journal aussi : la route du téléphone prolonge la session (AD-14), et ce
+// qui est prouvé ici, c'est qu'elle ne le fait qu'avec des cookies.
+const journal = vi.hoisted(() => ({touchSession: vi.fn()}));
 
 vi.mock('@/content', () => contenu);
+vi.mock('@/journal', () => journal);
 
 type Route = typeof import('@/app/api/photo/route');
 let photoRoute: Route;
 let getPhoto: Route['GET'];
 const {GET: getPhone, dynamic: dynamiquePhone} = await import('@/app/api/contact/phone/route');
+
+/** Un appel à la route du téléphone, avec ou sans cookies de visite. */
+function appelTelephone(cookie?: string): NextRequest {
+  return new NextRequest('http://127.0.0.1:3000/api/contact/phone', {
+    headers: cookie
+      ? {cookie, host: '127.0.0.1:3000', referer: 'http://127.0.0.1:3000/en'}
+      : {host: '127.0.0.1:3000'}
+  });
+}
 
 /** Quatre octets d'en-tête PNG : reconnaissables, mais pas une image. */
 const OCTETS = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
@@ -208,7 +222,7 @@ describe('GET /api/contact/phone', () => {
   it('rend le numéro, sans aucun cache', async () => {
     contenu.contactPhone.mockReturnValue('+41 00 000 00 07');
 
-    const reponse = await getPhone();
+    const reponse = await getPhone(appelTelephone());
 
     expect(reponse.status).toBe(200);
     // Rien du numéro ne doit rester dans un cache, fût-il privé.
@@ -219,7 +233,7 @@ describe('GET /api/contact/phone', () => {
   it('répond 404 quand `cv.yaml` nʼen déclare pas', async () => {
     contenu.contactPhone.mockReturnValue(null);
 
-    const reponse = await getPhone();
+    const reponse = await getPhone(appelTelephone());
 
     expect(reponse.status).toBe(404);
     expect(await reponse.json()).not.toHaveProperty('telephone');
@@ -227,6 +241,35 @@ describe('GET /api/contact/phone', () => {
 
   it('traite un numéro vide comme un numéro absent', async () => {
     contenu.contactPhone.mockReturnValue('');
-    expect((await getPhone()).status).toBe(404);
+    expect((await getPhone(appelTelephone())).status).toBe(404);
+  });
+
+  it('prolonge la session du visiteur qui présente ses cookies — un geste réel (AD-14)', async () => {
+    contenu.contactPhone.mockReturnValue('+41 00 000 00 07');
+    journal.touchSession.mockReturnValue({outcome: 'prolonged', visitorCreated: false});
+
+    const reponse = await getPhone(
+      appelTelephone('cv_visitor=01K4EXAMPVSTR0000000000000; cv_session=01K4EXAMPSESS0000000000000.1757930400000')
+    );
+
+    expect(reponse.status).toBe(200);
+    expect(journal.touchSession).toHaveBeenCalledTimes(1);
+    expect(journal.touchSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        visitorId: '01K4EXAMPVSTR0000000000000',
+        sessionId: '01K4EXAMPSESS0000000000000',
+        // La langue vient de la page qui a émis l'appel, pas du routage.
+        lang: 'en'
+      })
+    );
+  });
+
+  it('répond normalement sans cookies, et ne touche pas au journal', async () => {
+    contenu.contactPhone.mockReturnValue('+41 00 000 00 07');
+
+    const reponse = await getPhone(appelTelephone());
+
+    expect(reponse.status).toBe(200);
+    expect(journal.touchSession).not.toHaveBeenCalled();
   });
 });

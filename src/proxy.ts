@@ -17,13 +17,16 @@ import createIntlMiddleware from 'next-intl/middleware';
 import {env} from '@/env';
 import {routing} from '@/i18n/routing';
 import {isUlid, ulid} from '@/lib/ulid';
+import {SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
 
 const handleI18nRouting = createIntlMiddleware(routing);
 
-/** Cookie de visiteur : un ULID, 400 jours (AD-14). */
-export const VISITOR_COOKIE = 'cv_visitor';
-/** Cookie de session : un ULID + horodatage de dernière activité (AD-14). */
-export const SESSION_COOKIE = 'cv_session';
+/**
+ * `cv_visitor` : un ULID, 400 jours ; `cv_session` : un ULID + horodatage de
+ * dernière activité (AD-14). Les noms vivent dans `src/lib/visit-cookies.ts`,
+ * que le layout lit aussi sans avoir à charger ce module.
+ */
+export {SESSION_COOKIE, VISITOR_COOKIE};
 /** 400 jours, en secondes — plafond accepté par les navigateurs. */
 export const VISITOR_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 /** Au-delà, la session est close et un nouveau `cv_session` est posé. */

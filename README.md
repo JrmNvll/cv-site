@@ -103,15 +103,54 @@ nulle part ailleurs. `eslint.config.mjs` en tire les règles de lint,
 | `src/journal/` | Seul propriétaire de `usage.db` : visiteurs, sessions, échanges |
 | `src/app/`, `src/proxy.ts` | Routes, cookies, i18n, rendu |
 | `src/env.ts`, `src/lib/`, `src/i18n/` | Code partagé — n'importe **aucune** couche |
-| `src/instrumentation.ts`, `src/lib/startup.ts` | Amorçage : configuration puis contenu, avant la première requête |
+| `src/instrumentation.ts`, `src/lib/startup.ts` | Amorçage : configuration, contenu, puis journal, avant la première requête |
 | `messages/` | Textes d'interface `fr` / `en` |
 | `scripts/` | Outils de maintenance hors application (`check:content`) |
 | `tests/fixtures/content/` | Contenu **fictif** : les tests ne tournent que dessus |
+| `tests/fixtures/data/` | `DATA_DIR` des tests navigateur, créé par `playwright.config.ts`, ignoré par Git |
 
 `src/proxy.ts` est le seul endroit qui pose un cookie ; `src/env.ts` la seule
 porte d'entrée de la configuration ; `src/content/` le seul module qui lit
-`CONTENT_DIR`. Next 16 remplace `middleware.ts` par `proxy.ts` : il n'y a pas de
-`middleware.ts` dans ce dépôt.
+`CONTENT_DIR` ; `src/journal/` le seul qui ouvre `usage.db`. Next 16 remplace
+`middleware.ts` par `proxy.ts` : il n'y a pas de `middleware.ts` dans ce dépôt.
+
+## Le journal des visites
+
+Chaque document servi — page, 404 — et chaque geste réel du visiteur (le
+téléphone, à ce stade) passent par [`journal.touchSession()`](./src/journal/index.ts)
+(AD-14) : la première apparition d'un `cv_session` crée la session, avec
+l'adresse, le navigateur, la provenance et la langue ; les suivantes ne font
+qu'avancer `last_seen_at`. Un `cv_visitor` jamais vu est un nouveau visiteur,
+qu'il vienne d'un cookie effacé ou d'un identifiant choisi : les cookies ne sont
+pas signés, et c'est une décision — l'identité de visiteur est une étiquette du
+journal, pas une autorisation. Une session présentée avec le cookie d'un autre
+visiteur n'est pas écrite.
+
+Trois choses à savoir :
+
+- **`usage.db` vit dans `DATA_DIR`, chemin absolu, répertoire existant et
+  inscriptible.** Le site ne le crée pas : il refuse de démarrer, comme pour un
+  contenu invalide. En mode WAL, SQLite pose `usage.db-wal` et `usage.db-shm` à
+  côté ; les trois sont ignorés par Git.
+- **Le journal n'efface rien** (AD-7) : insertions, plus une liste fermée de
+  colonnes modifiables — ici `session.last_seen_at`, rien d'autre.
+  `tests/unit/journal.test.ts` relit les sources de `src/journal/` et y refuse
+  `DELETE`, `DROP`, `TRUNCATE` et `REPLACE`, ainsi que tout `UPDATE` hors de
+  cette colonne — un garde textuel, pas une preuve exhaustive.
+- **Le journal observe, il ne conditionne pas.** Une écriture qui échoue à la
+  requête — base verrouillée par un outil externe, disque plein — est dite
+  (`journal.write_failed`) et la page est servie quand même. Au démarrage, en
+  revanche, un `DATA_DIR` inaccessible ou une `usage.db` en lecture seule
+  arrêtent le processus. Le `User-Agent` est borné à 512 caractères ; le
+  `Referer` est réduit à son origine et son chemin, sans chaîne de requête.
+- **Sauvegarder à chaud, c'est copier trois fichiers** — ou un seul, proprement :
+  en mode WAL, une copie de `usage.db` seul peut ignorer les dernières écritures.
+  Préférer `sqlite3 usage.db ".backup copie.db"` ou `VACUUM INTO`, ou arrêter le
+  service d'abord. À cadrer avec le déploiement (story 11).
+- **L'adresse vient de `X-Client-IP`, posé par Caddy** (AD-15), par la seule
+  fonction [`clientIp()`](./src/lib/client-ip.ts) : `dev` hors production,
+  `unknown` si l'en-tête manque — avec un avertissement, une fois par processus.
+  `X-Forwarded-For` n'est jamais lu.
 
 ## La page, et ce qu'elle ne sert pas
 

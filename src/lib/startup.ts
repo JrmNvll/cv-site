@@ -4,10 +4,11 @@ import {writeSync} from 'node:fs';
  * Contrôles de démarrage — appelés par `src/instrumentation.ts`, uniquement dans
  * le runtime Node.
  *
- * Deux choses doivent être vraies avant la première requête : la configuration
- * est complète (AD-9) et le contenu de `CONTENT_DIR` est lisible et valide
- * (AD-2). Les deux échouent de la même façon : le message sur stderr, un code de
- * sortie non nul, aucun serveur qui reste debout à moitié.
+ * Trois choses doivent être vraies avant la première requête : la configuration
+ * est complète (AD-9), le contenu de `CONTENT_DIR` est lisible et valide
+ * (AD-2), et le journal de `DATA_DIR` s'ouvre (AD-7). Les trois échouent de la
+ * même façon : le message sur stderr, un code de sortie non nul, aucun serveur
+ * qui reste debout à moitié.
  *
  * Next journalise l'échec d'un hook d'instrumentation mais laisse le processus
  * vivant : un service NSSM le croirait en bonne santé alors qu'il ne sert rien.
@@ -28,6 +29,19 @@ export async function ensureContentLoaded(): Promise<boolean> {
   return guard(async () => {
     const {ensureContent} = await import('../content');
     ensureContent();
+  });
+}
+
+/**
+ * Ouvre `DATA_DIR/usage.db` et pose son schéma. Un répertoire inexistant ou non
+ * inscriptible se voit ici, au démarrage — pas à la première visite, qui
+ * échouerait sans que personne ne regarde. Après le contenu : la configuration
+ * est déjà validée, et un contenu invalide a déjà arrêté le processus.
+ */
+export async function ensureJournalOpen(): Promise<boolean> {
+  return guard(async () => {
+    const {ensureJournal} = await import('../journal');
+    ensureJournal();
   });
 }
 

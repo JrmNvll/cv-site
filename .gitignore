@@ -17,10 +17,13 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
-# Données locales (AD-7 : usage.db vit dans DATA_DIR, hors dépôt)
+# Données locales (AD-7 : usage.db vit dans DATA_DIR, hors dépôt).
+# En mode WAL, SQLite pose deux fichiers compagnons à côté de la base.
 data/
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 
 # Système / éditeur
 Thumbs.db

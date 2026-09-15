@@ -3,7 +3,7 @@
  * de la matrice repose sur `register()` et `ensureConfiguration()`. Sans ce
  * test, ce chemin ne serait exercé par rien.
  */
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
@@ -39,8 +39,16 @@ beforeEach(() => {
   process.exitCode = 0;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Le journal vit sur `globalThis` et survit à `vi.resetModules()` : le
+  // refermer ici, quoi qu'il soit arrivé au test, sinon une assertion qui
+  // échoue laisserait la connexion ouverte et les cas suivants échoueraient
+  // en cascade sur « déjà ouvert ». Modules neufs et environnement restauré
+  // d'abord : `db.ts` charge `@/env`, que le test vient peut-être de casser.
+  vi.resetModules();
   process.env = {...savedEnv};
+  const {closeJournal} = await import('@/journal/db');
+  closeJournal();
   process.exitCode = 0;
   vi.restoreAllMocks();
   vi.resetModules();
@@ -60,7 +68,10 @@ describe('register', () => {
     expect(stderrOutput()).toContain('ANTHROPIC_API_KEY');
   });
 
-  it('laisse démarrer quand la configuration est complète', async () => {
+  it('laisse démarrer quand la configuration est complète, le journal ouvert', async () => {
+    // Un `DATA_DIR` neuf : `usage.db` ne peut y exister que si l'amorçage l'a créé.
+    const dataDir = mkdtempSync(join(tmpdir(), 'cv-data-instr-'));
+    process.env.DATA_DIR = dataDir;
     const exit = spyOnExit();
 
     const {register} = await import('@/instrumentation');
@@ -69,6 +80,7 @@ describe('register', () => {
     expect(exit).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(0);
     expect(stderrOutput()).toBe('');
+    expect(existsSync(join(dataDir, 'usage.db'))).toBe(true);
   });
 
   it('ne fait rien hors du runtime Node', async () => {
@@ -121,6 +133,43 @@ describe('contenu invalide au démarrage', () => {
     // Un seul message : celui de la configuration, pas deux échecs empilés.
     expect(stderrOutput()).toContain('CONTENT_DIR');
     expect(stderrOutput()).not.toContain('cv.yaml');
+  });
+});
+
+describe('journal au démarrage', () => {
+  it('arrête le processus avec un message explicite quand DATA_DIR nʼexiste pas', async () => {
+    const absent = join(tmpdir(), 'cv-data-inexistant-' + Date.now());
+    process.env.DATA_DIR = absent;
+    const exit = spyOnExit();
+
+    const {register} = await import('@/instrumentation');
+    await register();
+
+    expect(exit).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    // Le message nomme la variable et le répertoire : l'exploitant sait quoi corriger.
+    expect(stderrOutput()).toContain('DATA_DIR');
+    expect(stderrOutput()).toContain(absent);
+  });
+
+  it("n'essaie pas d'ouvrir le journal si le contenu est invalide", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cv-content-instr-'));
+    try {
+      writeFileSync(join(dir, 'cv.yaml'), 'identite:\n  prenom: Camille\n', 'utf8');
+      writeFileSync(join(dir, 'qa.fr.md'), '#### `abc-01` — Question ?\n**Réponse :**\nCorps.\n', 'utf8');
+      process.env.CONTENT_DIR = dir;
+      process.env.DATA_DIR = join(tmpdir(), 'cv-data-inexistant-' + Date.now());
+      spyOnExit();
+
+      const {register} = await import('@/instrumentation');
+      await register();
+
+      // Le premier échec arrête tout : un seul message, celui du contenu.
+      expect(stderrOutput()).toContain('cv.yaml');
+      expect(stderrOutput()).not.toContain('DATA_DIR');
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
   });
 });
 

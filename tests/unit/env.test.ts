@@ -83,6 +83,13 @@ describe('parseEnv', () => {
     }
   );
 
+  it.each(['tests/fixtures/data', './data', '../data', 'data'])(
+    'refuse un DATA_DIR relatif comme « %s », pour la même raison',
+    (value) => {
+      expect(() => parseEnv({...COMPLETE, DATA_DIR: value})).toThrowError(/DATA_DIR/);
+    }
+  );
+
   it('refuse une URL de site qui n’est pas absolue', () => {
     expect(() => parseEnv({...COMPLETE, NEXT_PUBLIC_SITE_URL: 'cv.exemple.invalid'})).toThrowError(
       /NEXT_PUBLIC_SITE_URL/

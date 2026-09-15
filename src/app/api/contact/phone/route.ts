@@ -9,6 +9,8 @@
  *
  * `no-store` : rien ne doit rester du numéro dans un cache, fût-il privé.
  */
+import type {NextRequest} from 'next/server';
+import {localeOfReferer, recordVisit} from '@/app/_lib/visit';
 
 /**
  * Jamais rendue au build. `force-dynamic` ne suffit pas : Next charge le module
@@ -21,7 +23,17 @@ export const dynamic = 'force-dynamic';
 
 const HEADERS = {'Cache-Control': 'private, no-store'};
 
-export async function GET(): Promise<Response> {
+export async function GET(request: NextRequest): Promise<Response> {
+  // Un geste réel du visiteur : sa session est prolongée s'il présente ses
+  // cookies (AD-14). Sans cookies — `curl`, ou un navigateur qui les refuse —
+  // rien n'est appelé et la route répond exactement pareil. Le proxy ne voit
+  // pas les routes : ce sont les cookies tels que le navigateur les envoie.
+  await recordVisit({
+    cookies: request.cookies,
+    headers: request.headers,
+    lang: localeOfReferer(request.headers.get('referer'), request.headers.get('host'))
+  });
+
   const {contactPhone} = await import('@/content');
   const telephone = contactPhone();
   // `cv.yaml` peut ne pas en déclarer : le bouton dira l'indisponibilité, et le

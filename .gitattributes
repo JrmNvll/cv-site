@@ -1,0 +1,2 @@
+# Fins de ligne : LF partout, quel que soit le core.autocrlf de la machine.
+* text=auto eol=lf

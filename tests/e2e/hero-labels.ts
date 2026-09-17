@@ -5,12 +5,12 @@
  * Rien n'est recopié : un libellé changé dans `messages/*.json` change ici.
  */
 import IntlMessageFormat from 'intl-messageformat';
-import {careerYears} from '../../src/app/[locale]/_components/format';
+import {careerYears} from '../../src/app/(site)/[locale]/_components/format';
 import {
   HERO_QUESTIONS,
   MATCH_QUESTION,
   YEARS_QUESTION
-} from '../../src/app/[locale]/_components/hero-questions';
+} from '../../src/app/(site)/[locale]/_components/hero-questions';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
 import {display, type Lang} from './fixture-cv';

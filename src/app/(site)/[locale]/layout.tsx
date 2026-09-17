@@ -1,7 +1,7 @@
 /**
  * Coquille bilingue — tout ce qui vit sous un préfixe de langue.
- * `<html>` et `<body>` viennent de la racine `src/app/layout.tsx` ;
- * `/admin` vit dans une autre branche, hors `[locale]` (AD-10).
+ * `<html>` et `<body>` viennent de la racine du site, `src/app/(site)/layout.tsx` ;
+ * `/admin` vit dans une autre racine, hors `[locale]` (AD-10).
  */
 import type {Metadata} from 'next';
 import type {ReactNode} from 'react';
@@ -15,6 +15,7 @@ type LocaleParams = {locale: string};
 export function generateStaticParams(): LocaleParams[] {
   return routing.locales.map((locale) => ({locale}));
 }
+
 
 export async function generateMetadata({
   params

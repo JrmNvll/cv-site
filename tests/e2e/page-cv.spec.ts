@@ -10,7 +10,7 @@ import {
   monthYearLabel,
   periodLabel,
   yearOf
-} from '../../src/app/[locale]/_components/format';
+} from '../../src/app/(site)/[locale]/_components/format';
 import {display, rawCv, LANGS, type Lang} from './fixture-cv';
 import {heroLabel, heroLabels} from './hero-labels';
 

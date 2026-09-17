@@ -1,9 +1,10 @@
 /**
  * Le schéma de `usage.db` — les trois entités du squelette d'architecture
  * (`erDiagram` de l'`ARCHITECTURE-SPINE`), créées ensemble dès la première
- * ouverture. `exchange` reçoit les questions du premier écran (`kind = 'hero'`,
- * coût nul) et les appels au modèle (`chat`, puis `match`) : réservés en
- * `pending` avant l'appel, finalisés après (AD-6).
+ * ouverture, plus `ip_label`, l'étiquette qu'un administrateur pose sur une
+ * adresse (story 8). `exchange` reçoit les questions du premier écran
+ * (`kind = 'hero'`, coût nul) et les appels au modèle (`chat`, puis `match`) :
+ * réservés en `pending` avant l'appel, finalisés après (AD-6).
  *
  * Conventions (AD-7 et « Identifiants & dates ») :
  *  - tables et colonnes en `snake_case`, identifiants ULID en texte ;
@@ -31,9 +32,12 @@
  *  - 2 : `exchange.kind` admet `hero` — les questions du premier écran, servies
  *    sans appel au modèle ;
  *  - 3 : `exchange.status` admet `cap_reached` — une question refusée au
- *    plafond de dépense, journalisée « dans tous les cas » (AD-16), coût nul.
+ *    plafond de dépense, journalisée « dans tous les cas » (AD-16), coût nul ;
+ *  - 4 : l'étiquette d'une adresse quitte `session.ip_label` pour une table
+ *    `ip_label(ip, label, at)` — une étiquette suit l'adresse, sessions passées
+ *    et futures comprises, au lieu d'être recopiée sur N lignes (story 8).
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Les sortes d'échange, liste close. `hero` : une des questions du premier
@@ -105,7 +109,6 @@ CREATE TABLE IF NOT EXISTS session (
   id            TEXT PRIMARY KEY,
   visitor_id    TEXT NOT NULL REFERENCES visitor(id),
   ip            TEXT NOT NULL,
-  ip_label      TEXT,
   user_agent    TEXT,
   referer       TEXT,
   lang          TEXT NOT NULL,
@@ -114,10 +117,18 @@ CREATE TABLE IF NOT EXISTS session (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS session_visitor_id ON session(visitor_id);
--- Pour l'admin (story 8) : étiqueter une adresse, lister par activité récente.
--- Posés maintenant : un index coûte zéro sur une base vide, une migration plus tard.
+-- Pour l'admin : joindre l'étiquette d'une adresse, lister par activité récente.
 CREATE INDEX IF NOT EXISTS session_ip ON session(ip);
 CREATE INDEX IF NOT EXISTS session_last_seen_at ON session(last_seen_at);
+
+-- L'étiquette d'une adresse (AD-7 : l'une des trois choses que l'admin écrit).
+-- Une ligne par adresse, jamais supprimée : « retirer » écrit une chaîne vide.
+-- at : l'instant de la dernière pose.
+CREATE TABLE IF NOT EXISTS ip_label (
+  ip     TEXT PRIMARY KEY,
+  label  TEXT NOT NULL,
+  at     TEXT NOT NULL
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS exchange (
   id                     TEXT PRIMARY KEY,

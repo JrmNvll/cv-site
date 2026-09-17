@@ -23,7 +23,13 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // En développement, l'application est servie sur l'interface d'écoute
   // configurée (AD-10) et pas seulement sur `localhost`.
-  allowedDevOrigins: devOrigins
+  allowedDevOrigins: devOrigins,
+  experimental: {
+    // Deux racines (`(site)`, `(admin)`) et aucun layout au sommet : la 404
+    // des URL sans route est `src/app/global-not-found.tsx`, servie comme un
+    // document complet — voir le commentaire de ce fichier.
+    globalNotFound: true
+  }
 };
 
 // Branche `src/i18n/request.ts` (AD-5).

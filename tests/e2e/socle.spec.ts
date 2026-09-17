@@ -102,17 +102,27 @@ test('une page inconnue rend un document complet, pas un fragment', async ({page
   const response = await page.goto('/fr/chemin-inexistant');
 
   expect(response?.status()).toBe(404);
-  // Le document 404 hérite bien de la racine `src/app/layout.tsx`.
+  // Le document 404 hérite bien de la racine du site, `src/app/(site)/layout.tsx`.
   await expect(page.locator('html')).toHaveCount(1);
   await expect(page.locator('body')).toHaveCount(1);
   await expect(page.getByRole('heading', {level: 1})).toBeVisible();
 });
 
-test('/admin échappe au routage de langue et nʼest pas servi sans ADMIN_DEV', async ({request}) => {
+test('/admin échappe au routage de langue et est servi sur lʼartefact de production, en français, noindex', async ({
+  request
+}) => {
   const response = await request.get('/admin', {maxRedirects: 0});
 
   // Jamais de redirection vers /fr/admin : l'admin vit hors `[locale]` (AD-10).
   expect(response.headers().location).toBeUndefined();
-  // `ADMIN_DEV=0` est imposé par la configuration Playwright, pas par le poste.
-  expect(response.status()).toBe(404);
+  // `ADMIN_DEV=0` est imposé par la configuration Playwright : en production,
+  // c'est Caddy qui protège, pas la variable — l'admin est servi (AD-10). Le
+  // « non servi sans ADMIN_DEV » en développement reste prouvé en unitaire
+  // (`tests/unit/proxy.test.ts`).
+  expect(response.status()).toBe(200);
+  const html = await response.text();
+  expect(html).toContain('<html lang="fr"');
+  expect(html).toMatch(/<meta name="robots" content="noindex, nofollow"/);
+  // Et aucun cookie de visite : l'admin ne se journalise pas.
+  expect(response.headersArray().some(({name}) => name.toLowerCase() === 'set-cookie')).toBe(false);
 });

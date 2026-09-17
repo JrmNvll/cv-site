@@ -106,7 +106,7 @@ nulle part ailleurs. `eslint.config.mjs` en tire les règles de lint,
 | `src/knowledge/` | Index de récupération lexicale par langue, noyau, index des titres |
 | `src/agent/` | `ask()` / `match()`, passerelle Anthropic, plafond de dépense, citations |
 | `src/journal/` | Seul propriétaire de `usage.db` : visiteurs, sessions, échanges |
-| `src/app/`, `src/proxy.ts` | Routes, cookies, i18n, rendu |
+| `src/app/`, `src/proxy.ts` | Routes, cookies, i18n, rendu — deux racines : `(site)` (le CV, `[locale]`, journalisé) et `(admin)` (`/admin`, français, jamais journalisé) ; `global-not-found.tsx`, la 404 de toute URL sans route |
 | `src/env.ts`, `src/lib/`, `src/i18n/` | Code partagé — n'importe **aucune** couche |
 | `src/instrumentation.ts`, `src/lib/startup.ts` | Amorçage : configuration, contenu, connaissance, puis journal, avant la première requête |
 | `messages/` | Textes d'interface `fr` / `en` |
@@ -115,15 +115,15 @@ nulle part ailleurs. `eslint.config.mjs` en tire les règles de lint,
 | `tests/fixtures/data/` | `DATA_DIR` des tests navigateur, créé par `playwright.config.ts`, ignoré par Git |
 | `tests/e2e/model-stub/` | Le simulateur de l'API du modèle des tests navigateur, et ses scénarios |
 
-`src/proxy.ts` est le seul endroit qui pose un cookie ; `src/env.ts` la seule
-porte d'entrée de la configuration ; `src/content/` le seul module qui lit
+`src/proxy.ts` est le seul endroit qui pose un cookie — et il n'en pose aucun
+sur `/admin*` ; `src/env.ts` la seule porte d'entrée de la configuration ; `src/content/` le seul module qui lit
 `CONTENT_DIR` ; `src/journal/` le seul qui ouvre `usage.db` ;
 `src/agent/gateway.ts` le seul qui importe le SDK du modèle. Next 16 remplace
 `middleware.ts` par `proxy.ts` : il n'y a pas de `middleware.ts` dans ce dépôt.
 
 ## Le journal des visites
 
-Chaque document servi — page, 404 — et chaque geste réel du visiteur (les
+Chaque document du site — page, 404 — et chaque geste réel du visiteur (les
 coordonnées à la demande, une question du premier écran) passent par
 [`journal.touchSession()`](./src/journal/index.ts)
 (AD-14) : la première apparition d'un `cv_session` crée la session, avec
@@ -146,23 +146,30 @@ Ce qu'il faut savoir :
   inscriptible.** Le site ne le crée pas : il refuse de démarrer, comme pour un
   contenu invalide. En mode WAL, SQLite pose `usage.db-wal` et `usage.db-shm` à
   côté ; les trois sont ignorés par Git.
-- **Le schéma est versionné** (`PRAGMA user_version`, version 3 depuis la story
-  6 : `exchange.kind` admet `hero`, `exchange.status` admet `cap_reached`). Une
-  base plus récente que le code est refusée ; une base plus ancienne aussi,
-  tant qu'aucun mécanisme de migration n'existe — avant la mise en ligne, une
-  `usage.db` d'une version antérieure se recrée : supprimer le fichier et ses
-  compagnons `-wal` et `-shm`, redémarrer.
+- **Le schéma est versionné** (`PRAGMA user_version`, version 4 depuis la story
+  8 : `exchange.kind` admet `hero`, `exchange.status` admet `cap_reached`, et
+  l'étiquette d'une adresse vit dans sa table `ip_label(ip, label, at)` — plus
+  dans `session`). Une base plus récente que le code est refusée ; une base
+  plus ancienne aussi, tant qu'aucun mécanisme de migration n'existe — avant
+  la mise en ligne, une `usage.db` d'une version antérieure se recrée :
+  supprimer le fichier et ses compagnons `-wal` et `-shm`, redémarrer.
 - **Le journal n'efface rien** (AD-7) : insertions, plus une liste fermée de
-  colonnes modifiables — `session.last_seen_at`, et la finalisation d'un
+  colonnes modifiables — `session.last_seen_at` ; la finalisation d'un
   échange réservé (`status`, `answer`, `sources`, `citation_ok`, les quatre
   compteurs, `cost_micro_usd`, `latency_ms`), qui n'atteint qu'une ligne
-  `pending`. `tests/unit/journal.test.ts` relit les sources de `src/journal/`
-  et y refuse `DELETE`, `DROP`, `TRUNCATE` et `REPLACE` — même en commentaire —
-  ainsi que tout `UPDATE` qui ne soit pas l'une de ces deux formes exactes :
+  `pending` ; et les trois choses que l'administrateur écrit, `visitor.name`,
+  `visitor.note` et `ip_label.label` (avec son `at`). « Retirer » un nom ou une
+  étiquette écrit une chaîne vide, rien n'est supprimé.
+  `tests/unit/journal.test.ts` relit les sources de `src/journal/` et y refuse
+  `DELETE`, `DROP`, `TRUNCATE` et `REPLACE` — même en commentaire — ainsi que
+  tout `UPDATE` qui ne soit pas l'une de ces quatre formes exactes :
   `UPDATE session SET last_seen_at = … WHERE id = ?` (une seule affectation,
-  celle-là), ou `UPDATE exchange SET <colonnes de la liste ci-dessus, chacune
-  une fois> WHERE id = ? AND status = 'pending'` (exactement cette clause).
-  Un garde textuel, pas une preuve exhaustive.
+  celle-là) ; `UPDATE exchange SET <colonnes de la liste ci-dessus, chacune
+  une fois> WHERE id = ? AND status = 'pending'` (exactement cette clause) ;
+  `UPDATE visitor SET name = ?, note = ? WHERE id = ?` ;
+  `UPDATE ip_label SET label = ?, at = ? WHERE ip = ?` (précédé d'un
+  `INSERT OR IGNORE` : une ligne par adresse, jamais remplacée). Un garde
+  textuel, pas une preuve exhaustive.
 - **Une réservation orpheline se règle au démarrage.** Un processus tué entre
   la réservation et la finalisation laisserait une ligne `pending` comptée
   tout le mois. À l'ouverture, `settleStalePending()` finalise en
@@ -184,6 +191,81 @@ Ce qu'il faut savoir :
   fonction [`clientIp()`](./src/lib/client-ip.ts) : `dev` hors production,
   `unknown` si l'en-tête manque — avec un avertissement, une fois par processus.
   `X-Forwarded-For` n'est jamais lu.
+- **Une sonde à extension n'est pas une visite.** `/wp-login.php`, `/.env`,
+  `/api/inconnu` : le proxy ne voit pas ces chemins (le matcher exclut ce qui
+  porte un point ou commence par `api/`), donc il ne pose **aucun cookie**, et
+  sans cookie de visite **rien n'est écrit**. La réponse est un `404`
+  `noindex` : pour un chemin à plusieurs segments (`/api/inconnu`), la 404
+  globale du site (`src/app/global-not-found.tsx`, un document complet en
+  français) ; pour un chemin à un seul segment (`/wp-login.php`), c'est
+  `[locale]` qui l'attrape et lève `notFound()` — Next ne sert alors qu'une
+  coquille que le navigateur remplit, comme avant la story 8. Un chemin sans
+  extension (`/foo`) est redirigé vers `/fr/foo` et journalisé comme toute
+  visite du site. `tests/e2e/admin.spec.ts` fixe ces comportements.
+
+## L'espace d'administration
+
+`/admin` est ce que Jérémie voit du journal (CAP-7) : des pages en français,
+rendues côté serveur, lisibles et utilisables **sans JavaScript** — des liens
+et des formulaires HTML, aucune Server Action (AD-10, garanti par
+`tests/unit/admin-guards.test.ts`). Il vit hors du routage de langue, dans sa
+propre racine (`src/app/(admin)/`), sans next-intl et sans texte dans
+`messages/`.
+
+| Page | Montre |
+| --- | --- |
+| `GET /admin` | Dépense du mois face au plafond, nombre de sessions et d'échanges ; les 50 sessions les plus récemment actives **ayant au moins un échange** — dernière activité, visiteur (nom ou identifiant abrégé), adresse (étiquette ou adresse), langue, provenance, échanges, coût ; `?tout=1` montre aussi les sessions sans échange (les sondes de robots, filtrées à la lecture) ; `?page=` pagine |
+| `GET /admin/sessions/<ulid>` | Visiteur, adresse, navigateur, provenance, langue, début et dernière activité ; tous les échanges dans l'ordre, toute sorte et tout statut — la question **en texte**, la réponse rendue par le même `renderMarkdown` que le panneau, sources, citations, compteurs, coût, latence ; les deux formulaires |
+| `GET /admin/visiteurs/<ulid>` | Nom, note, première visite, le formulaire nom + note, toutes les sessions du visiteur |
+| `GET /admin/questions` | Les puces du premier écran par identifiant (libellé du corpus français), les questions libres et annonces par texte normalisé (minuscules, blancs réduits, 200 premiers caractères) — 50 lignes chacun, sur toute la période |
+
+Les heures sont celles de Zurich, les montants en USD à trois décimales. Un
+identifiant inconnu vaut la 404 de l'admin, en français — statut, titre et
+`noindex` servis, le corps rendu par le navigateur : Next 16 sert un
+`notFound()` d'un rendu dynamique comme une coquille, c'est la seule page de
+l'admin qui demande JavaScript. Une page qui lève (journal indisponible)
+tombe sur la page d'erreur de l'admin, en français aussi, sans le message de
+l'exception. La fiche d'un visiteur montre ses 200 sessions les plus
+récentes et dit s'il y en a plus.
+
+**Deux mutations, et rien d'autre** — la liste fermée d'AD-7 : `POST
+/admin/api/visiteurs/<ulid>` (`name`, `note`) et `POST /admin/api/adresses/<ip>`
+(`label`), plus `from`, la page à laquelle revenir (`/admin` ou `/admin/…`,
+sinon `400`). Un formulaire, un `303` vers `from`. L'étiquette porte sur
+l'**adresse** (`ip_label`) : toutes ses sessions, passées et futures, la
+montrent. Un champ vide retire ; rien n'est jamais supprimé, ni purgé, ni
+édité dans les échanges. `from` vaut exactement `/admin`, `/admin?…` ou `/admin/…`, en ASCII
+imprimable, sans segment `.` ni `..` — vérifié avant d'écrire. La mécanique
+commune vit dans `src/app/(admin)/admin/_lib/mutation-route.ts`, dans cet
+ordre : `405` (`Allow: POST`) pour une autre méthode, `415` pour un autre
+corps qu'`application/x-www-form-urlencoded`, `403` pour une **origine
+étrangère** — `Sec-Fetch-Site: same-origin`, ou à défaut `Origin` égal à
+l'hôte de la requête —, `400` pour un corps de plus de 64 Kio (lu par
+morceaux, abandonné dès la borne), un champ hors bornes (nom 120, note 2 000,
+étiquette 120 caractères, texte bien formé, invisibles retirés — espace de
+largeur nulle, marque d'ordre des octets, trait d'union conditionnel,
+contrôles bidirectionnels ; les liants d'un emoji composé ou d'un mot persan
+restent) ou un `from` hors de l'admin ; `404` pour un visiteur inconnu. Rien
+n'est écrit avant que tout soit passé. La vérification d'origine est la seule
+chose que l'application ajoute à Caddy : le `basic_auth` rejoue les
+identifiants sur toute requête vers l'origine, une page tierce pourrait donc
+poster ici avec eux.
+
+**Qui y accède.** En production, `/admin*` est servi et c'est Caddy qui
+protège (`basic_auth`, AD-10) : l'application ne porte aucune authentification,
+aucun mot de passe, aucune session d'administration. En développement,
+`ADMIN_DEV=1` ouvre `/admin` en local ; sans elle, le proxy répond `404` sur
+tout `/admin*` — le matcher le couvre explicitement (`/admin/:path*`), une
+adresse IPv4 dans `/admin/api/adresses/…` porte des points —, et les routes de
+mutation relisent la même règle (`src/lib/admin-served.ts`) avant d'écrire.
+
+**L'admin ne se journalise pas.** Ni `/admin` ni `/admin/api/*` ne créent ou
+prolongent une session, ne lisent un cookie de visite, ni n'en reçoivent un du
+proxy — c'est pour cela que le site et l'admin ont chacun leur racine. Chaque
+page porte `noindex, nofollow` et `lang="fr"`. `tests/e2e/admin.spec.ts` le
+prouve contre l'artefact de production : compte des lignes avant et après,
+aucun `Set-Cookie`, un `POST` d'origine étrangère refusé sans écriture, et un
+formulaire qui fonctionne sans JavaScript.
 
 ## La page, et ce qu'elle ne sert pas
 
@@ -213,10 +295,10 @@ chemins de fichiers.
 
 **Les cinq questions du premier écran répondent sans appeler le modèle** (CAP-2).
 `GET /api/questions/<id>?lang=fr|en` ne sert que les cinq identifiants de
-[`hero-questions.ts`](./src/app/[locale]/_components/hero-questions.ts), dans la
+[`hero-questions.ts`](./src/app/(site)/[locale]/_components/hero-questions.ts), dans la
 langue que la page demande, et rend le corps de l'entrée **tel qu'écrit**, en
 Markdown, rendu côté client par un sous-ensemble maîtrisé
-([`markdown.tsx`](./src/app/[locale]/_components/markdown.tsx) : paragraphes,
+([`markdown.tsx`](./src/app/(site)/[locale]/_components/markdown.tsx) : paragraphes,
 listes, gras, italique — tout le reste en texte, jamais de HTML injecté). Une
 entrée `PRIVÉ`, `PASSE` ou vide vaut `404`. Sans JavaScript, les six puces et
 le champ libre restent désactivés ; la sixième (l'annonce à coller) ouvre,

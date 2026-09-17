@@ -1,7 +1,7 @@
 import {expect, test, type Locator, type Page} from '@playwright/test';
 import {MESSAGE_LABELS, MATCH_PARTS, MATCH_TITLES} from '../../src/agent/prompts';
 import {AD_MAX_CHARS, createSseDecoder, type ChatEvent} from '../../src/app/_lib/chat-contract';
-import {MATCH_QUESTION} from '../../src/app/[locale]/_components/hero-questions';
+import {MATCH_QUESTION} from '../../src/app/(site)/[locale]/_components/hero-questions';
 import {
   adressePropre,
   capturerLeFlux,

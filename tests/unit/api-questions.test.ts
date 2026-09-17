@@ -13,7 +13,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {NextRequest} from 'next/server';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {HERO_QUESTIONS, MATCH_QUESTION} from '@/app/[locale]/_components/hero-questions';
+import {HERO_QUESTIONS, MATCH_QUESTION} from '@/app/(site)/[locale]/_components/hero-questions';
 import type {QaEntry} from '@/content';
 
 const contenu = vi.hoisted(() => ({qaEntry: vi.fn()}));

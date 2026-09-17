@@ -27,11 +27,11 @@ import {
   joinParts,
   periodLabel,
   yearOf
-} from '@/app/[locale]/_components/format';
+} from '@/app/(site)/[locale]/_components/format';
 import {buildProjections} from '@/content/projections';
 import {cvSchema, LANGS} from '@/content/schema';
 
-const PAGE_DIR = fileURLToPath(new URL('../../src/app/[locale]', import.meta.url));
+const PAGE_DIR = fileURLToPath(new URL('../../src/app/(site)/[locale]', import.meta.url));
 const FIXTURE = fileURLToPath(new URL('../fixtures/content/cv.yaml', import.meta.url));
 
 const cv = cvSchema.parse(parse(readFileSync(FIXTURE, 'utf8')));

@@ -26,7 +26,7 @@
  */
 import {hasLocale} from 'next-intl';
 import type {NextRequest} from 'next/server';
-import {isHeroQuestion} from '@/app/[locale]/_components/hero-questions';
+import {isHeroQuestion} from '@/app/(site)/[locale]/_components/hero-questions';
 import {type HeroAnswer, type HeroRefusal} from '@/app/_lib/questions-contract';
 import {recordVisit} from '@/app/_lib/visit';
 import {routing} from '@/i18n/routing';

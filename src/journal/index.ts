@@ -2,12 +2,14 @@
  * Couche `journal` — frontière.
  *
  * Responsabilité : seul propriétaire de `usage.db` (`node:sqlite`, fichier dans
- * `DATA_DIR`) — visiteurs, sessions, échanges, cumul de dépense. Écritures en
- * insertion, plus la liste fermée de colonnes modifiables d'AD-7 : ici,
- * `session.last_seen_at` et la finalisation d'un échange réservé (`status`,
- * `answer`, `sources`, `citation_ok`, les quatre compteurs, `cost_micro_usd`,
- * `latency_ms`) — et rien d'autre. Aucune suppression, aucune purge, aucune
- * table d'agrégat : le cumul du mois est une somme à la lecture.
+ * `DATA_DIR`) — visiteurs, sessions, échanges, cumul de dépense, étiquettes
+ * d'adresse. Écritures en insertion, plus la liste fermée de colonnes
+ * modifiables d'AD-7 : `session.last_seen_at`, la finalisation d'un échange
+ * réservé (`status`, `answer`, `sources`, `citation_ok`, les quatre compteurs,
+ * `cost_micro_usd`, `latency_ms`), et les trois choses que l'admin écrit —
+ * `visitor.name`, `visitor.note`, `ip_label.label` (avec son `at`) — et rien
+ * d'autre. Aucune suppression, aucune purge, aucune table d'agrégat : le cumul
+ * du mois est une somme à la lecture, les classements de l'admin aussi.
  *
  * Dépendances autorisées : `src/env.ts`, `src/lib/`, `node:sqlite`, ses propres
  * types. Interdites : `content`, `knowledge`, `agent`, `app`. Le journal ne
@@ -26,13 +28,22 @@
  * refusée au plafond. `monthSpendMicroUsd()` est le cumul du mois — une somme,
  * jamais un compteur —, `recentExchanges()` l'historique d'une session pour le
  * contexte (AD-3), et `settleStalePending()` règle au démarrage les
- * réservations qu'un arrêt brutal a laissées ouvertes. `findVisitor()`, `findSession()` et `findExchange()` sont
- * la lecture minimale dont les tests et l'admin à venir ont besoin ;
- * `ensureJournal()` ouvre la base à l'amorçage sans en rendre la connexion —
- * l'application n'a pas à la tenir. Seuls les tests passent par `./db` pour
- * ouvrir une base temporaire.
+ * réservations qu'un arrêt brutal a laissées ouvertes. `findVisitor()`,
+ * `findSession()` et `findExchange()` sont la lecture minimale dont les tests
+ * ont besoin ; `ensureJournal()` ouvre la base à l'amorçage sans en rendre la
+ * connexion — l'application n'a pas à la tenir. Seuls les tests passent par
+ * `./db` pour ouvrir une base temporaire.
+ *
+ * **Pour l'admin** (story 8, CAP-7) : les lectures agrégées — `journalStats()`,
+ * `listSessions()`, `sessionExchanges()`, `visitorSessions()`, `topQuestions()`,
+ * `ipLabel()` — et les trois écritures d'AD-7 : `setVisitor()` (nom, note) et
+ * `setIpLabel()` (l'étiquette d'une **adresse**, portée par `ip_label` : elle
+ * suit l'adresse, sessions passées et futures comprises). Rien ne s'efface :
+ * un nom ou une étiquette « retirés » deviennent une chaîne vide.
  */
+import {isIP} from 'node:net';
 import type {DatabaseSync} from 'node:sqlite';
+import {DEV_CLIENT_IP, UNKNOWN_CLIENT_IP} from '@/lib/client-ip';
 import {isUlid, ulid} from '@/lib/ulid';
 import {journal} from './db';
 
@@ -119,9 +130,8 @@ export type Visitor = {
 export type Session = {
   readonly id: string;
   readonly visitorId: string;
+  /** L'étiquette de l'adresse ne vit pas ici : voir `ipLabel(ip)` et `listSessions()`. */
   readonly ip: string;
-  /** Attribué par l'admin, à toutes les sessions qui portent la même adresse. */
-  readonly ipLabel: string | null;
   readonly userAgent: string | null;
   readonly referer: string | null;
   readonly lang: string;
@@ -130,6 +140,20 @@ export type Session = {
   /** ISO 8601 UTC. */
   readonly lastSeenAt: string;
 };
+
+/**
+ * Une transaction de **lecture** (`BEGIN` différé) : deux requêtes qui se
+ * suivent — un compte, puis une page — voient le même état commis, sans
+ * prendre le verrou d'écriture.
+ */
+function readTransaction<T>(db: DatabaseSync, work: () => T): T {
+  db.exec('BEGIN');
+  try {
+    return work();
+  } finally {
+    db.exec('COMMIT');
+  }
+}
 
 /**
  * Une transaction `IMMEDIATE` : le verrou d'écriture est pris dès le début,
@@ -236,7 +260,7 @@ export function findVisitor(id: string): Visitor | undefined {
 export function findSession(id: string): Session | undefined {
   const row = journal()
     .prepare(
-      `SELECT id, visitor_id, ip, ip_label, user_agent, referer, lang, started_at, last_seen_at
+      `SELECT id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at
        FROM session WHERE id = ?`
     )
     .get(id) as
@@ -244,7 +268,6 @@ export function findSession(id: string): Session | undefined {
         id: string;
         visitor_id: string;
         ip: string;
-        ip_label: string | null;
         user_agent: string | null;
         referer: string | null;
         lang: string;
@@ -257,7 +280,6 @@ export function findSession(id: string): Session | undefined {
     id: row.id,
     visitorId: row.visitor_id,
     ip: row.ip,
-    ipLabel: row.ip_label,
     userAgent: row.user_agent,
     referer: row.referer,
     lang: row.lang,
@@ -728,35 +750,29 @@ function parseSources(value: string | null): readonly string[] | null {
   }
 }
 
-/** Un échange par identifiant, ou `undefined`. */
-export function findExchange(id: string): Exchange | undefined {
-  const row = journal()
-    .prepare(
-      `SELECT id, session_id, kind, status, question, answer, sources, citation_ok,
-              input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-              cost_micro_usd, latency_ms, at
-       FROM exchange WHERE id = ?`
-    )
-    .get(id) as
-    | {
-        id: string;
-        session_id: string;
-        kind: ExchangeKind;
-        status: ExchangeStatus;
-        question: string;
-        answer: string | null;
-        sources: string | null;
-        citation_ok: number | null;
-        input_tokens: number | null;
-        output_tokens: number | null;
-        cache_read_tokens: number | null;
-        cache_creation_tokens: number | null;
-        cost_micro_usd: number | null;
-        latency_ms: number | null;
-        at: string;
-      }
-    | undefined;
-  if (row === undefined) return undefined;
+type ExchangeRow = {
+  id: string;
+  session_id: string;
+  kind: ExchangeKind;
+  status: ExchangeStatus;
+  question: string;
+  answer: string | null;
+  sources: string | null;
+  citation_ok: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
+  cost_micro_usd: number | null;
+  latency_ms: number | null;
+  at: string;
+};
+
+const EXCHANGE_COLUMNS = `id, session_id, kind, status, question, answer, sources, citation_ok,
+       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+       cost_micro_usd, latency_ms, at`;
+
+function mapExchange(row: ExchangeRow): Exchange {
   return {
     id: row.id,
     sessionId: row.session_id,
@@ -774,4 +790,376 @@ export function findExchange(id: string): Exchange | undefined {
     latencyMs: row.latency_ms,
     at: row.at
   };
+}
+
+/** Un échange par identifiant, ou `undefined`. */
+export function findExchange(id: string): Exchange | undefined {
+  const row = journal()
+    .prepare(`SELECT ${EXCHANGE_COLUMNS} FROM exchange WHERE id = ?`)
+    .get(id) as ExchangeRow | undefined;
+  return row === undefined ? undefined : mapExchange(row);
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * L'admin (story 8, CAP-7) — lectures agrégées et les trois écritures d'AD-7.
+ * ---------------------------------------------------------------------------
+ */
+
+/** Bornes des trois textes que l'admin écrit, en caractères. */
+export const VISITOR_NAME_MAX = 120;
+export const VISITOR_NOTE_MAX = 2000;
+export const IP_LABEL_MAX = 120;
+/** Une page de la liste des sessions. */
+export const SESSIONS_PER_PAGE = 50;
+/** Au-delà, la fiche d'un visiteur ne montre plus tout : les plus récentes, et le dit. */
+export const VISITOR_SESSIONS_MAX = 200;
+/** Lignes de chaque classement des questions. */
+export const TOP_QUESTIONS = 50;
+
+/** Un texte de l'admin, borné — l'appelant a déjà normalisé (blancs, invisibles). */
+function boundedText(value: string, max: number, what: string): string {
+  if (typeof value !== 'string' || value.length > max || !value.isWellFormed()) {
+    throw new TypeError(`${what} doit être une chaîne bien formée de ${max} caractères au plus`);
+  }
+  return value;
+}
+
+/** Ce que le tableau de bord affiche en tête. */
+export type JournalStats = {
+  /** Le cumul du mois de `now`, réservations `pending` comprises. */
+  readonly monthSpendMicroUsd: number;
+  /** Toutes les sessions, depuis le début. */
+  readonly sessions: number;
+  /** Tous les échanges, toute sorte et tout statut, depuis le début. */
+  readonly exchanges: number;
+};
+
+/** Trois comptes à la lecture — aucun compteur tenu à part. */
+export function journalStats(now: Date = new Date()): JournalStats {
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('journalStats : now doit être une date valide');
+  }
+  const db = journal();
+  const {n: sessions} = db.prepare('SELECT count(*) AS n FROM session').get() as {n: number};
+  const {n: exchanges} = db.prepare('SELECT count(*) AS n FROM exchange').get() as {n: number};
+  return {monthSpendMicroUsd: monthSpendWith(db, now), sessions, exchanges};
+}
+
+/** Une session telle que les listes de l'admin la montrent : jointe au visiteur et à l'étiquette de son adresse. */
+export type SessionSummary = Session & {
+  /** `visitor.name` — `null` ou vide si l'admin n'a rien posé. */
+  readonly visitorName: string | null;
+  /** `ip_label.label` de l'adresse — `null` sans étiquette, vide si retirée. */
+  readonly ipLabel: string | null;
+  /** Nombre d'échanges de la session, toute sorte et tout statut. */
+  readonly exchanges: number;
+  /** Somme de `cost_micro_usd` des échanges de la session. */
+  readonly costMicroUsd: number;
+};
+
+type SessionSummaryRow = {
+  id: string;
+  visitor_id: string;
+  visitor_name: string | null;
+  ip: string;
+  ip_label: string | null;
+  user_agent: string | null;
+  referer: string | null;
+  lang: string;
+  started_at: string;
+  last_seen_at: string;
+  exchanges: number;
+  cost_micro_usd: number;
+};
+
+/**
+ * Le `SELECT` commun des listes : une ligne par session, du plus récemment
+ * actif au plus ancien, avec le nom du visiteur, l'étiquette de l'adresse
+ * (jointure sur `ip_label`, donc valable pour toute session passée ou future
+ * de cette adresse), le nombre et le coût de ses échanges — deux sommes à la
+ * lecture, sur l'index `exchange(session_id, at)`.
+ */
+function sessionSummaries(
+  where: string,
+  params: readonly (string | number)[],
+  limit: {readonly count: number; readonly offset: number} | null = null
+): SessionSummary[] {
+  const rows = journal()
+    .prepare(
+      `SELECT s.id, s.visitor_id, v.name AS visitor_name, s.ip, l.label AS ip_label,
+              s.user_agent, s.referer, s.lang, s.started_at, s.last_seen_at,
+              (SELECT count(*) FROM exchange e WHERE e.session_id = s.id) AS exchanges,
+              (SELECT coalesce(sum(e.cost_micro_usd), 0) FROM exchange e WHERE e.session_id = s.id)
+                AS cost_micro_usd
+       FROM session s
+       JOIN visitor v ON v.id = s.visitor_id
+       LEFT JOIN ip_label l ON l.ip = s.ip
+       ${where}
+       ORDER BY s.last_seen_at DESC, s.id DESC
+       ${limit === null ? '' : 'LIMIT ? OFFSET ?'}`
+    )
+    .all(...params, ...(limit === null ? [] : [limit.count, limit.offset])) as SessionSummaryRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    visitorId: row.visitor_id,
+    visitorName: row.visitor_name,
+    ip: row.ip,
+    ipLabel: row.ip_label,
+    userAgent: row.user_agent,
+    referer: row.referer,
+    lang: row.lang,
+    startedAt: row.started_at,
+    lastSeenAt: row.last_seen_at,
+    exchanges: row.exchanges,
+    costMicroUsd: row.cost_micro_usd
+  }));
+}
+
+export type ListSessionsInput = {
+  /** Vrai : les seules sessions ayant au moins un échange — le défaut de l'admin, qui filtre les sondes de robots à la lecture. */
+  readonly withExchanges: boolean;
+  /** Numéro de page, à partir de 1. */
+  readonly page: number;
+};
+
+export type SessionPage = {
+  readonly sessions: readonly SessionSummary[];
+  readonly page: number;
+  /** Nombre de sessions retenues par le filtre, toutes pages confondues. */
+  readonly total: number;
+  /** Nombre de pages — au moins 1, même sans session. */
+  readonly pageCount: number;
+};
+
+/**
+ * La liste paginée des sessions, `SESSIONS_PER_PAGE` par page — le compte et
+ * la page lus dans la même transaction, pour que `pageCount` et les lignes
+ * disent le même état. Une page au-delà de la dernière est vide.
+ */
+export function listSessions(input: ListSessionsInput): SessionPage {
+  if (!Number.isInteger(input.page) || input.page < 1) {
+    throw new TypeError('listSessions : page doit être un entier supérieur ou égal à 1');
+  }
+  const filter = input.withExchanges
+    ? 'WHERE EXISTS (SELECT 1 FROM exchange e WHERE e.session_id = s.id)'
+    : '';
+  const db = journal();
+  return readTransaction(db, () => {
+    const {n: total} = db.prepare(`SELECT count(*) AS n FROM session s ${filter}`).get() as {n: number};
+    const sessions = sessionSummaries(filter, [], {
+      count: SESSIONS_PER_PAGE,
+      offset: (input.page - 1) * SESSIONS_PER_PAGE
+    });
+    return {sessions, page: input.page, total, pageCount: Math.max(1, Math.ceil(total / SESSIONS_PER_PAGE))};
+  });
+}
+
+export type VisitorSessions = {
+  /** Les `VISITOR_SESSIONS_MAX` plus récentes au plus, de la plus récente à la plus ancienne. */
+  readonly sessions: readonly SessionSummary[];
+  /** Toutes, comptées — la fiche dit s'il y en a plus que montré. */
+  readonly total: number;
+};
+
+/** Les sessions d'un visiteur, bornées, avec leur compte — même transaction de lecture. */
+export function visitorSessions(visitorId: string): VisitorSessions {
+  if (!isUlid(visitorId)) {
+    throw new TypeError('visitorSessions : visitorId doit être un ULID validé');
+  }
+  const db = journal();
+  return readTransaction(db, () => {
+    const {n: total} = db.prepare('SELECT count(*) AS n FROM session WHERE visitor_id = ?').get(visitorId) as {
+      n: number;
+    };
+    const sessions = sessionSummaries('WHERE s.visitor_id = ?', [visitorId], {count: VISITOR_SESSIONS_MAX, offset: 0});
+    return {sessions, total};
+  });
+}
+
+/**
+ * Tous les échanges d'une session, **dans l'ordre**, toute sorte et tout
+ * statut — `pending`, en erreur et refusés compris : l'admin doit voir ce qui
+ * a été demandé pendant que l'assistant se taisait.
+ */
+export function sessionExchanges(sessionId: string): readonly Exchange[] {
+  if (!isUlid(sessionId)) {
+    throw new TypeError('sessionExchanges : sessionId doit être un ULID validé');
+  }
+  const rows = journal()
+    .prepare(`SELECT ${EXCHANGE_COLUMNS} FROM exchange WHERE session_id = ? ORDER BY at, id`)
+    .all(sessionId) as ExchangeRow[];
+  return rows.map(mapExchange);
+}
+
+/** Une puce du premier écran, comptée par identifiant d'entrée du corpus. */
+export type TopHeroQuestion = {
+  /** L'identifiant de l'entrée (`lic-01`), relu de la clé de citation `qa:<id>` de l'échange. */
+  readonly id: string;
+  readonly count: number;
+  /** ISO 8601 UTC — le dernier clic. */
+  readonly lastAt: string;
+};
+
+/** Une question libre ou une annonce, comptée par texte normalisé. */
+export type TopFreeQuestion = {
+  /** Minuscules, blancs réduits à un espace, `FREE_QUESTION_KEY_CHARS` premiers caractères. */
+  readonly text: string;
+  readonly kind: ModelExchangeKind;
+  readonly count: number;
+  /** ISO 8601 UTC — la dernière fois. */
+  readonly lastAt: string;
+};
+
+export type TopQuestions = {
+  readonly hero: readonly TopHeroQuestion[];
+  readonly free: readonly TopFreeQuestion[];
+};
+
+/** Au-delà, deux questions libres qui commencent pareil comptent ensemble. */
+export const FREE_QUESTION_KEY_CHARS = 200;
+
+/** La clé de regroupement d'une question libre : minuscules, blancs réduits, tronquée. */
+export function freeQuestionKey(question: string): string {
+  return question.toLowerCase().split(/\s+/).filter(Boolean).join(' ').slice(0, FREE_QUESTION_KEY_CHARS);
+}
+
+/**
+ * Les questions les plus posées, sur toute la période, `TOP_QUESTIONS` lignes
+ * par classement. Les puces se comptent par identifiant — la clé de citation
+ * que `addExchange` a écrite, la même dans les deux langues — ; les questions
+ * libres et les annonces par `freeQuestionKey()`, sorte par sorte. Tout est
+ * agrégé à la lecture : aucune table, aucun compteur (AD-7). Le second
+ * classement relit chaque texte distinct : la base est petite, et le rester
+ * est l'affaire de la story 11.
+ */
+export function topQuestions(): TopQuestions {
+  const db = journal();
+
+  const heroRows = db
+    .prepare(
+      `SELECT sources, count(*) AS n, max(at) AS last_at FROM exchange
+       WHERE kind = 'hero' GROUP BY sources ORDER BY n DESC, last_at DESC`
+    )
+    .all() as {sources: string | null; n: number; last_at: string}[];
+  const hero = new Map<string, {count: number; lastAt: string}>();
+  for (const row of heroRows) {
+    const key = parseSources(row.sources)?.[0];
+    if (key === undefined || !key.startsWith('qa:')) continue;
+    const id = key.slice('qa:'.length);
+    const known = hero.get(id);
+    if (known === undefined) hero.set(id, {count: row.n, lastAt: row.last_at});
+    else hero.set(id, {count: known.count + row.n, lastAt: known.lastAt > row.last_at ? known.lastAt : row.last_at});
+  }
+
+  const freeRows = db
+    .prepare(
+      `SELECT kind, question, count(*) AS n, max(at) AS last_at FROM exchange
+       WHERE kind IN ('chat', 'match') GROUP BY kind, question`
+    )
+    .all() as {kind: ModelExchangeKind; question: string; n: number; last_at: string}[];
+  const free = new Map<string, TopFreeQuestion>();
+  for (const row of freeRows) {
+    const text = freeQuestionKey(row.question);
+    const key = `${row.kind}\n${text}`;
+    const known = free.get(key);
+    free.set(key, {
+      text,
+      kind: row.kind,
+      count: (known?.count ?? 0) + row.n,
+      lastAt: known !== undefined && known.lastAt > row.last_at ? known.lastAt : row.last_at
+    });
+  }
+
+  const byCount = <T extends {count: number; lastAt: string}>(a: T, b: T) =>
+    b.count - a.count || (b.lastAt > a.lastAt ? 1 : b.lastAt < a.lastAt ? -1 : 0);
+  return {
+    hero: [...hero.entries()]
+      .map(([id, {count, lastAt}]) => ({id, count, lastAt}))
+      .sort(byCount)
+      .slice(0, TOP_QUESTIONS),
+    free: [...free.values()].sort(byCount).slice(0, TOP_QUESTIONS)
+  };
+}
+
+export type SetVisitorInput = {
+  readonly id: string;
+  /** Vide pour retirer le nom. */
+  readonly name: string;
+  /** Vide pour retirer la note. */
+  readonly note: string;
+};
+
+/**
+ * Nomme ou annote un visiteur — deux des trois colonnes qu'AD-7 laisse à
+ * l'admin. Rend `false`, sans rien écrire, si le visiteur est inconnu.
+ */
+export function setVisitor(input: SetVisitorInput): boolean {
+  if (!isUlid(input.id)) {
+    throw new TypeError('setVisitor : id doit être un ULID validé');
+  }
+  const name = boundedText(input.name, VISITOR_NAME_MAX, 'setVisitor : name');
+  const note = boundedText(input.note, VISITOR_NOTE_MAX, 'setVisitor : note');
+  const db = journal();
+  return transaction(db, () => {
+    const {changes} = db
+      .prepare('UPDATE visitor SET name = ?, note = ? WHERE id = ?')
+      .run(name, note, input.id);
+    return Number(changes) === 1;
+  });
+}
+
+/** Une adresse telle que `clientIp()` la rend : IPv4, IPv6, `dev` ou `unknown`. */
+export function isJournalIp(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    (value === DEV_CLIENT_IP || value === UNKNOWN_CLIENT_IP || isIP(value) !== 0)
+  );
+}
+
+export type SetIpLabelInput = {
+  readonly ip: string;
+  /** Vide pour retirer l'étiquette. */
+  readonly label: string;
+  /** L'instant de la pose ; par défaut, maintenant. Sert aux tests. */
+  readonly now?: Date;
+};
+
+/**
+ * Étiquette une adresse — la troisième écriture d'AD-7. Une ligne par
+ * adresse : insérée si l'adresse n'en avait pas, sinon sa valeur et `at`
+ * changent. L'étiquette apparaît sur **toutes** les sessions de l'adresse,
+ * passées et futures, par la jointure de `sessionSummaries`.
+ */
+export function setIpLabel(input: SetIpLabelInput): void {
+  if (!isJournalIp(input.ip)) {
+    throw new TypeError('setIpLabel : ip doit être une adresse IP, « dev » ou « unknown »');
+  }
+  const label = boundedText(input.label, IP_LABEL_MAX, 'setIpLabel : label');
+  const now = input.now ?? new Date();
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('setIpLabel : now doit être une date valide');
+  }
+  const at = now.toISOString();
+  const db = journal();
+  transaction(db, () => {
+    db.prepare('INSERT OR IGNORE INTO ip_label (ip, label, at) VALUES (?, ?, ?)').run(input.ip, label, at);
+    db.prepare('UPDATE ip_label SET label = ?, at = ? WHERE ip = ?').run(label, at, input.ip);
+  });
+}
+
+export type IpLabel = {
+  readonly ip: string;
+  /** Vide si retirée. */
+  readonly label: string;
+  /** ISO 8601 UTC — la dernière pose. */
+  readonly at: string;
+};
+
+/** L'étiquette d'une adresse, ou `undefined` si aucune n'a jamais été posée. */
+export function ipLabel(ip: string): IpLabel | undefined {
+  const row = journal().prepare('SELECT ip, label, at FROM ip_label WHERE ip = ?').get(ip) as
+    | {ip: string; label: string; at: string}
+    | undefined;
+  return row === undefined ? undefined : {ip: row.ip, label: row.label, at: row.at};
 }

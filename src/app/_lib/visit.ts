@@ -4,9 +4,14 @@
  * `proxy.ts` pose les cookies et n'ouvre jamais la base ; `journal` ouvre la
  * base et ne lit jamais la requête. Entre les deux, ce module : il lit les deux
  * cookies, l'adresse (`clientIp`, AD-15), le navigateur, la provenance, et
- * passe le tout à `touchSession()`. Deux appelants, le même geste : le layout
- * racine, qui voit tout document (pages, 404), et la route du téléphone, un
- * geste réel du visiteur.
+ * passe le tout à `touchSession()`. Plusieurs appelants, le même geste : la
+ * racine du **site** (`src/app/(site)/layout.tsx`), qui voit tout document du
+ * site ; la 404 globale (`src/app/global-not-found.tsx`), pour toute URL sans
+ * route ; et les routes d'un geste réel du visiteur (les coordonnées, une
+ * question). La racine de l'admin ne l'appelle jamais. Une sonde à extension
+ * — `/wp-login.php`, `/.env` — arrive à la 404 globale mais **sans être
+ * passée par le proxy** : sans cookie de visite, rien n'est appelé, rien
+ * n'est écrit — ce n'est pas une visite.
  *
  * Sans cookies valides, rien n'est appelé : une requête `curl` sur une route
  * répond normalement et ne laisse aucune trace — le journal n'invente pas de

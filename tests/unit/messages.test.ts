@@ -8,7 +8,7 @@
 import {describe, expect, it} from 'vitest';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
-import {HERO_QUESTIONS, MATCH_QUESTION} from '@/app/[locale]/_components/hero-questions';
+import {HERO_QUESTIONS, MATCH_QUESTION} from '@/app/(site)/[locale]/_components/hero-questions';
 import {CHAT_REFUSAL_REASONS} from '@/app/_lib/chat-contract';
 import {routing} from '@/i18n/routing';
 

@@ -4,7 +4,10 @@
  * Deux responsabilités, dans cet ordre :
  *  1. routage de langue next-intl (AD-5), sauf pour `/admin*` qui vit hors
  *     `[locale]` et n'est servi en développement que si `ADMIN_DEV=1` (AD-10) ;
- *  2. pose des cookies `cv_visitor` et `cv_session` (AD-14).
+ *  2. pose des cookies `cv_visitor` et `cv_session` (AD-14) — **sauf** sur
+ *     `/admin*` : l'admin ne se journalise pas, il ne crée ni ne prolonge
+ *     aucune session, et rien ne doit lui poser un cookie de visite. La
+ *     réponse reste `private, no-store` : ce qu'elle montre est à Jérémie.
  *
  * L'ordre compte : le routage produit d'abord la réponse (redirection, réécriture
  * ou passage), **puis** les cookies sont posés dessus. Les poser avant les
@@ -16,6 +19,7 @@ import {NextResponse, type NextRequest} from 'next/server';
 import createIntlMiddleware from 'next-intl/middleware';
 import {env} from '@/env';
 import {routing} from '@/i18n/routing';
+import {isAdminServed} from '@/lib/admin-served';
 import {isUlid, ulid} from '@/lib/ulid';
 import {SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
 
@@ -31,7 +35,7 @@ export {SESSION_COOKIE, VISITOR_COOKIE};
 export const VISITOR_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 /** Au-delà, la session est close et un nouveau `cv_session` est posé. */
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
-/** Toute réponse portant un cookie de visite est propre à un visiteur. */
+/** Toute réponse portant un cookie de visite est propre à un visiteur — et l'admin l'est à Jérémie. */
 export const CACHE_CONTROL_VISIT = 'private, no-store';
 
 /**
@@ -94,30 +98,29 @@ function isAdminPath(pathname: string): boolean {
   return pathname === '/admin' || pathname.startsWith('/admin/');
 }
 
-/**
- * En production, `/admin*` est servi et protégé par le `basic_auth` de Caddy.
- * En développement, il n'existe que si `ADMIN_DEV=1` — sinon 404, comme s'il
- * n'était pas déployé.
- */
-function isAdminServed(): boolean {
-  return env.ADMIN_DEV || process.env.NODE_ENV === 'production';
-}
-
 export default function proxy(request: NextRequest): NextResponse {
   const {pathname} = request.nextUrl;
 
-  const response = isAdminPath(pathname)
-    ? isAdminServed()
-      ? NextResponse.next()
-      : new NextResponse(null, {status: 404})
-    : handleI18nRouting(request);
+  if (isAdminPath(pathname)) {
+    // En production, `/admin*` est servi et protégé par le `basic_auth` de
+    // Caddy. En développement, il n'existe que si `ADMIN_DEV=1` — sinon 404,
+    // comme s'il n'était pas déployé (`src/lib/admin-served.ts`, que les
+    // routes de mutation relisent aussi).
+    const response = isAdminServed(env) ? NextResponse.next() : new NextResponse(null, {status: 404});
+    // Aucun cookie : une visite de l'admin n'est pas une visite du CV. Mais
+    // pas de cache partagé non plus — ce que l'admin montre est privé.
+    response.headers.set('Cache-Control', CACHE_CONTROL_VISIT);
+    return response;
+  }
 
-  return attachVisitCookies(request, response);
+  return attachVisitCookies(request, handleI18nRouting(request));
 }
 
 export const config = {
   // Requêtes de document uniquement : ni les ressources internes de Next, ni les
   // route handlers (une route handler sans cookie répond `no_visitor`, AD-6),
-  // ni les fichiers statiques (reconnus à leur extension).
-  matcher: ['/((?!api/|_next/|_vercel/|.*\\..*).*)']
+  // ni les fichiers statiques (reconnus à leur extension) — **plus** tout
+  // `/admin*`, explicitement : `/admin/api/adresses/203.0.113.7` contient un
+  // point et échapperait au premier motif, donc à la porte `ADMIN_DEV`.
+  matcher: ['/((?!api/|_next/|_vercel/|.*\\..*).*)', '/admin/:path*']
 };

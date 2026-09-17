@@ -12,7 +12,7 @@
 import {createElement, Fragment} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe, expect, it} from 'vitest';
-import {renderMarkdown} from '@/app/[locale]/_components/markdown';
+import {renderMarkdown} from '@/app/(site)/[locale]/_components/markdown';
 
 function html(text: string): string {
   return renderToStaticMarkup(createElement(Fragment, null, renderMarkdown(text)));
@@ -152,7 +152,7 @@ describe('aucune injection', () => {
     const {readFileSync} = await import('node:fs');
     const {fileURLToPath} = await import('node:url');
     const source = readFileSync(
-      fileURLToPath(new URL('../../src/app/[locale]/_components/markdown.tsx', import.meta.url)),
+      fileURLToPath(new URL('../../src/app/(site)/[locale]/_components/markdown.tsx', import.meta.url)),
       'utf8'
     );
     // L'attribut posé, pas le mot dans un commentaire.

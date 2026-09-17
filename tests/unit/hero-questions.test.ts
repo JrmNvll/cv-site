@@ -11,7 +11,7 @@
  */
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
-import {HERO_QUESTIONS, HERO_ROWS, MATCH_QUESTION} from '@/app/[locale]/_components/hero-questions';
+import {HERO_QUESTIONS, HERO_ROWS, MATCH_QUESTION} from '@/app/(site)/[locale]/_components/hero-questions';
 import {loadContent} from '@/content/load';
 import {LANGS} from '@/content/schema';
 

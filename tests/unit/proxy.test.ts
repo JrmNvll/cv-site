@@ -4,7 +4,8 @@
  *
  * Cas de la matrice couverts ici : visite sans cookie, session inactive de plus
  * de trente minutes, racine sans langue, `/admin` selon `ADMIN_DEV` et selon
- * l'environnement, non-mise en cache des réponses porteuses d'identité, et
+ * l'environnement — et jamais un cookie sur `/admin*` (story 8 : l'admin ne se
+ * journalise pas) —, non-mise en cache des réponses porteuses d'identité, et
  * périmètre réel du `matcher`.
  */
 import {NextRequest, type NextResponse} from 'next/server';
@@ -174,7 +175,7 @@ describe('cookies de visite', () => {
 });
 
 describe('mise en cache', () => {
-  it.each(['/fr', '/', '/admin'])(
+  it.each(['/fr', '/'])(
     'interdit tout cache partagé sur %s, qui porte un identifiant de visiteur',
     async (path) => {
       const {default: proxy, CACHE_CONTROL_VISIT} = await loadProxy();
@@ -187,6 +188,18 @@ describe('mise en cache', () => {
       expect(response.headers.get('cache-control')).toBe(CACHE_CONTROL_VISIT);
       expect(CACHE_CONTROL_VISIT).toContain('private');
       expect(CACHE_CONTROL_VISIT).toContain('no-store');
+    }
+  );
+
+  it.each(['/admin', '/admin/sessions/x', '/admin/api/adresses/203.0.113.7'])(
+    'interdit aussi tout cache partagé sur %s, qui ne porte pourtant aucun cookie',
+    async (path) => {
+      const {default: proxy, CACHE_CONTROL_VISIT} = await loadProxy({adminDev: '1'});
+
+      const response = proxy(request(path));
+
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(response.headers.get('cache-control')).toBe(CACHE_CONTROL_VISIT);
     }
   );
 });
@@ -265,25 +278,66 @@ describe('/admin hors routage de langue', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
   });
+
+  it.each([
+    ['/admin', {adminDev: '1'} as const],
+    ['/admin/sessions/01K4EXAMPSESS0000000000000', {adminDev: '1'} as const],
+    ['/admin/api/visiteurs/01K4EXAMPVSTR0000000000000', {adminDev: '1'} as const],
+    ['/admin', {adminDev: '0', nodeEnv: 'production'} as const],
+    ['/admin', {adminDev: '0', nodeEnv: 'development'} as const]
+  ])('ne pose aucun cookie de visite sur %s : lʼadmin ne se journalise pas', async (path, overrides) => {
+    const {default: proxy} = await loadProxy(overrides);
+
+    // Sans cookie déjà posé, comme avec : rien n'est posé ni reconduit.
+    expect(proxy(request(path)).headers.getSetCookie()).toEqual([]);
+    expect(
+      proxy(
+        request(path, {cv_visitor: VISITOR_ID, cv_session: `${SESSION_ID}.${NOW}`})
+      ).headers.getSetCookie()
+    ).toEqual([]);
+  });
+
+  it('continue de poser les cookies sur le site : seul lʼadmin en est exempt', async () => {
+    const {default: proxy} = await loadProxy({adminDev: '1'});
+
+    expect(proxy(request('/fr')).headers.getSetCookie().length).toBe(2);
+    expect(proxy(request('/fr/administration')).headers.getSetCookie().length).toBe(2);
+  });
 });
 
 describe('périmètre du matcher', () => {
-  it('ne couvre que les requêtes de document', async () => {
+  it('couvre les requêtes de document, et tout /admin* — même avec un point dans le chemin', async () => {
     const {config} = await loadProxy();
-    const matcher = new RegExp(`^${config.matcher[0]}$`);
+    // Deux motifs : le premier est une expression régulière, le second du
+    // path-to-regexp (`:path*` : zéro segment ou plus).
+    expect(config.matcher).toEqual(['/((?!api/|_next/|_vercel/|.*\\..*).*)', '/admin/:path*']);
+    const document = new RegExp(`^${config.matcher[0]}$`);
+    const admin = /^\/admin(?:\/.*)?$/;
+    const couvert = (path: string) => document.test(path) || admin.test(path);
 
-    for (const path of ['/', '/fr', '/en/x', '/admin', '/admin/sessions']) {
-      expect(matcher.test(path), `${path} devrait être couvert`).toBe(true);
+    for (const path of ['/', '/fr', '/en/x', '/admin', '/admin/sessions', '/admin/api/visiteurs/x', '/admin/api/adresses/2001:db8::1']) {
+      expect(document.test(path), `${path} devrait être couvert par le motif des documents`).toBe(true);
+    }
+    // Un point dans le chemin : hors du premier motif, dans le second.
+    for (const path of ['/admin/api/adresses/203.0.113.7', '/admin/x.y']) {
+      expect(document.test(path), `${path} échappe au motif des documents`).toBe(false);
+      expect(admin.test(path), `${path} devrait être couvert par /admin/:path*`).toBe(true);
+      expect(couvert(path)).toBe(true);
     }
 
-    for (const path of [
-      '/api/ask',
-      '/api/chat/stream',
-      '/_next/static/x.js',
-      '/photo.jpg',
-      '/robots.txt'
-    ]) {
-      expect(matcher.test(path), `${path} devrait être exclu`).toBe(false);
+    for (const path of ['/api/ask', '/api/chat/stream', '/_next/static/x.js', '/photo.jpg', '/robots.txt']) {
+      expect(couvert(path), `${path} devrait être exclu`).toBe(false);
     }
+    // `/adminx` est un document ordinaire (premier motif), pas un chemin de l'admin.
+    expect(admin.test('/adminx')).toBe(false);
+  });
+
+  it('ferme la porte sur une route de mutation à point, en développement sans ADMIN_DEV', async () => {
+    const {default: proxy} = await loadProxy({adminDev: '0', nodeEnv: 'development'});
+    const response = proxy(
+      new NextRequest(new URL('/admin/api/adresses/203.0.113.7', 'http://127.0.0.1:3000'), {method: 'POST'})
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 });

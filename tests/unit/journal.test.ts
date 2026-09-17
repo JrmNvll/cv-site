@@ -27,15 +27,32 @@ import {
   findExchange,
   findSession,
   findVisitor,
+  FREE_QUESTION_KEY_CHARS,
+  freeQuestionKey,
   HERO_EXCHANGES_PER_SESSION,
+  IP_LABEL_MAX,
+  ipLabel,
+  isJournalIp,
+  journalStats,
+  listSessions,
   monthSpendMicroUsd,
   monthStart,
   PENDING_STALE_MS,
   recentExchanges,
   recordCapRefusal,
   reserveExchange,
+  SESSIONS_PER_PAGE,
+  sessionExchanges,
+  setIpLabel,
   settleStalePending,
+  setVisitor,
+  TOP_QUESTIONS,
+  topQuestions,
   touchSession,
+  VISITOR_NAME_MAX,
+  VISITOR_NOTE_MAX,
+  VISITOR_SESSIONS_MAX,
+  visitorSessions,
   type AddExchangeInput,
   type FinalizeExchangeInput,
   type ReserveExchangeInput,
@@ -121,7 +138,6 @@ describe('première visite', () => {
       id: entree.sessionId,
       visitorId: entree.visitorId,
       ip: '203.0.113.7',
-      ipLabel: null,
       userAgent: 'Navigateur/1.0 (test)',
       referer: 'https://exemple.invalid/offre',
       lang: 'fr',
@@ -800,6 +816,318 @@ describe('lʼhistorique dʼune session (AD-3)', () => {
   });
 });
 
+describe('lʼadmin (story 8) — lectures agrégées', () => {
+  /** Une session avec `n` puces, à `at`. */
+  function sessionAvecPuces(n: number, at: Date, overrides: Partial<TouchSessionInput> = {}): TouchSessionInput {
+    const entree = visite({now: at, ...overrides});
+    touchSession(entree);
+    for (let i = 0; i < n; i++) {
+      addExchange({
+        sessionId: entree.sessionId,
+        kind: 'hero',
+        question: `Puce ${i}`,
+        answer: 'Corps',
+        sources: [`qa:lic-0${(i % 2) + 1}`],
+        citationOk: true,
+        latencyMs: 1,
+        now: new Date(at.getTime() + i * 1000)
+      });
+    }
+    return entree;
+  }
+
+  const minute = (n: number) => new Date(NOW.getTime() + n * 60_000);
+
+  it('journalStats : cumul du mois, sessions et échanges, comptés à la lecture', () => {
+    expect(journalStats(NOW)).toEqual({monthSpendMicroUsd: 0, sessions: 0, exchanges: 0});
+
+    const s = sessionAvecPuces(2, NOW);
+    sessionAvecPuces(0, NOW);
+    const id = reserved({sessionId: s.sessionId, kind: 'chat', question: 'Q', reservationMicroUsd: 700, capMicroUsd: 5_000_000, now: NOW});
+    finalizeExchange({id, status: 'done', answer: 'R', sources: [], citationOk: true, usage: null, costMicroUsd: 300, latencyMs: 1});
+    // Un échange du mois précédent ne compte pas dans le cumul, mais dans le total.
+    const avant = new Date('2026-08-31T23:59:59.000Z');
+    const t = sessionAvecPuces(0, avant);
+    const ancien = reserved({sessionId: t.sessionId, kind: 'chat', question: 'Q', reservationMicroUsd: 900, capMicroUsd: 5_000_000, now: avant});
+    finalizeExchange({id: ancien, status: 'done', answer: 'R', sources: [], citationOk: true, usage: null, costMicroUsd: 900, latencyMs: 1});
+
+    expect(journalStats(NOW)).toEqual({monthSpendMicroUsd: 300, sessions: 3, exchanges: 4});
+    expect(() => journalStats(new Date('x'))).toThrowError(TypeError);
+  });
+
+  it('listSessions : du plus récent au plus ancien, jointure visiteur + étiquette, compte et coût des échanges', () => {
+    const vieille = sessionAvecPuces(1, minute(0), {ip: '198.51.100.9'});
+    const recente = sessionAvecPuces(3, minute(1), {ip: '203.0.113.7'});
+    const id = reserved({sessionId: recente.sessionId, kind: 'match', question: 'Annonce', reservationMicroUsd: 500, capMicroUsd: 5_000_000, now: minute(2)});
+    finalizeExchange({id, status: 'done', answer: 'R', sources: [], citationOk: true, usage: null, costMicroUsd: 250, latencyMs: 1});
+    // Prolongée après : c'est `last_seen_at` qui ordonne, pas le début.
+    touchSession({...vieille, now: minute(5)});
+    setVisitor({id: recente.visitorId, name: 'Recruteuse fictive', note: ''});
+    setIpLabel({ip: '203.0.113.7', label: 'Bureau fictif', now: NOW});
+
+    const page = listSessions({withExchanges: true, page: 1});
+
+    expect(page).toMatchObject({page: 1, total: 2, pageCount: 1});
+    expect(page.sessions.map((session) => session.id)).toEqual([vieille.sessionId, recente.sessionId]);
+    expect(page.sessions[1]).toEqual({
+      id: recente.sessionId,
+      visitorId: recente.visitorId,
+      visitorName: 'Recruteuse fictive',
+      ip: '203.0.113.7',
+      ipLabel: 'Bureau fictif',
+      userAgent: 'Navigateur/1.0 (test)',
+      referer: 'https://exemple.invalid/offre',
+      lang: 'fr',
+      startedAt: minute(1).toISOString(),
+      lastSeenAt: minute(1).toISOString(),
+      exchanges: 4,
+      costMicroUsd: 250
+    });
+    expect(page.sessions[0]).toMatchObject({visitorName: null, ipLabel: null, exchanges: 1, costMicroUsd: 0, lastSeenAt: minute(5).toISOString()});
+  });
+
+  it('listSessions : le filtre « avec échanges » écarte les sondes, « tout » les garde', () => {
+    sessionAvecPuces(0, minute(0));
+    sessionAvecPuces(0, minute(1));
+    const utile = sessionAvecPuces(1, minute(2));
+    // Une réservation refusée au plafond est un échange aussi : la session compte.
+    const refusee = sessionAvecPuces(0, minute(3));
+    recordCapRefusal({sessionId: refusee.sessionId, kind: 'chat', question: 'Q', now: minute(3)});
+
+    expect(listSessions({withExchanges: true, page: 1}).sessions.map((s) => s.id)).toEqual([refusee.sessionId, utile.sessionId]);
+    expect(listSessions({withExchanges: true, page: 1}).total).toBe(2);
+    const tout = listSessions({withExchanges: false, page: 1});
+    expect(tout.total).toBe(4);
+    expect(tout.sessions).toHaveLength(4);
+  });
+
+  it('listSessions : pagine par 50, une page au-delà est vide, page 0 ou non entière refusée', () => {
+    expect(SESSIONS_PER_PAGE).toBe(50);
+    for (let i = 0; i < SESSIONS_PER_PAGE + 3; i++) sessionAvecPuces(1, minute(i));
+
+    const premiere = listSessions({withExchanges: true, page: 1});
+    const seconde = listSessions({withExchanges: true, page: 2});
+    const audela = listSessions({withExchanges: true, page: 3});
+
+    expect(premiere.sessions).toHaveLength(SESSIONS_PER_PAGE);
+    expect(premiere.total).toBe(SESSIONS_PER_PAGE + 3);
+    expect(premiere.pageCount).toBe(2);
+    expect(seconde.sessions).toHaveLength(3);
+    // Aucune session sur deux pages : la pagination ne saute ni ne double.
+    const ids = new Set([...premiere.sessions, ...seconde.sessions].map((s) => s.id));
+    expect(ids.size).toBe(SESSIONS_PER_PAGE + 3);
+    expect(premiere.sessions[0]!.lastSeenAt > seconde.sessions.at(-1)!.lastSeenAt).toBe(true);
+    expect(audela).toEqual({sessions: [], page: 3, total: SESSIONS_PER_PAGE + 3, pageCount: 2});
+    expect(() => listSessions({withExchanges: true, page: 0})).toThrowError(TypeError);
+    expect(() => listSessions({withExchanges: true, page: 1.5})).toThrowError(TypeError);
+    expect(() => listSessions({withExchanges: true, page: Number.NaN})).toThrowError(TypeError);
+  });
+
+  it('listSessions : une base vide rend une première page vide, pageCount 1', () => {
+    expect(listSessions({withExchanges: false, page: 1})).toEqual({sessions: [], page: 1, total: 0, pageCount: 1});
+  });
+
+  it('sessionExchanges : tous les échanges dʼune session, dans lʼordre, toute sorte et tout statut', () => {
+    const s = sessionAvecPuces(1, minute(0));
+    const pending = reserved({sessionId: s.sessionId, kind: 'chat', question: 'Q2', reservationMicroUsd: 10, capMicroUsd: 5_000_000, now: minute(1)});
+    const erreur = reserved({sessionId: s.sessionId, kind: 'chat', question: 'Q3', reservationMicroUsd: 10, capMicroUsd: 5_000_000, now: minute(2)});
+    finalizeExchange({id: erreur, status: 'model_error', answer: '', sources: [], citationOk: null, usage: null, costMicroUsd: 10, latencyMs: 5});
+    recordCapRefusal({sessionId: s.sessionId, kind: 'match', question: 'Annonce', now: minute(3)});
+    // Une autre session : invisible.
+    sessionAvecPuces(2, minute(4));
+
+    const echanges = sessionExchanges(s.sessionId);
+
+    expect(echanges.map((e) => [e.kind, e.status, e.question])).toEqual([
+      ['hero', 'done', 'Puce 0'],
+      ['chat', 'pending', 'Q2'],
+      ['chat', 'model_error', 'Q3'],
+      ['match', 'cap_reached', 'Annonce']
+    ]);
+    expect(echanges[1]).toEqual(findExchange(pending));
+    expect(echanges[0]!.sources).toEqual(['qa:lic-01']);
+    expect(sessionExchanges(ulid())).toEqual([]);
+    expect(() => sessionExchanges('pas-un-ulid')).toThrowError(TypeError);
+  });
+
+  it('visitorSessions : les sessions dʼun visiteur, de la plus récente à la plus ancienne, comptées', () => {
+    const premiere = sessionAvecPuces(0, minute(0));
+    const seconde = sessionAvecPuces(2, minute(1), {visitorId: premiere.visitorId, ip: '198.51.100.9'});
+    sessionAvecPuces(1, minute(2));
+
+    const {sessions, total} = visitorSessions(premiere.visitorId);
+
+    expect(total).toBe(2);
+    expect(sessions.map((s) => [s.id, s.exchanges])).toEqual([
+      [seconde.sessionId, 2],
+      [premiere.sessionId, 0]
+    ]);
+    expect(visitorSessions(ulid())).toEqual({sessions: [], total: 0});
+    expect(() => visitorSessions('x')).toThrowError(TypeError);
+  });
+
+  it('visitorSessions : borné aux 200 plus récentes, le total dit le reste', () => {
+    expect(VISITOR_SESSIONS_MAX).toBe(200);
+    const premiere = sessionAvecPuces(0, minute(0));
+    for (let i = 1; i <= VISITOR_SESSIONS_MAX; i++) {
+      sessionAvecPuces(0, minute(i), {visitorId: premiere.visitorId});
+    }
+
+    const {sessions, total} = visitorSessions(premiere.visitorId);
+
+    expect(total).toBe(VISITOR_SESSIONS_MAX + 1);
+    expect(sessions).toHaveLength(VISITOR_SESSIONS_MAX);
+    // La plus ancienne est celle qui manque.
+    expect(sessions.some((s) => s.id === premiere.sessionId)).toBe(false);
+    expect(sessions[0]!.lastSeenAt).toBe(minute(VISITOR_SESSIONS_MAX).toISOString());
+  });
+
+  it('listSessions : le compte et la page viennent dʼune même transaction de lecture, refermée', () => {
+    for (let i = 0; i < 3; i++) sessionAvecPuces(1, minute(i));
+
+    const page = listSessions({withExchanges: true, page: 1});
+
+    expect(page.total).toBe(page.sessions.length);
+    // Aucune transaction laissée ouverte : une autre peut s'ouvrir tout de suite.
+    expect(() => {
+      db.exec('BEGIN');
+      db.exec('COMMIT');
+    }).not.toThrow();
+    // Et l'écriture n'est pas bloquée après une lecture.
+    expect(setVisitor({id: page.sessions[0]!.visitorId, name: 'x', note: ''})).toBe(true);
+  });
+
+  it('topQuestions : les puces par identifiant, les questions libres par texte normalisé', () => {
+    const s = sessionAvecPuces(0, minute(0));
+    const t = sessionAvecPuces(0, minute(0), {lang: 'en'});
+    const puce = (session: TouchSessionInput, id: string, question: string, at: Date) =>
+      addExchange({sessionId: session.sessionId, kind: 'hero', question, answer: 'R', sources: [`qa:${id}`], citationOk: true, latencyMs: 1, now: at});
+    // La même entrée dans les deux langues compte ensemble : c'est l'identifiant qui compte.
+    puce(s, 'lic-01', 'Question fr', minute(1));
+    puce(t, 'lic-01', 'Question en', minute(2));
+    puce(s, 'sit-02', 'Autre', minute(3));
+    puce(s, 'sit-02', 'Autre', minute(9));
+    puce(s, 'sit-02', 'Autre', minute(4));
+    const libre = (kind: 'chat' | 'match', question: string, at: Date) => {
+      const id = reserved({sessionId: s.sessionId, kind, question, reservationMicroUsd: 1, capMicroUsd: 5_000_000, now: at});
+      finalizeExchange({id, status: 'done', answer: 'R', sources: [], citationOk: true, usage: null, costMicroUsd: 1, latencyMs: 1});
+    };
+    libre('chat', 'Quel est  son parcours ?', minute(5));
+    libre('chat', '  quel est son PARCOURS ?\n', minute(7));
+    libre('chat', 'Autre question', minute(6));
+    // Une annonce refusée au plafond compte aussi : c'est ce qu'on lui a demandé.
+    recordCapRefusal({sessionId: s.sessionId, kind: 'match', question: 'Annonce fictive', now: minute(8)});
+    libre('match', 'annonce   fictive', minute(2));
+
+    const {hero, free} = topQuestions();
+
+    expect(hero).toEqual([
+      {id: 'sit-02', count: 3, lastAt: minute(9).toISOString()},
+      {id: 'lic-01', count: 2, lastAt: minute(2).toISOString()}
+    ]);
+    // Par compte décroissant, puis par dernière date décroissante.
+    expect(free).toEqual([
+      {text: 'annonce fictive', kind: 'match', count: 2, lastAt: minute(8).toISOString()},
+      {text: 'quel est son parcours ?', kind: 'chat', count: 2, lastAt: minute(7).toISOString()},
+      {text: 'autre question', kind: 'chat', count: 1, lastAt: minute(6).toISOString()}
+    ]);
+  });
+
+  it('topQuestions : la clé dʼune question libre est bornée à 200 caractères, et 50 lignes par classement', () => {
+    expect(FREE_QUESTION_KEY_CHARS).toBe(200);
+    expect(TOP_QUESTIONS).toBe(50);
+    expect(freeQuestionKey('  A\t\tB\n\nC  ')).toBe('a b c');
+    expect(freeQuestionKey('x'.repeat(300))).toHaveLength(200);
+    const s = sessionAvecPuces(0, NOW);
+    for (let i = 0; i < TOP_QUESTIONS + 5; i++) {
+      recordCapRefusal({sessionId: s.sessionId, kind: 'chat', question: `Q${i}`, now: minute(i)});
+    }
+    expect(topQuestions().free).toHaveLength(TOP_QUESTIONS);
+    expect(topQuestions().hero).toEqual([]);
+  });
+});
+
+describe('lʼadmin (story 8) — les trois écritures dʼAD-7', () => {
+  it('setVisitor : nom et note écrits, relus, retirés par une chaîne vide ; visiteur inconnu → false', () => {
+    const entree = visite();
+    touchSession(entree);
+
+    expect(setVisitor({id: entree.visitorId, name: 'Recruteur fictif', note: 'Vu en entretien.'})).toBe(true);
+    expect(findVisitor(entree.visitorId)).toMatchObject({name: 'Recruteur fictif', note: 'Vu en entretien.'});
+    expect(listSessions({withExchanges: false, page: 1}).sessions[0]!.visitorName).toBe('Recruteur fictif');
+
+    expect(setVisitor({id: entree.visitorId, name: '', note: ''})).toBe(true);
+    expect(findVisitor(entree.visitorId)).toMatchObject({name: '', note: ''});
+    // Rien d'autre n'a bougé.
+    expect(findVisitor(entree.visitorId)!.firstSeen).toBe(NOW.toISOString());
+    expect(count('visitor')).toBe(1);
+
+    expect(setVisitor({id: ulid(), name: 'Personne', note: ''})).toBe(false);
+    expect(count('visitor')).toBe(1);
+  });
+
+  it('setVisitor : refuse un identifiant qui nʼest pas un ULID, un texte hors bornes ou mal formé', () => {
+    const entree = visite();
+    touchSession(entree);
+    expect(VISITOR_NAME_MAX).toBe(120);
+    expect(VISITOR_NOTE_MAX).toBe(2000);
+
+    expect(() => setVisitor({id: 'x', name: 'a', note: ''})).toThrowError(TypeError);
+    expect(() => setVisitor({id: entree.visitorId, name: 'a'.repeat(121), note: ''})).toThrowError(TypeError);
+    expect(() => setVisitor({id: entree.visitorId, name: '', note: 'a'.repeat(2001)})).toThrowError(TypeError);
+    // Une paire de substitution coupée n'est pas un texte.
+    expect(() => setVisitor({id: entree.visitorId, name: String.fromCharCode(0xd83d), note: ''})).toThrowError(TypeError);
+    expect(setVisitor({id: entree.visitorId, name: 'a'.repeat(120), note: 'b'.repeat(2000)})).toBe(true);
+    expect(findVisitor(entree.visitorId)!.name).toBe('a'.repeat(120));
+  });
+
+  it('setIpLabel : lʼétiquette suit lʼadresse — sessions passées et futures, dʼautres visiteurs compris', () => {
+    const passee = visite({ip: '203.0.113.7', now: NOW});
+    touchSession(passee);
+    const autre = visite({ip: '198.51.100.9', now: NOW});
+    touchSession(autre);
+
+    setIpLabel({ip: '203.0.113.7', label: 'Bureau fictif', now: LATER});
+
+    expect(ipLabel('203.0.113.7')).toEqual({ip: '203.0.113.7', label: 'Bureau fictif', at: LATER.toISOString()});
+    expect(ipLabel('198.51.100.9')).toBeUndefined();
+    const future = visite({ip: '203.0.113.7', now: LATER});
+    touchSession(future);
+    const parId = Object.fromEntries(
+      listSessions({withExchanges: false, page: 1}).sessions.map((s) => [s.id, s.ipLabel])
+    );
+    expect(parId).toEqual({[passee.sessionId]: 'Bureau fictif', [future.sessionId]: 'Bureau fictif', [autre.sessionId]: null});
+    // Une seule ligne par adresse, changée en place ; « retirée » = vide.
+    const plusTard = new Date(LATER.getTime() + 1000);
+    setIpLabel({ip: '203.0.113.7', label: '', now: plusTard});
+    expect((db.prepare('SELECT count(*) AS n FROM ip_label').get() as {n: number}).n).toBe(1);
+    expect(ipLabel('203.0.113.7')).toEqual({ip: '203.0.113.7', label: '', at: plusTard.toISOString()});
+    expect(listSessions({withExchanges: false, page: 1}).sessions.every((s) => s.ipLabel === '' || s.ip !== '203.0.113.7')).toBe(true);
+  });
+
+  it('setIpLabel : une adresse jamais vue sʼétiquette quand même, dev et unknown aussi', () => {
+    setIpLabel({ip: '2001:db8::1', label: 'IPv6 fictive', now: NOW});
+    setIpLabel({ip: 'dev', label: 'Poste', now: NOW});
+    setIpLabel({ip: 'unknown', label: 'Sans en-tête', now: NOW});
+    expect(ipLabel('2001:db8::1')!.label).toBe('IPv6 fictive');
+    expect(ipLabel('dev')!.label).toBe('Poste');
+    expect(ipLabel('unknown')!.label).toBe('Sans en-tête');
+  });
+
+  it('setIpLabel : refuse ce qui nʼest pas une adresse, un texte hors bornes, une date invalide', () => {
+    expect(IP_LABEL_MAX).toBe(120);
+    for (const ip of ['', 'localhost', '203.0.113', '203.0.113.7, 10.0.0.1', "1' OR 1=1", 'DEV']) {
+      expect(isJournalIp(ip), ip).toBe(false);
+      expect(() => setIpLabel({ip, label: 'x', now: NOW})).toThrowError(TypeError);
+    }
+    expect(isJournalIp('203.0.113.7')).toBe(true);
+    expect(isJournalIp('::1')).toBe(true);
+    expect(() => setIpLabel({ip: '203.0.113.7', label: 'a'.repeat(121), now: NOW})).toThrowError(TypeError);
+    expect(() => setIpLabel({ip: '203.0.113.7', label: 'x', now: new Date('x')})).toThrowError(TypeError);
+    expect((db.prepare('SELECT count(*) AS n FROM ip_label').get() as {n: number}).n).toBe(0);
+  });
+});
+
 describe('ouverture', () => {
   it('pose WAL, busy_timeout, foreign_keys et la version du schéma', () => {
     expect(pragma('journal_mode')).toBe('wal');
@@ -809,7 +1137,7 @@ describe('ouverture', () => {
     expect(pragma('user_version')).toBe(SCHEMA_VERSION);
   });
 
-  it('crée les trois tables du squelette et les index de lecture', () => {
+  it('crée les trois tables du squelette, la table des étiquettes dʼadresse, et les index de lecture', () => {
     const noms = (
       db
         .prepare("SELECT type, name FROM sqlite_master WHERE type IN ('table', 'index') ORDER BY name")
@@ -818,9 +1146,13 @@ describe('ouverture', () => {
 
     expect(noms.filter(({type}) => type === 'table').map(({name}) => name)).toEqual([
       'exchange',
+      'ip_label',
       'session',
       'visitor'
     ]);
+    // `session.ip_label` a disparu en version 4 : l'étiquette suit l'adresse, pas la session.
+    const colonnes = (db.prepare('PRAGMA table_info(session)').all() as {name: string}[]).map(({name}) => name);
+    expect(colonnes).not.toContain('ip_label');
     expect(noms.filter(({type}) => type === 'index').map(({name}) => name)).toEqual([
       'exchange_at',
       'exchange_session_id_at',
@@ -898,6 +1230,14 @@ describe('ouverture', () => {
         "CHECK (status IN ('pending', 'done', 'model_error', 'cap_reached'))",
         "CHECK (status IN ('pending', 'done', 'model_error'))"
       )
+    ],
+    [
+      3,
+      // Le DDL de la version 3 : l'étiquette sur `session`, pas de table `ip_label`.
+      DDL.replace('  ip            TEXT NOT NULL,\n', '  ip            TEXT NOT NULL,\n  ip_label      TEXT,\n').replace(
+        /CREATE TABLE IF NOT EXISTS ip_label[\s\S]*?STRICT;\n/,
+        ''
+      )
     ]
   ])('refuse une base en version %i — schéma changé avant la mise en ligne, à recréer', (version, ddl) => {
     // Rejouer le DDL courant n'y changerait rien (`IF NOT EXISTS`), et aucune
@@ -921,11 +1261,15 @@ describe('ouverture', () => {
     db = openJournal(path);
   });
 
-  it('est en version 3 : lʼéchange admet la sorte hero et le statut cap_reached', () => {
-    expect(SCHEMA_VERSION).toBe(3);
+  it('est en version 4 : hero, cap_reached, et lʼétiquette dʼadresse dans sa table', () => {
+    expect(SCHEMA_VERSION).toBe(4);
     expect(DDL).toContain("CHECK (kind IN ('chat', 'match', 'hero'))");
     expect(DDL).toContain("CHECK (status IN ('pending', 'done', 'model_error', 'cap_reached'))");
     expect([...EXCHANGE_STATUSES].sort()).toEqual(['cap_reached', 'done', 'model_error', 'pending']);
+    expect(DDL).toMatch(
+      /CREATE TABLE IF NOT EXISTS ip_label \(\s*ip\s+TEXT PRIMARY KEY,\s*label\s+TEXT NOT NULL,\s*at\s+TEXT NOT NULL\s*\) STRICT;/
+    );
+    expect(DDL).not.toMatch(/ip_label\s+TEXT,/);
   });
 
   it('dérive les CHECK du DDL des listes closes du code : une seule vérité', () => {
@@ -1018,69 +1362,130 @@ describe('ce que le module ne peut pas faire', () => {
     'latency_ms'
   ];
 
-  it.each(sources)('%s ne modifie que session.last_seen_at et la finalisation dʼun exchange pending', (_name, source) => {
-    // Tout `UPDATE` doit être l'une des deux formes d'AD-7, et le test refuse
-    // tout le reste :
-    //  - `UPDATE session SET last_seen_at = … WHERE id = ?` — **une seule**
-    //    affectation, et c'est `last_seen_at` ; `SET last_seen_at = ?, ip = ?`
-    //    est refusé ;
-    //  - `UPDATE exchange SET <colonnes> WHERE id = ? AND status = 'pending'`
-    //    — chaque colonne affectée dans la liste fermée de la finalisation,
-    //    aucune deux fois, et **exactement** cette clause `WHERE` : ni une
-    //    autre condition, ni une ligne qui ne soit pas `pending`.
-    // Le nombre d'occurrences du mot et le nombre d'instructions reconnues
+  /**
+   * Les deux formes de l'admin (story 8), **exactes** : la table, les colonnes
+   * dans cet ordre, la clause `WHERE`. Rien d'autre n'est admis sur `visitor`
+   * ni sur `ip_label`.
+   */
+  const ADMIN_FORMS = [
+    'UPDATE visitor SET name = ?, note = ? WHERE id = ?',
+    'UPDATE ip_label SET label = ?, at = ? WHERE ip = ?'
+  ];
+
+  type Update = {
+    readonly instruction: string;
+    readonly table: string;
+    readonly colonnes: readonly string[];
+    readonly condition: string;
+  };
+
+  const normalise = (clause: string) => clause.replace(/\s+/g, ' ').trim();
+
+  /**
+   * Chaque `UPDATE … SET … WHERE …` d'une source, analysé — **une seule
+   * analyse**, partagée par le garde et par les sondes qui l'éprouvent. La
+   * clause `WHERE` s'arrête au guillemet ou à l'accent grave qui ferme la
+   * chaîne SQL, suivi d'une parenthèse ou d'un retour à la ligne. Une
+   * parenthèse ne doit pas pouvoir cacher une virgule (`max(a, b)`) : retirées
+   * avant de découper la liste des affectations.
+   */
+  function analyseUpdates(source: string): Update[] {
+    return [...source.matchAll(/\bUPDATE\s+(\w+)\s+SET\s+([\s\S]*?)\s+WHERE\s+([\s\S]*?)(?=\s*['`]\s*(?:\)|\n))/gi)].map(
+      ([instruction, table, affectations, condition]) => ({
+        instruction: normalise(instruction),
+        table: table!,
+        colonnes: affectations!
+          .replace(/\([^)]*\)/g, '')
+          .split(',')
+          .map((item) => item.split('=')[0]!.trim()),
+        condition: normalise(condition!)
+      })
+    );
+  }
+
+  /**
+   * Le verdict du garde sur une instruction : `admise`, ou la raison du refus.
+   *  - `UPDATE session SET last_seen_at = … WHERE id = ?` — **une seule**
+   *    affectation, et c'est `last_seen_at` ; `SET last_seen_at = ?, ip = ?`
+   *    est refusé ;
+   *  - `UPDATE exchange SET <colonnes> WHERE id = ? AND status = 'pending'`
+   *    — chaque colonne affectée dans la liste fermée de la finalisation,
+   *    aucune deux fois, et **exactement** cette clause `WHERE` : ni une
+   *    autre condition, ni une ligne qui ne soit pas `pending` ;
+   *  - les deux formes de `ADMIN_FORMS`, au caractère près ;
+   *  - toute autre table est refusée.
+   */
+  function verdict(update: Update): string {
+    if (update.table === 'visitor' || update.table === 'ip_label') {
+      return ADMIN_FORMS.includes(update.instruction) ? 'admise' : `forme hors liste sur ${update.table}`;
+    }
+    if (update.table === 'session') {
+      if (update.colonnes.join(',') !== 'last_seen_at') return 'session : autre chose que last_seen_at';
+      return update.condition === 'id = ?' ? 'admise' : 'session : autre clause WHERE';
+    }
+    if (update.table === 'exchange') {
+      const hors = update.colonnes.filter((colonne) => !FINALISATION.includes(colonne));
+      if (hors.length > 0) return `exchange : colonne hors liste fermée ${hors.join(', ')}`;
+      if (new Set(update.colonnes).size !== update.colonnes.length) return 'exchange : colonne affectée deux fois';
+      return update.condition === "id = ? AND status = 'pending'" ? 'admise' : 'exchange : autre clause WHERE';
+    }
+    return `table inconnue ${update.table}`;
+  }
+
+  it.each(sources)('%s ne modifie que session.last_seen_at, la finalisation dʼun exchange pending, et les trois colonnes de lʼadmin', (_name, source) => {
+    // Tout `UPDATE` doit être l'une des formes d'AD-7 (voir `verdict`). Le
+    // nombre d'occurrences du mot et le nombre d'instructions reconnues
     // doivent coïncider : une forme inattendue ne passe pas inaperçue.
     const occurrences = source.match(/\bUPDATE\b/gi) ?? [];
-    // La clause `WHERE` s'arrête au guillemet ou à l'accent grave qui ferme la
-    // chaîne SQL — suivi d'une parenthèse ou d'un retour à la ligne.
-    const instructions = [
-      ...source.matchAll(/\bUPDATE\s+(\w+)\s+SET\s+([\s\S]*?)\s+WHERE\s+([\s\S]*?)(?=\s*['`]\s*(?:\)|\n))/gi)
-    ];
-    const normalise = (clause: string) => clause.replace(/\s+/g, ' ').trim();
-    // Une parenthèse ne doit pas pouvoir cacher une virgule (`max(a, b)`) :
-    // retirées avant de découper la liste des affectations.
-    const colonnesDe = (affectations: string) =>
-      affectations
-        .replace(/\([^)]*\)/g, '')
-        .split(',')
-        .map((item) => item.split('=')[0]!.trim());
+    const updates = analyseUpdates(source);
 
-    expect(instructions.length).toBe(occurrences.length);
-    for (const [, table, affectations, condition] of instructions) {
-      const colonnes = colonnesDe(affectations!);
-      if (table === 'session') {
-        expect(colonnes).toEqual(['last_seen_at']);
-        expect(normalise(condition!)).toBe('id = ?');
-        continue;
-      }
-      expect(table).toBe('exchange');
-      for (const colonne of colonnes) {
-        expect(FINALISATION, `colonne hors liste fermée : ${colonne}`).toContain(colonne);
-      }
-      expect(new Set(colonnes).size).toBe(colonnes.length);
-      expect(normalise(condition!)).toBe("id = ? AND status = 'pending'");
+    expect(updates.length).toBe(occurrences.length);
+    for (const update of updates) {
+      expect(verdict(update), update.instruction).toBe('admise');
     }
   });
 
   it('le garde refuse bien ce quʼil dit refuser', () => {
-    // Sonde sur des sources fictives : deux affectations sur `session`, une
-    // colonne hors liste, une autre clause `WHERE` — chacune doit être vue.
-    const analyse = (sql: string) =>
-      [...sql.matchAll(/\bUPDATE\s+(\w+)\s+SET\s+([\s\S]*?)\s+WHERE\s+([\s\S]*?)(?=\s*['`]\s*(?:\)|\n))/gi)].map(
-        ([, table, affectations, condition]) => ({
-          table,
-          colonnes: affectations!.replace(/\([^)]*\)/g, '').split(',').map((item) => item.split('=')[0]!.trim()),
-          condition: condition!.replace(/\s+/g, ' ').trim()
-        })
-      );
-    expect(analyse("db.prepare('UPDATE session SET last_seen_at = ?, ip = ? WHERE id = ?').run(")).toEqual([
-      {table: 'session', colonnes: ['last_seen_at', 'ip'], condition: 'id = ?'}
-    ]);
-    expect(analyse("db.prepare(`UPDATE exchange SET question = ? WHERE id = ?`\n)")).toEqual([
-      {table: 'exchange', colonnes: ['question'], condition: 'id = ?'}
-    ]);
-    expect(analyse("db.prepare(`UPDATE exchange SET status = ? WHERE status = 'pending' AND at < ?`\n)")).toEqual([
-      {table: 'exchange', colonnes: ['status'], condition: "status = 'pending' AND at < ?"}
-    ]);
+    // Sondes sur des sources fictives, par la **même** analyse que le garde :
+    // deux affectations sur `session`, une colonne hors liste, une autre
+    // clause `WHERE` — chacune doit être vue.
+    const seul = (sql: string) => {
+      const updates = analyseUpdates(sql);
+      expect(updates).toHaveLength(1);
+      return updates[0]!;
+    };
+    const session = seul("db.prepare('UPDATE session SET last_seen_at = ?, ip = ? WHERE id = ?').run(");
+    expect(session).toMatchObject({table: 'session', colonnes: ['last_seen_at', 'ip'], condition: 'id = ?'});
+    expect(verdict(session)).toBe('session : autre chose que last_seen_at');
+    expect(verdict(seul("db.prepare('UPDATE session SET last_seen_at = max(last_seen_at, ?) WHERE id = ?').run("))).toBe('admise');
+    expect(verdict(seul("db.prepare('UPDATE session SET last_seen_at = ? WHERE id = ? OR 1 = 1').run("))).toBe('session : autre clause WHERE');
+
+    const question = seul("db.prepare(`UPDATE exchange SET question = ? WHERE id = ?`\n)");
+    expect(question).toMatchObject({table: 'exchange', colonnes: ['question'], condition: 'id = ?'});
+    expect(verdict(question)).toBe('exchange : colonne hors liste fermée question');
+    const statut = seul("db.prepare(`UPDATE exchange SET status = ? WHERE status = 'pending' AND at < ?`\n)");
+    expect(statut).toMatchObject({table: 'exchange', colonnes: ['status'], condition: "status = 'pending' AND at < ?"});
+    expect(verdict(statut)).toBe('exchange : autre clause WHERE');
+    expect(verdict(seul("db.prepare(`UPDATE exchange SET status = ?, status = ? WHERE id = ? AND status = 'pending'`\n)"))).toBe(
+      'exchange : colonne affectée deux fois'
+    );
+    expect(verdict(seul("db.prepare(`UPDATE exchange SET status = ?, answer = ? WHERE id = ? AND status = 'pending'`\n)"))).toBe('admise');
+  });
+
+  it('refuse une troisième forme sur visitor ou ip_label : la liste est fermée', () => {
+    // La forme admise passe ; une colonne de plus, une autre clause, une
+    // autre table ne passent pas — par la même analyse que le garde.
+    const verdictDe = (sql: string) => {
+      const updates = analyseUpdates(sql);
+      expect(updates).toHaveLength(1);
+      return verdict(updates[0]!);
+    };
+    expect(verdictDe("db.prepare('UPDATE visitor SET name = ?, note = ? WHERE id = ?').run(")).toBe('admise');
+    expect(verdictDe("db.prepare('UPDATE ip_label SET label = ?, at = ? WHERE ip = ?').run(")).toBe('admise');
+    expect(verdictDe("db.prepare('UPDATE visitor SET name = ?, note = ?, first_seen = ? WHERE id = ?').run(")).toBe('forme hors liste sur visitor');
+    expect(verdictDe("db.prepare('UPDATE visitor SET name = ?, note = ? WHERE 1 = 1').run(")).toBe('forme hors liste sur visitor');
+    expect(verdictDe("db.prepare('UPDATE ip_label SET label = ? WHERE ip = ?').run(")).toBe('forme hors liste sur ip_label');
+    expect(verdictDe("db.prepare('UPDATE session SET ip = ? WHERE id = ?').run(")).toBe('session : autre chose que last_seen_at');
+    expect(verdictDe("db.prepare('UPDATE autre SET x = ? WHERE id = ?').run(")).toBe('table inconnue autre');
   });
 });

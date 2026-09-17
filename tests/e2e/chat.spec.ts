@@ -207,7 +207,7 @@ for (const {name, viewport} of VIEWPORTS) {
       expect(decoder(flux!).map((event) => event.type)).toEqual(['delta', 'delta', 'error']);
       const alerte = panneau.getByRole('alert');
       await expect(alerte).toContainText(messages.fr.errors.model_unavailable);
-      const lien = alerte.getByRole('link', {name: messages.fr.header.contact});
+      const lien = alerte.getByRole('link', {name: messages.fr.sections.contact});
       await expect(lien).toHaveAttribute('href', '#contact');
       await expect(page.locator('#contact')).toHaveCount(1);
       await expect(await champLibre(panneau, 'fr')).toBeEnabled();
@@ -282,7 +282,7 @@ test.describe('les refus, chacun avec son message', () => {
 
       const alerte = panneau.getByRole('alert');
       await expect(alerte).toContainText(attendu);
-      const lien = alerte.getByRole('link', {name: messages.fr.header.contact});
+      const lien = alerte.getByRole('link', {name: messages.fr.sections.contact});
       await expect(lien).toHaveCount(contact ? 1 : 0);
       if (contact) await expect(lien).toHaveAttribute('href', '#contact');
       // Tout se réactive, le focus revient au champ, les puces sont restées.
@@ -402,6 +402,28 @@ test.describe('un flux qui se ferme sans done ni error', () => {
     await expect(champ).toBeEnabled();
     await expect(champ).toBeFocused();
     await expect(panneau.getByRole('button', {name: heroLabel('fr', 'lic-01'), exact: true})).toBeEnabled();
+  });
+});
+
+test.describe('depuis le tiroir mobile, le lien du contact', () => {
+  test.use({viewport: {width: 390, height: 844}});
+
+  test('referme le tiroir et mène à la section Contact, visible à lʼécran', async ({page}) => {
+    await page.route('**/api/chat', (route) =>
+      route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({ok: false, reason: 'cap_reached'})})
+    );
+    await page.goto('/fr');
+    const panneau = await ouvrirPanneau(page, 'fr', 390);
+    const champ = await champLibre(panneau, 'fr');
+    await champ.fill('Question refusée au plafond');
+    await champ.press('Enter');
+    const lien = panneau.getByRole('alert').getByRole('link', {name: messages.fr.sections.contact});
+    await expect(lien).toHaveAttribute('href', '#contact');
+
+    await lien.click();
+    await expect(page.locator('details')).not.toHaveAttribute('open', '');
+    await expect(page.locator('section#contact')).toBeInViewport();
+    await expect(page.locator('section#contact').getByRole('heading', {level: 2})).toBeInViewport();
   });
 });
 

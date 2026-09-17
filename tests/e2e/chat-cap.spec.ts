@@ -65,7 +65,7 @@ test('après une réponse qui vaut plus que le plafond, la question suivante est
 
   const alerte = panneau.getByRole('alert');
   await expect(alerte).toContainText(messages.fr.errors.cap_reached);
-  const lien = alerte.getByRole('link', {name: messages.fr.header.contact});
+  const lien = alerte.getByRole('link', {name: messages.fr.sections.contact});
   await expect(lien).toHaveAttribute('href', '#contact');
   await expect(page.locator('#contact')).toHaveCount(1);
   await expect(await champLibre(panneau, 'fr')).toBeEnabled();

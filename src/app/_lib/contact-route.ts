@@ -39,7 +39,7 @@ export async function contactRoute(
     ...(contact?.email ? {email: contact.email} : {})
   };
   // `cv.yaml` peut ne pas déclarer la coordonnée : le bouton dira
-  // l'indisponibilité, et LinkedIn reste à côté.
+  // l'indisponibilité, et LinkedIn et GitHub restent à côté.
   if (Object.keys(body).length === 0) {
     return Response.json({error: 'absent'}, {status: 404, headers: HEADERS});
   }

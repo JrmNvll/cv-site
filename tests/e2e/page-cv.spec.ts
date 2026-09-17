@@ -58,17 +58,39 @@ for (const {name, viewport} of VIEWPORTS) {
         await expect(page.getByText(cv.profil, {exact: true})).toBeVisible();
         await expect(page.getByText(`${cv.identite.prenom} ${cv.identite.nom}`)).toBeVisible();
 
-        // En clair : LinkedIn, et rien d'autre. Courriel et numéro sont des
-        // boutons, dans cet ordre, avant LinkedIn.
+        // Le nom dans la barre, à la même taille que le titre du premier écran ;
+        // la langue à droite du nom (décisions du 2026-09-17).
+        const barre = page.locator('header');
+        const nom = barre.getByText(`${cv.identite.prenom} ${cv.identite.nom}`, {exact: true});
+        const titre = page.getByRole('heading', {level: 1});
+        await expect(nom).toBeVisible();
+        expect(await nom.evaluate((el) => getComputedStyle(el).fontSize)).toBe(
+          await titre.evaluate((el) => getComputedStyle(el).fontSize)
+        );
+        const langue = barre.getByRole('navigation', {name: messages[locale].languages.label});
+        expect(await langue.boundingBox().then((b) => b!.x)).toBeGreaterThan(
+          await nom.boundingBox().then((b) => b!.x + b!.width)
+        );
+
+        // Les coordonnées : une section « Contact », ancre `#contact`. En clair :
+        // LinkedIn et GitHub, et rien d'autre. Courriel et numéro sont des
+        // boutons, dans cet ordre, avant les liens.
+        const contact = page.locator('section#contact');
+        await expect(contact.getByRole('heading', {level: 2})).toHaveText(messages[locale].sections.contact);
         await expect(
-          page.getByRole('link', {name: messages[locale].header.linkedin})
+          contact.getByRole('link', {name: messages[locale].contact.linkedin})
         ).toHaveAttribute('href', cv.contact.linkedin!);
-        const coordonnees = page.getByRole('list', {name: messages[locale].header.contact});
+        await expect(
+          contact.getByRole('link', {name: messages[locale].contact.github})
+        ).toHaveAttribute('href', cv.contact.github!);
+        const coordonnees = contact.getByRole('list');
         await expect(coordonnees.getByRole('listitem')).toHaveText([
           messages[locale].email.reveal,
           messages[locale].phone.reveal,
-          messages[locale].header.linkedin
+          messages[locale].contact.linkedin,
+          messages[locale].contact.github
         ]);
+        await expect(page.locator('header')).not.toContainText(messages[locale].contact.linkedin);
 
         // Les deux chiffres du bandeau : calculés depuis la projection, avec les
         // mêmes fonctions que la page — jamais recopiés.
@@ -519,7 +541,7 @@ test.describe('le téléphone', () => {
     await expect(page.getByRole('status')).toHaveText(messages.fr.phone.unavailable);
     await expect(page.getByRole('button', {name: messages.fr.phone.reveal})).toHaveCount(0);
     // LinkedIn reste là, en clair : c'est vers lui que le message renvoie.
-    await expect(page.getByRole('link', {name: messages.fr.header.linkedin})).toBeVisible();
+    await expect(page.getByRole('link', {name: messages.fr.contact.linkedin})).toBeVisible();
   });
 
   test('le courriel suit la même règle : absent du document, révélé au clic', async ({page}) => {
@@ -573,9 +595,15 @@ test.describe('sans JavaScript', () => {
         page.getByRole('heading', {name: competence.categorie, exact: true})
       ).toBeVisible();
     }
-    // Sans JavaScript, LinkedIn est le seul contact affiché : les boutons du
-    // courriel et du numéro n'existent pas.
-    await expect(page.getByRole('link', {name: messages.fr.header.linkedin})).toBeVisible();
+    // Sans JavaScript, LinkedIn et GitHub sont les seuls contacts affichés :
+    // les boutons du courriel et du numéro n'existent pas. (Les messages
+    // d'indisponibilité ne renvoient qu'à LinkedIn : GitHub n'est pas un
+    // canal de contact.)
+    const contact = page.locator('section#contact');
+    await expect(contact.getByRole('listitem')).toHaveText([
+      messages.fr.contact.linkedin,
+      messages.fr.contact.github
+    ]);
     await expect(page.getByRole('button', {name: messages.fr.email.reveal})).toHaveCount(0);
 
     // L'assistant est un supplément, pas une condition : ses questions restent

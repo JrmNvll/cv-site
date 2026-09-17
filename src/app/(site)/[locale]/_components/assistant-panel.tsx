@@ -100,7 +100,7 @@ export async function AssistantPanel({titleId, experiences}: AssistantPanelProps
           matchPlaceholder: t('assistant.matchPlaceholder'),
           matchSend: t('assistant.matchSend'),
           matchBack: t('assistant.matchBack'),
-          contact: t('header.contact')
+          contact: t('sections.contact')
         }}
         errors={{
           unavailable: t('errors.unavailable'),

@@ -55,7 +55,7 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
     // La marge basse réserve, sous `lg`, la hauteur de la barre fixe de
     // l'assistant : rien de la page ne doit rester caché dessous.
     <div className={`mx-auto w-full max-w-[1280px] px-5 sm:px-8 lg:px-[72px] ${DOCK_BAR_HEIGHT_CLASS} lg:pb-0`}>
-      <SiteHeader identite={cv.identite} contact={cv.contact} locale={locale} />
+      <SiteHeader identite={cv.identite} locale={locale} />
 
       <main>
         {/* Le premier écran, mise en page validée le 2026-09-15 : le titre sur

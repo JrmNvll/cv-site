@@ -320,7 +320,7 @@ test.describe('une évaluation interrompue', () => {
     sansMarqueNiBloc(flux!);
     const alerte = panneau.getByRole('alert');
     await expect(alerte).toContainText(messages.fr.errors.model_unavailable);
-    await expect(alerte.getByRole('link', {name: messages.fr.header.contact})).toHaveAttribute('href', '#contact');
+    await expect(alerte.getByRole('link', {name: messages.fr.sections.contact})).toHaveAttribute('href', '#contact');
     await expect(panneau.getByRole('button', {name: messages.fr.assistant.back, exact: true})).toBeVisible();
     await expect(await champLibre(panneau, 'fr')).toBeEnabled();
 
@@ -367,7 +367,7 @@ test.describe('les refus, chacun avec son message, la zone gardée', () => {
 
       const alerte = panneau.getByRole('alert');
       await expect(alerte).toContainText(attendu);
-      const lien = alerte.getByRole('link', {name: messages.fr.header.contact});
+      const lien = alerte.getByRole('link', {name: messages.fr.sections.contact});
       await expect(lien).toHaveCount(contact ? 1 : 0);
       if (contact) await expect(lien).toHaveAttribute('href', '#contact');
       // La zone est restée, son texte avec elle, le focus dessus ; tout est réactivé.

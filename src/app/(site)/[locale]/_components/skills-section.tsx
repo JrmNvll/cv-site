@@ -1,5 +1,5 @@
 /**
- * Compétences, atouts, langues — et les informations pratiques.
+ * Compétences, atouts, langues, informations pratiques — et le contact.
  *
  * Absents de la maquette, qui ne montre que le premier écran et le parcours —
  * mais `CAP-1` demande que « identité, positionnement IA, trois expériences avec
@@ -13,11 +13,20 @@
  * que la projection calcule à la requête ; la localité est un champ à part de
  * `cv.yaml`, jamais tirée de l'adresse postale (AD-8).
  *
+ * Les coordonnées — courriel et numéro sur geste explicite, LinkedIn et GitHub
+ * en clair — forment la section « Contact », ici et non dans la barre, à la
+ * demande de Jérémie (2026-09-17). `ContactReveal` ne rend rien tant que le
+ * visiteur n'a pas cliqué : ni le courriel ni le numéro ne sont dans le HTML
+ * servi (AD-8). `id="contact"` : l'ancre vers laquelle le panneau renvoie quand
+ * l'assistant ne peut pas répondre (AD-16 : « affichent le contact direct »).
+ *
  * Chaque bloc disparaît si sa liste est vide : un contenu qui ne dit rien ne
- * doit pas laisser un titre orphelin.
+ * doit pas laisser un titre orphelin — sauf le contact, toujours rendu : c'est
+ * la cible de l'ancre, et les boutons y vivent même sans lien en clair.
  */
 import {getTranslations} from 'next-intl/server';
 import type {DisplayProjection} from '@/content';
+import {ContactReveal} from './contact-reveal';
 import {joinParts} from './format';
 
 export type SkillsSectionProps = {
@@ -25,8 +34,10 @@ export type SkillsSectionProps = {
   readonly atouts: DisplayProjection['atouts'];
   readonly langues: DisplayProjection['langues'];
   readonly identite: Pick<DisplayProjection['identite'], 'age' | 'permis'>;
-  readonly contact: Pick<DisplayProjection['contact'], 'localite'>;
+  readonly contact: DisplayProjection['contact'];
 };
+
+const LINK = 'text-accent underline-offset-4 hover:text-accent-strong hover:underline';
 
 const SECTION_TITLE =
   'border-b border-rule pb-4 text-[13px] font-semibold tracking-[0.1em] text-ink-muted uppercase';
@@ -44,14 +55,15 @@ export async function SkillsSection({
     contact.localite,
     identite.permis
   ].filter((line): line is string => line !== undefined);
-  if (
-    competences.length === 0 &&
-    atouts.length === 0 &&
-    langues.length === 0 &&
-    pratique.length === 0
-  ) {
-    return null;
-  }
+  // LinkedIn et GitHub, en clair, dans cet ordre ; un profil absent de
+  // `cv.yaml` n'a pas de ligne. Pas de `target="_blank"` : un CV n'a pas à
+  // retenir le visiteur, et un nouvel onglet non annoncé surprend.
+  const profils = (
+    [
+      ['linkedin', contact.linkedin],
+      ['github', contact.github]
+    ] as const
+  ).filter((entry): entry is [(typeof entry)[0], string] => entry[1] !== undefined);
 
   return (
     <div className="flex flex-col gap-12 pb-14">
@@ -86,7 +98,7 @@ export async function SkillsSection({
         </section>
       )}
 
-      <div className="grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-4">
         {atouts.length === 0 ? null : (
           <section aria-labelledby="atouts">
             <h2 id="atouts" className={SECTION_TITLE}>
@@ -127,6 +139,47 @@ export async function SkillsSection({
             </ul>
           </section>
         )}
+
+        {/* `id="contact"` sur la section, et non sur le titre comme les
+            voisines : c'est une cible d'ancre, le contenu doit venir avec. */}
+        <section id="contact" aria-labelledby="contact-titre">
+          <h2 id="contact-titre" className={SECTION_TITLE}>
+            {t('sections.contact')}
+          </h2>
+          <ul className="flex flex-col gap-1.5 pt-5 text-[15px] text-ink-soft">
+            {/* `empty:hidden` : sans JavaScript, `ContactReveal` ne rend rien — et
+                un élément de liste vide laisserait un écart visible. */}
+            <li className="empty:hidden">
+              <ContactReveal
+                endpoint="/api/contact/email"
+                labels={{
+                  reveal: t('email.reveal'),
+                  pending: t('email.pending'),
+                  label: t('email.label'),
+                  unavailable: t('email.unavailable')
+                }}
+              />
+            </li>
+            <li className="empty:hidden">
+              <ContactReveal
+                endpoint="/api/contact/phone"
+                labels={{
+                  reveal: t('phone.reveal'),
+                  pending: t('phone.pending'),
+                  label: t('phone.label'),
+                  unavailable: t('phone.unavailable')
+                }}
+              />
+            </li>
+            {profils.map(([key, href]) => (
+              <li key={key}>
+                <a href={href} rel="noopener noreferrer me" className={LINK}>
+                  {t(`contact.${key}`)}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
     </div>
   );

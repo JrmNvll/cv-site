@@ -8,9 +8,9 @@
     "fr": "Français",
     "en": "English"
   },
-  "header": {
-    "contact": "Contact details",
-    "linkedin": "LinkedIn"
+  "contact": {
+    "linkedin": "LinkedIn",
+    "github": "GitHub"
   },
   "phone": {
     "reveal": "Show his mobile number",
@@ -74,7 +74,8 @@
     "spokenLanguages": "Languages",
     "education": "Education",
     "practical": "Practical details",
-    "references": "References"
+    "references": "References",
+    "contact": "Contact"
   },
   "career": {
     "present": "today",

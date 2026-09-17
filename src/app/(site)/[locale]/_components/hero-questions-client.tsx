@@ -416,7 +416,14 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
       {failure.contact ? (
         <>
           {' '}
-          <a href="#contact" className="text-panel-accent underline-offset-4 hover:underline">
+          {/* Sur téléphone, le panneau vit dans un tiroir `<details>` fixé en bas
+              d'écran : ouvert, il couvrirait la section vers laquelle l'ancre
+              mène. On le referme au clic ; sans tiroir, `closest` ne trouve rien. */}
+          <a
+            href="#contact"
+            onClick={(event) => event.currentTarget.closest('details')?.removeAttribute('open')}
+            className="text-panel-accent underline-offset-4 hover:underline"
+          >
             {labels.contact}
           </a>
         </>

@@ -8,9 +8,9 @@
     "fr": "Français",
     "en": "English"
   },
-  "header": {
-    "contact": "Coordonnées",
-    "linkedin": "LinkedIn"
+  "contact": {
+    "linkedin": "LinkedIn",
+    "github": "GitHub"
   },
   "phone": {
     "reveal": "Afficher son n° de natel",
@@ -74,7 +74,8 @@
     "spokenLanguages": "Langues",
     "education": "Formation",
     "practical": "Informations pratiques",
-    "references": "Références"
+    "references": "Références",
+    "contact": "Contact"
   },
   "career": {
     "present": "aujourd'hui",

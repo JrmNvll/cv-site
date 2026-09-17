@@ -50,6 +50,12 @@ describe('listes', () => {
     expect(html('* un\n* deux')).toBe('<ul><li>un</li><li>deux</li></ul>');
   });
 
+  it('rend une liste à puces avec `+` — la même lecture que le contrôle des évaluations', () => {
+    expect(html('+ un\n+ deux')).toBe('<ul><li>un</li><li>deux</li></ul>');
+    // Un `+` sans espace reste du texte.
+    expect(html('+1 an')).toBe('<p>+1 an</p>');
+  });
+
   it('rend une liste numérotée, et garde le premier numéro sʼil nʼest pas 1', () => {
     expect(html('1. un\n2. deux')).toBe('<ol><li>un</li><li>deux</li></ol>');
     expect(html('3. trois\n4. quatre')).toBe('<ol start="3"><li>trois</li><li>quatre</li></ol>');

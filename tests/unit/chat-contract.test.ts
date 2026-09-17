@@ -1,9 +1,12 @@
 /**
- * Le contrat de `/api/chat`, lu côté client : le corps qui part, le refus
- * nommé, les trois événements, et le décodeur SSE — coupé n'importe où.
+ * Le contrat de `/api/chat` et `/api/match`, lu côté client : le corps qui
+ * part, le refus nommé, les trois événements, et le décodeur SSE — coupé
+ * n'importe où.
  */
 import {describe, expect, it} from 'vitest';
 import {
+  AD_MAX_CHARS,
+  clampAd,
   CHAT_EVENTS,
   CHAT_REFUSAL_REASONS,
   CHAT_REFUSAL_STATUS,
@@ -12,6 +15,7 @@ import {
   parseChatEvent,
   parseChatRefusal,
   parseChatRequest,
+  parseMatchRequest,
   QUESTION_MAX_CHARS
 } from '@/app/_lib/chat-contract';
 
@@ -32,9 +36,68 @@ describe('parseChatRequest', () => {
     {question: 'x'.repeat(QUESTION_MAX_CHARS + 1), lang: 'fr'},
     {question: 42, lang: 'fr'},
     {question: 'Q', lang: ''},
-    {question: 'Q', lang: 3}
+    {question: 'Q', lang: 3},
+    // Une annonce n'est pas une question : le champ doit s'appeler `question`.
+    {ad: 'Annonce', lang: 'fr'}
   ])('rend null pour %j', (payload) => {
     expect(parseChatRequest(payload)).toBeNull();
+  });
+});
+
+describe('parseMatchRequest', () => {
+  it('rend lʼannonce sans ses blancs et la langue telle quelle, jusquʼà huit mille caractères', () => {
+    expect(parseMatchRequest({ad: '  Annonce fictive.  ', lang: 'fr'})).toEqual({ad: 'Annonce fictive.', lang: 'fr'});
+    expect(parseMatchRequest({ad: 'x'.repeat(AD_MAX_CHARS), lang: 'en'})).toEqual({ad: 'x'.repeat(AD_MAX_CHARS), lang: 'en'});
+    expect(parseMatchRequest({ad: 'x'.repeat(AD_MAX_CHARS + 1), lang: 'en'})).toBeNull();
+    expect(AD_MAX_CHARS).toBe(8000);
+  });
+
+  it.each([
+    null,
+    'texte',
+    {},
+    {lang: 'fr'},
+    {ad: 'A'},
+    {ad: '', lang: 'fr'},
+    {ad: '  \n', lang: 'fr'},
+    {ad: 42, lang: 'fr'},
+    {ad: 'A', lang: ''},
+    {ad: 'A', lang: 3},
+    // Une question n'est pas une annonce : le champ doit s'appeler `ad`.
+    {question: 'Q', lang: 'fr'}
+  ])('rend null pour %j', (payload) => {
+    expect(parseMatchRequest(payload)).toBeNull();
+  });
+
+  it('refuse un texte mal formé — une paire de substitution coupée —, pour lʼannonce comme pour la question', () => {
+    const haute = String.fromCharCode(0xd83d);
+    const basse = String.fromCharCode(0xde00);
+    expect(parseMatchRequest({ad: `Emoji coupé ${haute}`, lang: 'fr'})).toBeNull();
+    expect(parseMatchRequest({ad: `${basse} seule`, lang: 'fr'})).toBeNull();
+    expect(parseChatRequest({question: `Q ${haute}`, lang: 'fr'})).toBeNull();
+    // Entier, il passe.
+    expect(parseMatchRequest({ad: `Emoji ${haute}${basse}`, lang: 'fr'})).toEqual({ad: `Emoji ${haute}${basse}`, lang: 'fr'});
+  });
+});
+
+describe('clampAd', () => {
+  const emoji = String.fromCodePoint(0x1f600);
+
+  it('coupe à huit mille unités, sans jamais couper un emoji en deux', () => {
+    expect(emoji.length).toBe(2);
+    expect(clampAd('court')).toBe('court');
+    expect(clampAd('x'.repeat(AD_MAX_CHARS))).toBe('x'.repeat(AD_MAX_CHARS));
+    expect(clampAd('x'.repeat(AD_MAX_CHARS + 5))).toBe('x'.repeat(AD_MAX_CHARS));
+    // L'emoji à cheval sur la borne : la coupe recule d'une unité.
+    expect(clampAd(`${'x'.repeat(AD_MAX_CHARS - 1)}${emoji}`)).toBe('x'.repeat(AD_MAX_CHARS - 1));
+    // L'emoji qui tient juste : gardé entier.
+    expect(clampAd(`${'x'.repeat(AD_MAX_CHARS - 2)}${emoji}x`)).toBe(`${'x'.repeat(AD_MAX_CHARS - 2)}${emoji}`);
+    // Ce qui sort est toujours bien formé et accepté par le contrat.
+    for (const value of [`${'x'.repeat(AD_MAX_CHARS - 1)}${emoji}`, `${emoji.repeat(AD_MAX_CHARS)}`]) {
+      const clamped = clampAd(value);
+      expect(clamped.isWellFormed()).toBe(true);
+      expect(parseMatchRequest({ad: clamped, lang: 'fr'})).not.toBeNull();
+    }
   });
 });
 

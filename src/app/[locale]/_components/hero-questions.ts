@@ -24,9 +24,10 @@ export function isHeroQuestion(value: unknown): value is HeroQuestion {
 }
 
 /**
- * La sixième n'interroge pas le corpus : elle ouvrira l'évaluation d'adéquation
- * à une annonce (`CAP-4`), qui appelle le modèle. D'où un identifiant à part,
- * et l'accent visuel qui la distingue des cinq autres.
+ * La sixième n'interroge pas le corpus : elle ouvre la zone où coller une
+ * annonce, dont l'évaluation d'adéquation (`CAP-4`, `POST /api/match`) appelle
+ * le modèle. D'où un identifiant à part, et l'accent visuel qui la distingue
+ * des cinq autres.
  */
 export const MATCH_QUESTION = 'annonce';
 

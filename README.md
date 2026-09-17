@@ -218,16 +218,16 @@ langue que la page demande, et rend le corps de l'entrée **tel qu'écrit**, en
 Markdown, rendu côté client par un sous-ensemble maîtrisé
 ([`markdown.tsx`](./src/app/[locale]/_components/markdown.tsx) : paragraphes,
 listes, gras, italique — tout le reste en texte, jamais de HTML injecté). Une
-entrée `PRIVÉ`, `PASSE` ou vide vaut `404`. Sans JavaScript, les puces et le
-champ libre restent désactivés ; la sixième (l'annonce à coller) le reste dans
-tous les cas, jusqu'à la story qui la branche.
+entrée `PRIVÉ`, `PASSE` ou vide vaut `404`. Sans JavaScript, les six puces et
+le champ libre restent désactivés ; la sixième (l'annonce à coller) ouvre,
+une fois hydratée, la zone de l'évaluation d'adéquation (voir plus bas).
 
 ## L'assistant : ancrage, passerelle, plafond
 
-**Le champ libre appelle le modèle** (CAP-3), et c'est la seule chose du site
-qui coûte de l'argent. Tout ce qui suit existe pour que la réponse soit fondée
-sur le dossier et rien d'autre, et pour que la dépense reste sous 5 USD par mois
-quoi qu'il arrive (CAP-8).
+**Le champ libre et l'annonce collée appellent le modèle** (CAP-3, CAP-4), et
+c'est la seule chose du site qui coûte de l'argent. Tout ce qui suit existe
+pour que la réponse soit fondée sur le dossier et rien d'autre, et pour que la
+dépense reste sous 5 USD par mois quoi qu'il arrive (CAP-8).
 
 **La connaissance** (`src/knowledge/`) se construit **au démarrage**, par
 langue, et ne change plus : le **noyau** — la projection `agent` de `cv.yaml`
@@ -276,8 +276,53 @@ plafond persistant du journal qui protège l'argent, pas lui. Un refus de débit
 n'est pas journalisé ; un refus au plafond l'est (`status = 'cap_reached'`,
 coût nul, question conservée).
 
-**Le protocole** (`POST /api/chat`, AD-16) : un refus préalable est un JSON
-`{ok: false, reason}` — `invalid_input` 400 (corps de plus de 8 Kio compris),
+**L'évaluation d'adéquation** (CAP-4, AD-17) : la sixième puce ouvre une zone
+où coller une annonce (1 à 8 000 caractères, le compte affiché), envoyée à
+`POST /api/match`. `match()` est `ask()` en tout point — même limiteur (une
+annonce compte comme une question), même historique, même passerelle, même
+plafond — sauf trois choses : l'annonce est la requête de récupération et
+part dans `<annonce>` au lieu de `<question>` ; **le bloc `system` est le
+même octet pour octet** (les règles décrivent les deux modes, c'est le
+dernier message qui dit lequel — un second prompt ferait un second préfixe de
+cache à payer) ; et la réponse a une **structure imposée**, quatre titres en
+gras seuls sur leur ligne, dans cet ordre et dans la langue de la page
+(`MATCH_TITLES`, `src/agent/prompts.ts`) : points forts, compétences
+transférables, écarts, conclusion. Chaque point des deux premières parties —
+une puce « - », cinq au plus par partie — se termine par une ou plusieurs
+**marques** `[qa:<id>]` / `[cv:<chemin>]` ; les écarts n'en portent aucune et
+sont formulés « non documenté dans le dossier » — jamais une incapacité ; la
+conclusion renvoie à l'échange direct ; jamais de note, de pourcentage ni de
+verdict. Les marques sont **retenues et retirées côté serveur** par le même
+automate que le bloc (`citations.ts` : un `[` qui peut ouvrir `[qa:` ou
+`[cv:` est tenu, tout autre `[` est relâché avec son texte ; une marque jamais
+refermée est close à la fin de sa ligne ou à 120 caractères, rien n'en sort)
+— le navigateur ne voit jamais un identifiant, seulement « N sources ». Les
+sources journalisées et transmises sont l'union des marques valides et du bloc
+valide. **`citation_ok` veut dire « tout en ordre »** pour une évaluation :
+les quatre titres là et dans l'ordre, chaque point des deux premières parties
+marqué, aucune marque sous les écarts, chaque marque et chaque source du bloc
+valide — sinon `0`, une ligne `agent.match_structure` dit pourquoi (les
+raisons, jamais le texte — le journal ne les garde pas), et la réponse est
+servie quand même ; une évaluation coupée par `max_tokens` est dite à part
+(`agent.match_truncated`). **Un point est un item de liste** (`-`, `*`, `+`,
+`1.`) : c'est ce que le prompt demande et la seule chose contrôlée — une
+phrase sans puce (« Rien à signaler. », une partie vide dite d'une ligne)
+n'est pas un point et n'est pas contrôlée. L'échange est journalisé
+`kind = 'match'` avec l'annonce entière en `question` — **les annonces
+collées sont conservées comme les questions**, entières, et la zone le dit ;
+dans l'historique des tours suivants, un repère localisé remplace l'annonce
+(huit mille caractères ne se rejouent pas six fois), la réponse reste, et une
+question qui y revient s'entend répondre que l'annonce n'est plus disponible.
+Un refus préalable (débit, plafond, indisponibilité) ramène à la zone avec le
+message, le texte collé intact. Sans JavaScript, la sixième puce reste
+désactivée.
+
+**Le protocole** (`POST /api/chat` `{question, lang}` et `POST /api/match`
+`{ad, lang}`, AD-16 — même mécanique, `src/app/_lib/stream-route.ts`) : un
+refus préalable est un JSON `{ok: false, reason}` — `invalid_input` 400 (corps
+de plus de 8 Kio pour une question, 48 Kio pour une annonce — des octets
+UTF-8, `Content-Length` annoncé ou texte mesuré — et texte mal formé, une
+paire de substitution coupée, compris),
 `no_visitor` 401, `rate_limited` 429, `cap_reached` 503, `model_unavailable`
 503 (aussi quand l'agent lève hors de son contrat) —, un flux ouvert est du
 `text/event-stream` avec `delta {text}`, `done {sources, exchangeId}` et
@@ -286,8 +331,8 @@ précède son premier mot —, la route envoie un commentaire SSE `: ping` toute
 les dix secondes ; le navigateur, lui, remet son délai de trente secondes à
 zéro sur tout octet reçu. Chaque raison a son message dans `messages/` ;
 `cap_reached` et `model_unavailable` renvoient au contact direct de la page.
-Le contrat vit une fois, dans `src/app/_lib/chat-contract.ts`, lu par la
-route et par le composant client.
+Le contrat vit une fois, dans `src/app/_lib/chat-contract.ts`, lu par les
+routes et par le composant client.
 
 **Ce que coûte une question** : les ordres de grandeur seulement — **la table
 datée de [`src/agent/pricing.ts`](./src/agent/pricing.ts) fait foi**, pas ce
@@ -305,19 +350,22 @@ un prix, un seuil ou le modèle est une décision, pas un réglage.
 en production, le SDK vise alors l'API réelle ; présente, le démarrage le dit
 en `warn`, `config.model_base_url`, avec l'hôte visé). Le simulateur
 (`tests/e2e/model-stub/server.mjs`) parle le format SSE de `/v1/messages`,
-vérifie ce que la passerelle envoie, et joue des scénarios choisis par un
-marqueur dans la question : une réponse ordinaire au bloc `<sources>`
-fragmenté et aux sources valides, `[invalide]` avec une source invalide en
-plus, `[erreur]` qui coupe après deux deltas, `[lent]` qui attend douze
-secondes avant le premier delta, `[espace]` qui espace ses deltas, et
-`[plafond]` qui déclare un `usage` de plus de 5 USD — ce dernier tourne en
-dernier et isolé (`chromium-plafond`, sans reprise), puisqu'après lui plus
-rien ne passe.
+vérifie ce que la passerelle envoie, et joue des scénarios choisis par le
+dernier message : une réponse ordinaire au bloc `<sources>` fragmenté et aux
+sources valides, `[invalide]` avec une source invalide en plus, `[erreur]` qui
+coupe après deux deltas, `[lent]` qui attend douze secondes avant le premier
+delta, `[espace]` qui espace ses deltas, `[plafond]` qui déclare un `usage` de
+plus de 5 USD — ce dernier tourne en dernier et isolé (`chromium-plafond`,
+sans reprise), puisqu'après lui plus rien ne passe — et, quand le message
+porte `<annonce>`, une évaluation en quatre parties dans la langue des règles,
+marques fragmentées et bloc compris (`[invalide]` dans l'annonce y glisse une
+marque invalide).
 
 **Essayer à la main, sur le contenu réel, sans rien payer** : lancer le
 simulateur dans un terminal (`npm run stub`), pointer `ANTHROPIC_BASE_URL`
 dessus dans `.env.local` (`http://127.0.0.1:3901`), lancer `npm run dev`,
-poser une question dans le champ libre. Le démarrage journalise la taille du
+poser une question dans le champ libre — ou coller une annonce fictive par la
+sixième puce. Le démarrage journalise la taille du
 noyau (`knowledge.ready`) et rappelle que la passerelle vise le simulateur
 (`config.model_base_url`) ; `usage.db` montre l'échange. Retirer la variable
 ensuite : avec elle, aucune question n'atteint l'API réelle.

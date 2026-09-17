@@ -1,5 +1,4 @@
-import IntlMessageFormat from 'intl-messageformat';
-import {expect, test, type Locator, type Page} from '@playwright/test';
+import {expect, test} from '@playwright/test';
 import {createSseDecoder, type ChatEvent} from '../../src/app/_lib/chat-contract';
 import {reservationMicroUsd} from '../../src/agent/pricing';
 import {
@@ -10,14 +9,16 @@ import {
   exchange,
   exchangesOfSession,
   expectedCost,
+  ligneDesSources,
   messages,
+  observerLeFlux as observer,
   ouvrirPanneau,
   poser,
   scenarios,
   sessionDuContexte,
-  stubURL
+  requetesDuSimulateur
 } from './chat-helpers';
-import {LANGS, type Lang} from './fixture-cv';
+import {LANGS} from './fixture-cv';
 import {heroLabel} from './hero-labels';
 
 /**
@@ -43,56 +44,9 @@ function decoder(body: string): ChatEvent[] {
   return [...sse.push(body), ...sse.end()];
 }
 
-/** « d'après le dossier · 1 source », formaté comme la page le formate. */
-function ligneDesSources(locale: Lang, count: number): string {
-  const plural = String(new IntlMessageFormat(messages[locale].assistant.answerSources, locale).format({count}));
-  return `${messages[locale].assistant.answerModel} · ${plural}`;
-}
-
-type Etat = {readonly state: string | null; readonly text: string; readonly panneau: string};
-
-/**
- * Observe la zone de réponse pendant le flux, à haute fréquence, jusqu'à la
- * fin (`data-answer` ≠ `streaming`) ou l'échéance : chaque état distinct est
- * retenu. C'est ainsi qu'on voit le texte grandir — et qu'on vérifie qu'à
- * aucun moment le bloc n'a été visible.
- */
-async function observer(page: Page, panneau: Locator, echeanceMs = 8000): Promise<Etat[]> {
-  const etats: Etat[] = [];
-  const echeance = Date.now() + echeanceMs;
-  while (Date.now() < echeance) {
-    // Un seul aller-retour, sans attente d'élément : la zone n'existe pas
-    // encore avant le premier delta, et n'existe plus après le retour.
-    const lu = await panneau.evaluate((section) => {
-      const zone = section.querySelector<HTMLElement>('[data-answer]');
-      return {
-        state: zone?.getAttribute('data-answer') ?? null,
-        text: zone?.innerText ?? '',
-        panneau: (section as HTMLElement).innerText
-      };
-    });
-    const dernier = etats.at(-1);
-    if (dernier === undefined || dernier.state !== lu.state || dernier.text !== lu.text) etats.push(lu);
-    if (lu.state !== null && lu.state !== 'streaming') break;
-    await page.waitForTimeout(10);
-  }
-  return etats;
-}
-
 /** Les requêtes que le simulateur a reçues pour une question — reconnues à sa fin. */
-async function requetesDuSimulateur(question: string) {
-  const toutes = (await (await fetch(`${stubURL}/requests`)).json()) as {
-    scenario?: string;
-    fault?: string;
-    model?: string;
-    max_tokens?: number;
-    effort?: string;
-    systemSha?: string;
-    cacheControl?: {type: string};
-    messages?: number;
-    question?: string | null;
-  }[];
-  return toutes.filter((requete) => requete.question === question);
+async function requetesPour(question: string) {
+  return (await requetesDuSimulateur()).filter((requete) => requete.question === question);
 }
 
 for (const {name, viewport} of VIEWPORTS) {
@@ -183,7 +137,7 @@ for (const {name, viewport} of VIEWPORTS) {
 
         // Ce que le simulateur a reçu : ce qu'AD-6 impose, et l'historique de
         // la session devant la question (la puce cliquée : un tour de plus).
-        const [requete] = await requetesDuSimulateur(question);
+        const [requete] = await requetesPour(question);
         expect(requete).toMatchObject({
           scenario: 'ordinary',
           model: 'claude-opus-5',
@@ -486,7 +440,6 @@ test.describe('sans JavaScript', () => {
         await expect(champ).toBeDisabled();
         await expect(panneau.getByRole('button', {name: messages.fr.assistant.send})).toBeDisabled();
         await expect(panneau.getByText(messages.fr.assistant.withoutScript)).toBeVisible();
-        await expect(panneau.getByText(messages.fr.assistant.inactive)).toHaveCount(0);
       });
     });
   }
@@ -518,9 +471,9 @@ test.describe('le préfixe de cache', () => {
     await poser(page, panneauEn, 'en', anglaise);
     await expect(panneauEn.locator('[data-answer="answered"]')).toBeVisible();
 
-    const [a] = await requetesDuSimulateur(premiere);
-    const [b] = await requetesDuSimulateur(seconde);
-    const [c] = await requetesDuSimulateur(anglaise);
+    const [a] = await requetesPour(premiere);
+    const [b] = await requetesPour(seconde);
+    const [c] = await requetesPour(anglaise);
     expect(a?.systemSha).toBeDefined();
     // Identique octet pour octet : c'est ce que le cache de l'API lit (la preuve réelle, `cache_read_input_tokens > 0`, est en story 10).
     expect(b?.systemSha).toBe(a?.systemSha);

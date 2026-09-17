@@ -1,27 +1,66 @@
 /**
- * Le contrat de `POST /api/chat` — tenu **une fois**, des deux côtés (AD-16).
+ * Le contrat de `POST /api/chat` et de `POST /api/match` — tenu **une fois**,
+ * des deux côtés (AD-16).
  *
  * La route le produit, le composant client le lit : un renommage d'un côté
  * doit casser l'autre à la compilation, pas en production. Aucun import ici,
  * pour que le module aille aussi bien dans un composant client que dans une
- * route — d'où `QUESTION_MAX_CHARS`, recopié de la couche `agent` et verrouillé
- * par un test : le champ libre et la route refusent la même longueur que
- * l'agent, sans l'importer.
+ * route — d'où `QUESTION_MAX_CHARS` et `AD_MAX_CHARS`, recopiés de la couche
+ * `agent` et verrouillés par un test : le champ libre, la zone de l'annonce
+ * et les routes refusent la même longueur que l'agent, sans l'importer.
  *
  * Deux transports, jamais deux pour la même chose : un refus **préalable** est
  * un JSON `{ok: false, reason}` avec son statut ; un flux ouvert est du
  * `text/event-stream`, trois événements nommés, chacun un JSON sur sa ligne
- * `data:`. Une erreur en cours de flux est un événement, pas un statut.
+ * `data:`. Une erreur en cours de flux est un événement, pas un statut. Les
+ * deux routes parlent le même flux et les mêmes refus : seul le corps diffère.
  */
 
 /** Une question tient en mille caractères — la valeur de `agent/pricing.ts`. */
 export const QUESTION_MAX_CHARS = 1000;
 
-/** Ce que le navigateur envoie. */
+/** Une annonce tient en huit mille caractères — la valeur de `agent/pricing.ts`. */
+export const AD_MAX_CHARS = 8000;
+
+/** Ce que le navigateur envoie à `/api/chat`. */
 export type ChatRequest = {
   readonly question: string;
   readonly lang: string;
 };
+
+/** Ce que le navigateur envoie à `/api/match`. */
+export type MatchRequest = {
+  readonly ad: string;
+  readonly lang: string;
+};
+
+/**
+ * Un champ texte sans ses blancs, entre 1 et `max` caractères, bien formé
+ * (aucune paire de substitution coupée : l'API la refuserait après la
+ * réservation), et une langue non vide ; sinon `null`.
+ */
+function parseTextRequest(payload: unknown, field: string, max: number): {text: string; lang: string} | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const {[field]: value, lang} = payload as Record<string, unknown>;
+  if (typeof value !== 'string' || typeof lang !== 'string') return null;
+  const text = value.trim();
+  if (text.length === 0 || text.length > max || !text.isWellFormed()) return null;
+  if (lang.trim() === '') return null;
+  return {text, lang};
+}
+
+/**
+ * L'annonce coupée à `AD_MAX_CHARS`, sans jamais couper une paire de
+ * substitution : si la dernière unité gardée ouvre un caractère astral (un
+ * emoji), elle part avec lui. Pour la zone du navigateur, où `maxLength`
+ * borne la frappe mais pas toujours un collage.
+ */
+export function clampAd(value: string): string {
+  if (value.length <= AD_MAX_CHARS) return value;
+  const last = value.charCodeAt(AD_MAX_CHARS - 1);
+  const highSurrogate = last >= 0xd800 && last <= 0xdbff;
+  return value.slice(0, highSurrogate ? AD_MAX_CHARS - 1 : AD_MAX_CHARS);
+}
 
 /**
  * Le corps tel qu'il part : la question sans ses blancs, la langue telle que
@@ -30,13 +69,14 @@ export type ChatRequest = {
  * route valide la langue contre le routage ; l'agent revalide tout.
  */
 export function parseChatRequest(payload: unknown): ChatRequest | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const {question, lang} = payload as {question?: unknown; lang?: unknown};
-  if (typeof question !== 'string' || typeof lang !== 'string') return null;
-  const trimmed = question.trim();
-  if (trimmed.length === 0 || trimmed.length > QUESTION_MAX_CHARS) return null;
-  if (lang.trim() === '') return null;
-  return {question: trimmed, lang};
+  const parsed = parseTextRequest(payload, 'question', QUESTION_MAX_CHARS);
+  return parsed === null ? null : {question: parsed.text, lang: parsed.lang};
+}
+
+/** Même règle pour une annonce : `ad` sans ses blancs, entre 1 et `AD_MAX_CHARS`. */
+export function parseMatchRequest(payload: unknown): MatchRequest | null {
+  const parsed = parseTextRequest(payload, 'ad', AD_MAX_CHARS);
+  return parsed === null ? null : {ad: parsed.text, lang: parsed.lang};
 }
 
 /** Les raisons d'un refus, liste close (AD-16) — chacune a sa clé `errors.<reason>`. */

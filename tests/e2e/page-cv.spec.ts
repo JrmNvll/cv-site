@@ -185,12 +185,12 @@ for (const {name, viewport} of VIEWPORTS) {
       expect(positions.parcours).toBeGreaterThan(positions.assistant);
     });
 
-    test('lʼassistant répond aux cinq questions préparées et au champ libre ; la sixième reste désactivée', async ({
+    test('lʼassistant répond aux six puces et au champ libre : rien ne reste inerte une fois hydraté', async ({
       page
     }) => {
-      // Le test « inerte » de la story 3, inversé par la story 5 (les puces)
-      // puis la story 6 (le champ), et non supprimé : un assistant muet ne
-      // doit plus passer la suite en silence. La story 7 activera la sixième.
+      // Le test « inerte » de la story 3, inversé par la story 5 (les puces),
+      // la story 6 (le champ) puis la story 7 (la sixième), et non supprimé :
+      // un assistant muet ne doit plus passer la suite en silence.
       await page.goto('/fr');
       // Sous `lg`, l'assistant vit dans le tiroir : on l'ouvre par la barre.
       // Au-dessus, la barre n'existe pas et le panneau est dans le premier écran.
@@ -214,12 +214,13 @@ for (const {name, viewport} of VIEWPORTS) {
       }
       const sixieme = panneau.getByRole('button', {name: annonce, exact: true});
       await expect(sixieme).toBeVisible();
-      await expect(sixieme).toBeDisabled();
+      await expect(sixieme).toBeEnabled();
 
       const champ = panneau.getByRole('textbox', {name: messages.fr.assistant.questionLabel});
       await expect(champ).toBeVisible();
       await expect(champ).toBeEnabled();
-      await expect(panneau.getByText(messages.fr.assistant.inactive)).toBeVisible();
+      // Tout répond : la ligne d'état du visiteur sans JavaScript n'est plus là.
+      await expect(panneau.getByText(messages.fr.assistant.withoutScript)).toHaveCount(0);
     });
 
     test('le premier écran suit la mise en page validée le 2026-09-15', async ({page}) => {

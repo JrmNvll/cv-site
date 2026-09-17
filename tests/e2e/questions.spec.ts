@@ -293,19 +293,18 @@ for (const {name, viewport} of VIEWPORTS) {
       await expect(panneau.getByRole('heading', {level: 3})).toHaveCount(0);
     });
 
-    test('la sixième puce reste désactivée (story 7) ; le champ libre répond (story 6)', async ({page}) => {
+    test('la sixième puce répond (story 7), comme le champ libre (story 6) : plus de ligne « pas encore »', async ({page}) => {
       // Le test « inerte » de la story 3, inversé par la story 5 pour les puces,
-      // par la story 6 pour le champ — et non supprimé : un assistant muet ne
-      // doit plus passer la suite en silence. La sixième attend la story 7.
+      // par la story 6 pour le champ, par la story 7 pour la sixième — et non
+      // supprimé : un assistant muet ne doit plus passer la suite en silence.
       await page.goto('/fr');
       const panneau = await ouvrirPanneau(page, 'fr', viewport.width);
 
       await expect(
         panneau.getByRole('button', {name: heroLabel('fr', MATCH_QUESTION), exact: true})
-      ).toBeDisabled();
+      ).toBeEnabled();
       await expect(panneau.getByRole('textbox', {name: messages.fr.assistant.questionLabel})).toBeEnabled();
-      // Et la ligne d'état le dit, une fois hydraté.
-      await expect(panneau.getByText(messages.fr.assistant.inactive)).toBeVisible();
+      // Une fois hydraté, la ligne d'état du visiteur sans JavaScript a disparu.
       await expect(panneau.getByText(messages.fr.assistant.withoutScript)).toHaveCount(0);
     });
   });
@@ -350,7 +349,6 @@ test.describe('sans JavaScript', () => {
         await expect(panneau.getByRole('textbox', {name: messages.fr.assistant.questionLabel})).toBeDisabled();
         // La ligne d'état ne ment pas : c'est celle du visiteur sans JavaScript.
         await expect(panneau.getByText(messages.fr.assistant.withoutScript)).toBeVisible();
-        await expect(panneau.getByText(messages.fr.assistant.inactive)).toHaveCount(0);
       });
     });
   }

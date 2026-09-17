@@ -35,12 +35,18 @@
     "placeholder": "…or write your own question",
     "send": "Send the question",
     "questionLabel": "Your question",
-    "inactive": "The prepared questions and the free-text field answer; the job ad, not yet.",
     "loading": "One moment…",
     "answerSource": "An answer I wrote myself — no call to the model.",
     "answerModel": "Answer from the model, based on the dossier",
     "answerSources": "{count, plural, one {# source} other {# sources}}",
     "back": "Back to the questions",
+    "matchTitle": "Fit with the job ad",
+    "matchLabel": "Your job ad",
+    "matchIntro": "Paste the text of the job ad: the assistant says what matches, what is transferable and what is not documented — from the dossier, with no grade and no verdict. The pasted text is kept, like the questions.",
+    "matchPlaceholder": "The text of the job ad…",
+    "matchSend": "Evaluate the fit",
+    "matchCount": "{count} / {max} characters",
+    "matchBack": "Back",
     "questions": {
       "lic-01": "Why is he looking?",
       "sit-02": "When is he available?",
@@ -50,7 +56,7 @@
       "annonce": "Paste your job ad → I'll tell you what matches"
     },
     "yearsUnknown": "What is left of his WinDev years?",
-    "withoutScript": "The prepared questions and the free-text field need JavaScript to answer; the CV itself reads without it."
+    "withoutScript": "The six chips and the free-text field need JavaScript to answer; the CV itself reads without it."
   },
   "errors": {
     "unavailable": "The answer is unavailable right now — try again later.",

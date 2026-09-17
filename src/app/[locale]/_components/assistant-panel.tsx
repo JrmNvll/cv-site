@@ -9,14 +9,14 @@
  * par largeur d'écran, et un identifiant ne peut pas être porté deux fois.
  *
  * **Le cadre est serveur, le reste est client.** Titre et intro sont rendus
- * ici ; les cinq puces, le champ libre, la zone de réponse et la ligne d'état
- * vivent dans `hero-questions-client.tsx`, qui ne reçoit que des libellés et
- * des identifiants — une réponse arrive par une route, après un geste, jamais
- * dans le HTML servi. Sans JavaScript, puces et champ restent `disabled`
- * plutôt que muets : un bouton qui ne fait rien quand on clique dessus est pire
- * qu'un bouton visiblement hors service, et un état `disabled` est annoncé par
- * un lecteur d'écran. La sixième puce (story 7) l'est dans tous les cas. La
- * ligne d'état dit ce qui répond et ce qui ne répond pas encore.
+ * ici ; les six puces, le champ libre, la zone de l'annonce, la zone de
+ * réponse et la ligne d'état vivent dans `hero-questions-client.tsx`, qui ne
+ * reçoit que des libellés et des identifiants — une réponse arrive par une
+ * route, après un geste, jamais dans le HTML servi. Sans JavaScript, puces et
+ * champ restent `disabled` plutôt que muets : un bouton qui ne fait rien quand
+ * on clique dessus est pire qu'un bouton visiblement hors service, et un état
+ * `disabled` est annoncé par un lecteur d'écran. La ligne d'état le dit ; une
+ * fois hydraté, tout répond.
  *
  * **Les libellés sont de l'interface, pas du contenu** : ils vivent dans
  * `messages/*.json`. La correspondance libellé → entrée du corpus, elle, vit
@@ -90,11 +90,16 @@ export async function AssistantPanel({titleId, experiences}: AssistantPanelProps
           answerSource: t('assistant.answerSource'),
           answerModel: t('assistant.answerModel'),
           back: t('assistant.back'),
-          inactive: t('assistant.inactive'),
           withoutScript: t('assistant.withoutScript'),
           placeholder: t('assistant.placeholder'),
           questionLabel: t('assistant.questionLabel'),
           send: t('assistant.send'),
+          matchTitle: t('assistant.matchTitle'),
+          matchZoneLabel: t('assistant.matchLabel'),
+          matchIntro: t('assistant.matchIntro'),
+          matchPlaceholder: t('assistant.matchPlaceholder'),
+          matchSend: t('assistant.matchSend'),
+          matchBack: t('assistant.matchBack'),
           contact: t('header.contact')
         }}
         errors={{

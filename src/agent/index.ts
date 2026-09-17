@@ -1,44 +1,48 @@
 /**
  * Couche `agent` — frontière.
  *
- * Responsabilité : `ask()` (et `match()`, story 7) — assemblage du contexte,
- * passerelle unique vers l'API du modèle, plafond de dépense, limitation de
- * débit, contrôle des citations (AD-3, AD-4, AD-6, AD-17).
+ * Responsabilité : `ask()` et `match()` — assemblage du contexte, passerelle
+ * unique vers l'API du modèle, plafond de dépense, limitation de débit,
+ * contrôle des citations (AD-3, AD-4, AD-6, AD-17).
  *
  * Dépendances autorisées : `knowledge`, `journal`, `content`, `src/lib/`, `src/env.ts`.
  * Interdites : `app` — et **toute lecture de HTTP** (`next/headers`, `next/server`,
  * en-têtes, cookies). Cette couche reçoit `{ lang, visitorId, sessionId, ip, question }`
- * en paramètres ; elle ne va jamais les chercher elle-même.
+ * — ou `ad` — en paramètres ; elle ne va jamais les chercher elle-même.
  *
- * **Surface publique.** `ask()` et ses types ; rien du SDK ne sort d'ici —
- * `gateway.ts` est le seul fichier qui l'importe. `app` atteint ce module par
- * un import différé dans le gestionnaire de route : `gateway` charge `@/env`,
- * dont le parsage a lieu au chargement, et le build ne doit réclamer aucune
- * variable.
+ * **Surface publique.** `ask()`, `match()` et leurs types ; rien du SDK ne
+ * sort d'ici — `gateway.ts` est le seul fichier qui l'importe. `app` atteint
+ * ce module par un import différé dans le gestionnaire de route : `gateway`
+ * charge `@/env`, dont le parsage a lieu au chargement, et le build ne doit
+ * réclamer aucune variable.
  *
- * L'ordre d'`ask()` : validation de l'entrée, limiteur (trois fenêtres, tout
- * ou rien), historique de la session par `journal`, récupération et noyau par
- * `knowledge`, puis la passerelle — cumul, plafond, réservation, appel,
- * finalisation. Un refus préalable rend `{ok: false, reason}` et n'écrit rien,
- * sauf `cap_reached`, journalisé (AD-16).
+ * L'ordre, le même pour les deux : validation de l'entrée, limiteur (trois
+ * fenêtres, tout ou rien — une annonce compte comme une question),
+ * historique de la session par `journal`, récupération et noyau par
+ * `knowledge` — la question ou l'annonce est la requête —, puis la passerelle
+ * : cumul, plafond, réservation, appel, finalisation. Un refus préalable rend
+ * `{ok: false, reason}` et n'écrit rien, sauf `cap_reached`, journalisé
+ * (AD-16). Ce qui distingue `match()` : la borne (8 000 caractères), le mode
+ * du contexte (`<annonce>` au lieu de `<question>`, même bloc système) et la
+ * sorte journalisée (`match`), dont dépend le contrôle final.
  */
 import {LANGS, type Lang} from '@/content';
-import {recentExchanges} from '@/journal';
-import {buildContext, type HistoryTurn} from './context';
+import {recentExchanges, type ModelExchangeKind} from '@/journal';
+import {buildContext, type ContextMode, type HistoryTurn} from './context';
 import type {AgentEvent} from './events';
 import {callModel} from './gateway';
 import {take} from './limiter';
-import {MAX_QUESTION_CHARS} from './pricing';
+import {MAX_AD_CHARS, MAX_QUESTION_CHARS} from './pricing';
 
 export type {AgentEvent} from './events';
-export {MAX_QUESTION_CHARS, MAX_TOKENS, MODEL, MONTHLY_CAP_MICRO_USD} from './pricing';
+export {MAX_AD_CHARS, MAX_QUESTION_CHARS, MAX_TOKENS, MODEL, MONTHLY_CAP_MICRO_USD} from './pricing';
 export {LIMITS} from './limiter';
 
 /** Les six derniers échanges de la session précèdent la question (AD-3, c). */
 export const HISTORY_TURNS = 6;
 
 /** Ce que `app` a extrait de la requête — jamais la requête elle-même. */
-export type AskInput = {
+type VisitorInput = {
   /** La langue de l'URL, telle quelle : validée ici. */
   readonly lang: string;
   /** `cv_visitor`, un ULID validé par l'appelant. */
@@ -47,10 +51,18 @@ export type AskInput = {
   readonly sessionId: string;
   /** Ce que `clientIp(headers)` a rendu. */
   readonly ip: string;
+  /** L'instant de la demande ; par défaut, maintenant. Sert aux tests. */
+  readonly now?: Date;
+};
+
+export type AskInput = VisitorInput & {
   /** La question, telle que le visiteur l'a tapée : validée ici. */
   readonly question: string;
-  /** L'instant de la question ; par défaut, maintenant. Sert aux tests. */
-  readonly now?: Date;
+};
+
+export type MatchInput = VisitorInput & {
+  /** L'annonce, telle que le visiteur l'a collée : validée ici, journalisée entière. */
+  readonly ad: string;
 };
 
 /**
@@ -72,6 +84,9 @@ export type AskStream = {
 
 export type AskResult = AskRefusal | AskStream;
 
+/** Une évaluation rend la même chose qu'une question : un refus, ou un flux. */
+export type MatchResult = AskResult;
+
 function isLang(value: string): value is Lang {
   return (LANGS as readonly string[]).includes(value);
 }
@@ -84,16 +99,31 @@ function isLang(value: string): value is Lang {
 const INVISIBLE = /[\u200b-\u200d\u2060\ufeff]/g;
 
 /**
+ * Un texte sans ses invisibles ni ses blancs des deux bouts, entre 1 et `max`
+ * caractères, **bien formé** ; sinon `null`. Une paire de substitution coupée
+ * — un emoji tronqué à la dernière unité — passerait jusqu'à l'API, qui
+ * rejetterait la requête **après** la réservation : refusée ici, avant.
+ */
+function normalizeText(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.replace(INVISIBLE, '').trim();
+  if (text.length === 0 || text.length > max || !text.isWellFormed()) return null;
+  return text;
+}
+
+/**
  * La question telle qu'elle part et telle qu'elle est journalisée : sans les
  * caractères invisibles ni les blancs des deux bouts, entre 1 et
  * `MAX_QUESTION_CHARS` caractères. `null` pour tout le reste — vide, blanche,
  * trop longue, pas une chaîne.
  */
 export function normalizeQuestion(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const question = value.replace(INVISIBLE, '').trim();
-  if (question.length === 0 || question.length > MAX_QUESTION_CHARS) return null;
-  return question;
+  return normalizeText(value, MAX_QUESTION_CHARS);
+}
+
+/** L'annonce, même règle, entre 1 et `MAX_AD_CHARS` caractères. */
+export function normalizeAd(value: unknown): string | null {
+  return normalizeText(value, MAX_AD_CHARS);
 }
 
 function history(sessionId: string): readonly HistoryTurn[] {
@@ -111,11 +141,37 @@ function history(sessionId: string): readonly HistoryTurn[] {
         level: 'warn',
         event: 'agent.history_unavailable',
         reason: error instanceof Error ? error.message : String(error),
-        text: "L'historique de la session est illisible : la question part sans lui."
+        text: "L'historique de la session est illisible : la demande part sans lui."
       })
     );
     return [];
   }
+}
+
+/**
+ * Le câblage commun : la requête déjà normalisée, la langue validée, le
+ * limiteur, l'historique, le contexte dans le mode voulu, la passerelle avec
+ * la sorte voulue.
+ */
+async function engage(
+  input: VisitorInput,
+  query: string | null,
+  mode: ContextMode,
+  kind: ModelExchangeKind
+): Promise<AskResult> {
+  if (query === null || !isLang(input.lang)) return {ok: false, reason: 'invalid_input'};
+  const lang = input.lang;
+  const now = input.now ?? new Date();
+
+  // La place prise ici n'est pas rendue si la passerelle refuse ensuite :
+  // c'est voulu. Au plafond, chaque demande insère une ligne `cap_reached`
+  // — le limiteur est la seule borne de ces insertions.
+  if (!take({visitorId: input.visitorId, ip: input.ip, now})) {
+    return {ok: false, reason: 'rate_limited'};
+  }
+
+  const context = buildContext({lang, question: query, history: history(input.sessionId), mode});
+  return callModel({lang, sessionId: input.sessionId, kind, question: query, context, now});
 }
 
 /**
@@ -124,18 +180,15 @@ function history(sessionId: string): readonly HistoryTurn[] {
  * engagé, que l'appelant consomme ou non.
  */
 export async function ask(input: AskInput): Promise<AskResult> {
-  const question = normalizeQuestion(input.question);
-  if (question === null || !isLang(input.lang)) return {ok: false, reason: 'invalid_input'};
-  const lang = input.lang;
-  const now = input.now ?? new Date();
+  return engage(input, normalizeQuestion(input.question), 'ask', 'chat');
+}
 
-  // La place prise ici n'est pas rendue si la passerelle refuse ensuite :
-  // c'est voulu. Au plafond, chaque question insère une ligne `cap_reached`
-  // — le limiteur est la seule borne de ces insertions.
-  if (!take({visitorId: input.visitorId, ip: input.ip, now})) {
-    return {ok: false, reason: 'rate_limited'};
-  }
-
-  const context = buildContext({lang, question, history: history(input.sessionId)});
-  return callModel({lang, sessionId: input.sessionId, question, context, now});
+/**
+ * Évalue l'adéquation d'une annonce au dossier (CAP-4, AD-17) : même
+ * séquence qu'une question, l'annonce en requête, la réponse en quatre
+ * parties dont les marques sont retenues côté serveur. Même contrat de
+ * retour.
+ */
+export async function match(input: MatchInput): Promise<MatchResult> {
+  return engage(input, normalizeAd(input.ad), 'match', 'match');
 }

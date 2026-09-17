@@ -3,7 +3,7 @@
  *
  * Le corps d'une entrée voyage tel quel, en Markdown (AD-3) ; c'est ici qu'il
  * devient lisible. Le sous-ensemble est celui que le corpus emploie, et rien de
- * plus : paragraphes, listes à puces (`-` ou `*`) et numérotées (`1.`),
+ * plus : paragraphes, listes à puces (`-`, `*` ou `+`) et numérotées (`1.`),
  * `**gras**`, `*italique*` ou `_italique_`. Tout le reste — titres, citations,
  * liens, images, code, balises HTML — s'affiche **en texte**, tel qu'écrit.
  *
@@ -19,8 +19,8 @@
  */
 import type {ReactNode} from 'react';
 
-/** `- item`, `* item` — jusqu'à trois espaces devant, comme CommonMark. */
-const UNORDERED_ITEM = /^ {0,3}[-*]\s+(.*)$/;
+/** `- item`, `* item`, `+ item` — jusqu'à trois espaces devant, comme CommonMark ; même lecture que `agent/citations.ts`. */
+const UNORDERED_ITEM = /^ {0,3}[-*+]\s+(.*)$/;
 /** `1. item`, `1) item`. */
 // Un ou deux chiffres : « 2024. Départ… » au fil d'un paragraphe reste du texte,
 // une liste numérotée ne commence pas à 2024.

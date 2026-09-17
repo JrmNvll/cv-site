@@ -7,7 +7,8 @@
  *  2. le refus `cap_reached` si cumul + réservation > plafond, journalisé ;
  *  3. l'insertion `pending` avec la réservation — **avant** l'appel ; une
  *     réservation impossible (journal en échec) vaut aucun appel ;
- *  4. l'appel, en flux, deltas filtrés du bloc `<sources>` ;
+ *  4. l'appel, en flux, deltas filtrés du bloc `<sources>` — et des marques
+ *     `[qa:…]` / `[cv:…]` d'une évaluation (AD-17) ;
  *  5. la finalisation avec les quatre compteurs et le coût réel depuis la
  *     table de prix datée — ou, sur erreur, le texte partiel et la réservation.
  *
@@ -21,15 +22,27 @@
  * donne `model_error`. Le délai est borné des deux côtés : connexion par le
  * SDK (une reprise au plus), flux entier par une échéance locale.
  *
- * Ce module ne lit ni HTTP ni cookies : langue, session, question et contexte
- * lui sont passés. Il ne journalise jamais un texte : identifiants, compteurs,
- * coûts, classes d'erreur.
+ * Une question libre (`kind: 'chat'`) et une annonce à évaluer (`kind:
+ * 'match'`) suivent la même séquence ; seul le contrôle final diffère — le
+ * bloc pour l'une, la structure en quatre parties et les marques pour l'autre
+ * — et une évaluation hors structure est servie quand même, dite par une
+ * ligne `agent.match_structure` (les raisons, jamais le texte).
+ *
+ * Ce module ne lit ni HTTP ni cookies : langue, session, sorte, question et
+ * contexte lui sont passés. Il ne journalise jamais un texte : identifiants,
+ * compteurs, coûts, classes d'erreur.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import {env} from '@/env';
-import {finalizeExchange, recordCapRefusal, reserveExchange, type ExchangeUsage} from '@/journal';
+import {
+  finalizeExchange,
+  recordCapRefusal,
+  reserveExchange,
+  type ExchangeUsage,
+  type ModelExchangeKind
+} from '@/journal';
 import {isValidSource, type Lang} from '@/knowledge';
-import {checkCitations, createSourcesFilter} from './citations';
+import {checkCitations, checkMatchCitations, createSourcesFilter, type SourcesFilter} from './citations';
 import {contextChars, type ModelContext} from './context';
 import {EventQueue, type AgentEvent} from './events';
 import {
@@ -40,6 +53,7 @@ import {
   reservationMicroUsd,
   type Usage
 } from './pricing';
+import {MATCH_TITLES} from './prompts';
 
 /** L'effort de réflexion : bas — la réflexion adaptative reste active (défaut du modèle). */
 export const EFFORT = 'low';
@@ -60,7 +74,9 @@ export const STREAM_DEADLINE_MS = 120_000;
 export type CallModelInput = {
   readonly lang: Lang;
   readonly sessionId: string;
-  /** La question, déjà validée par `ask()` — journalisée telle quelle. */
+  /** `chat` pour une question libre, `match` pour une annonce : la sorte journalisée, et le contrôle final. */
+  readonly kind: ModelExchangeKind;
+  /** La question — ou l'annonce entière —, déjà validée par l'agent : journalisée telle quelle. */
   readonly question: string;
   readonly context: ModelContext;
   /** L'instant de l'appel ; par défaut, maintenant. Sert aux tests. */
@@ -137,8 +153,30 @@ function toExchangeUsage(usage: Usage | null | undefined): ExchangeUsage | null 
 }
 
 /**
- * Appelle le modèle pour une question, selon la séquence d'AD-6. Rend un refus
- * préalable, ou l'identifiant de l'échange réservé et le flux d'événements.
+ * Le contrôle final selon la sorte : le bloc seul pour une question, la
+ * structure et les marques pour une évaluation — dite si elle n'est pas en
+ * ordre, servie dans tous les cas.
+ */
+function checkAnswer(input: CallModelInput, filter: SourcesFilter, exchangeId: string) {
+  const isValid = (id: string) => isValidSource(input.lang, id);
+  if (input.kind !== 'match') return checkCitations(filter, isValid);
+  const check = checkMatchCitations(filter, isValid, MATCH_TITLES[input.lang]);
+  if (!check.ok) {
+    log('warn', 'agent.match_structure', {
+      exchangeId,
+      reasons: check.reasons,
+      marks: filter.marks().length,
+      declared: check.declared.length,
+      valid: check.valid.length
+    });
+  }
+  return check;
+}
+
+/**
+ * Appelle le modèle pour une question ou une annonce, selon la séquence
+ * d'AD-6. Rend un refus préalable, ou l'identifiant de l'échange réservé et
+ * le flux d'événements.
  */
 export function callModel(input: CallModelInput): CallModelResult {
   const now = input.now ?? new Date();
@@ -153,7 +191,7 @@ export function callModel(input: CallModelInput): CallModelResult {
   try {
     outcome = reserveExchange({
       sessionId: input.sessionId,
-      kind: 'chat',
+      kind: input.kind,
       question: input.question,
       reservationMicroUsd: reservation,
       capMicroUsd: MONTHLY_CAP_MICRO_USD,
@@ -175,7 +213,7 @@ export function callModel(input: CallModelInput): CallModelResult {
       capMicroUsd: MONTHLY_CAP_MICRO_USD
     });
     try {
-      recordCapRefusal({sessionId: input.sessionId, kind: 'chat', question: input.question, now});
+      recordCapRefusal({sessionId: input.sessionId, kind: input.kind, question: input.question, now});
     } catch (error) {
       log('error', 'journal.write_failed', {
         reason: reason(error),
@@ -251,7 +289,13 @@ async function run(
 
     const released = filter.flush();
     if (released !== '') events.push({type: 'delta', text: released});
-    const citations = checkCitations(filter, (id) => isValidSource(input.lang, id));
+    // Une évaluation coupée par `max_tokens` n'a presque jamais ses quatre
+    // parties : dite pour elle-même, avant le contrôle de structure qui suivra
+    // — deux lignes, deux causes, et Jérémie saura laquelle regarder.
+    if (input.kind === 'match' && message.stop_reason === 'max_tokens') {
+      log('warn', 'agent.match_truncated', {exchangeId, kind: input.kind, maxTokens: MAX_TOKENS});
+    }
+    const citations = checkAnswer(input, filter, exchangeId);
     const cost = costMicroUsd(message.usage);
     const latencyMs = performance.now() - started;
 
@@ -267,6 +311,7 @@ async function run(
     });
     log('info', 'agent.exchange_done', {
       exchangeId,
+      kind: input.kind,
       stopReason: message.stop_reason,
       latencyMs: Math.round(latencyMs),
       costMicroUsd: cost,

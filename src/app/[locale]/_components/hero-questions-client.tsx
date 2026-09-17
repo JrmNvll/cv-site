@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Les puces, le champ libre et la zone de réponse — la partie vivante de
- * l'assistant.
+ * Les puces, le champ libre, la zone de l'annonce et la zone de réponse — la
+ * partie vivante de l'assistant.
  *
  * Le cadre (titre, intro, ligne d'état) reste un composant serveur
  * (`assistant-panel.tsx`) ; ceci ne reçoit que des **libellés et des
@@ -14,11 +14,11 @@
  *     comme client — laisse les puces et le champ `disabled` ; sans JavaScript,
  *     ils le restent : un champ visiblement hors service vaut mieux qu'un
  *     champ qui ne fait rien.
- *  2. **Une requête à la fois.** Pendant l'attente, puces et champ se
+ *  2. **Une requête à la fois.** Pendant l'attente, puces, champ et zone se
  *     désactivent ; un second envoi ne part pas.
  *  3. **Un échec se dit, localisé**, et tout se réactive.
  *
- * Deux chemins pour une réponse :
+ * Trois chemins pour une réponse :
  *  - une puce : `GET /api/questions/<id>` rend un JSON, le corps écrit par
  *    Jérémie (story 5) ;
  *  - le champ libre : `POST /api/chat` ouvre un flux SSE (AD-16), le texte
@@ -26,23 +26,30 @@
  *    en HTML injecté. Un refus préalable est un JSON avec sa raison ; une
  *    erreur en cours de flux garde le texte déjà reçu et le dit ; trente
  *    secondes sans événement valent une indisponibilité. `cap_reached` et
- *    `model_unavailable` renvoient au contact direct de la page (`#contact`).
+ *    `model_unavailable` renvoient au contact direct de la page (`#contact`) ;
+ *  - la sixième puce (CAP-4, AD-17) : elle ouvre une zone où coller une
+ *    annonce, bornée à `AD_MAX_CHARS` avec son compte ; l'envoi part vers
+ *    `POST /api/match`, même flux, même rendu, sous le titre « Adéquation avec
+ *    l'annonce » plutôt que sous la question. Ce qui arrive ne porte jamais
+ *    un identifiant : les marques sont retenues côté serveur. Un refus
+ *    préalable, ou un échec sans aucun texte, ramène à la zone avec le
+ *    message, le texte collé intact ; « Retour » depuis la zone l'abandonne
+ *    et rend le focus à la puce ; une évaluation reçue la vide.
  *
  * Deux copies vivent dans le document (premier écran, tiroir mobile) : chacune
  * porte son état, un geste dans le tiroir répond dans le tiroir.
- *
- * La sixième puce (`annonce`) reste inerte : elle appelle le modèle sur une
- * annonce collée (CAP-4, story 7), et l'activer sans cette route serait un
- * bouton qui promet.
  */
-import {useEffect, useRef, useState, useSyncExternalStore, type FormEvent} from 'react';
+import {useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent} from 'react';
 import {useTranslations} from 'next-intl';
 import {
+  AD_MAX_CHARS,
+  clampAd,
   createSseDecoder,
   parseChatRefusal,
   QUESTION_MAX_CHARS,
   type ChatRefusalReason,
-  type ChatRequest
+  type ChatRequest,
+  type MatchRequest
 } from '@/app/_lib/chat-contract';
 import {
   parseHeroAnswer,
@@ -69,12 +76,15 @@ const CHIP =
   'max-w-full cursor-pointer rounded-full border border-panel-rule bg-panel-raised px-3 py-1.5 text-left text-[13px] text-panel-ink hover:border-panel-accent disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:border-panel-rule';
 
 const MATCH_CHIP =
-  'max-w-full rounded-full border border-panel-accent bg-panel-accent px-3 py-1.5 text-left text-[13px] font-semibold text-panel disabled:cursor-not-allowed disabled:opacity-70';
+  'max-w-full cursor-pointer rounded-full border border-panel-accent bg-panel-accent px-3 py-1.5 text-left text-[13px] font-semibold text-panel hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:opacity-70';
 
 const ANSWER =
   'flex flex-col gap-2.5 text-[14px] leading-relaxed text-panel-ink-soft [&_em]:italic [&_ol]:list-decimal [&_ol]:pl-5 [&_strong]:font-semibold [&_strong]:text-panel-ink [&_ul]:list-disc [&_ul]:pl-5';
 
 const LINK = 'cursor-pointer text-[13px] text-panel-accent underline-offset-4 hover:underline';
+
+const SEND_BUTTON =
+  'cursor-pointer rounded-full border border-panel-accent bg-panel-accent px-3 py-1.5 text-[13px] font-semibold text-panel disabled:cursor-not-allowed disabled:opacity-60';
 
 export type HeroQuestionChip = {
   readonly id: string;
@@ -86,7 +96,7 @@ export type HeroQuestionsClientProps = {
   readonly lang: string;
   /** Les cinq puces, par rangée d'affichage. */
   readonly rows: readonly (readonly HeroQuestionChip[])[];
-  /** Le libellé de la sixième, inerte. */
+  /** Le libellé de la sixième, qui ouvre la zone de l'annonce. */
   readonly matchLabel: string;
   readonly labels: {
     /** Pendant une requête. */
@@ -97,14 +107,19 @@ export type HeroQuestionsClientProps = {
     readonly answerModel: string;
     /** Le bouton qui ramène aux questions. */
     readonly back: string;
-    /** La ligne d'état une fois hydraté : ce qui répond, ce qui ne répond pas encore. */
-    readonly inactive: string;
     /** La ligne d'état rendue par le serveur — celle que lit un visiteur sans JavaScript. */
     readonly withoutScript: string;
     /** Le champ libre : son texte d'invite, son nom pour un lecteur d'écran, son bouton. */
     readonly placeholder: string;
     readonly questionLabel: string;
     readonly send: string;
+    /** La zone de l'annonce : le titre de la réponse, son nom court, l'invite qui la décrit, le texte d'attente, l'envoi, le retour. */
+    readonly matchTitle: string;
+    readonly matchZoneLabel: string;
+    readonly matchIntro: string;
+    readonly matchPlaceholder: string;
+    readonly matchSend: string;
+    readonly matchBack: string;
     /** Le lien vers les coordonnées, quand l'assistant renvoie au contact direct. */
     readonly contact: string;
   };
@@ -123,30 +138,53 @@ export type HeroQuestionsClientProps = {
 /** Un message d'échec, et s'il renvoie au contact direct. */
 type Failure = {readonly message: string; readonly contact: boolean};
 
+/** Ce qu'un flux répond : une question libre, ou une évaluation d'annonce. */
+type StreamKind = 'chat' | 'match';
+
 type State =
   | {readonly step: 'idle'}
+  /** La zone de l'annonce — avec, après un refus ou un échec sans texte, ce qui s'est passé : le texte collé reste. */
+  | {readonly step: 'adForm'; readonly failure?: Failure}
   | {readonly step: 'pending'; readonly id: string}
   | {readonly step: 'done'; readonly id: string; readonly view: HeroAnswerView}
   | {readonly step: 'failed'; readonly failure: Failure}
-  | {readonly step: 'streaming'; readonly question: string; readonly text: string}
-  | {readonly step: 'answered'; readonly question: string; readonly text: string; readonly sources: number}
-  | {readonly step: 'interrupted'; readonly question: string; readonly text: string; readonly failure: Failure};
+  | {readonly step: 'streaming'; readonly kind: StreamKind; readonly question: string; readonly text: string}
+  | {
+      readonly step: 'answered';
+      readonly kind: StreamKind;
+      readonly question: string;
+      readonly text: string;
+      readonly sources: number;
+    }
+  | {
+      readonly step: 'interrupted';
+      readonly kind: StreamKind;
+      readonly question: string;
+      readonly text: string;
+      readonly failure: Failure;
+    };
 
-/** Ce vers quoi le focus revient au retour : la puce cliquée, ou le champ. */
-type Origin = {readonly kind: 'chip'; readonly id: string} | {readonly kind: 'field'};
+/** Ce vers quoi le focus revient au retour : la puce cliquée, le champ, ou la sixième puce. */
+type Origin = {readonly kind: 'chip'; readonly id: string} | {readonly kind: 'field'} | {readonly kind: 'match'};
 
 export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: HeroQuestionsClientProps) {
   const hydrate = useSyncExternalStore(sansAbonnement, surLeNavigateur, surLeServeur);
-  // Le seul libellé formaté au moment de l'affichage : le nombre de sources
-  // n'est connu qu'à la fin du flux, et un pluriel ICU ne se calcule pas en
-  // amont. Les autres libellés arrivent en propriétés, comme partout.
+  // Les seuls libellés formatés au moment de l'affichage : le nombre de
+  // sources n'est connu qu'à la fin du flux, le compte de l'annonce change à
+  // chaque frappe, et un pluriel ICU ne se calcule pas en amont. Les autres
+  // libellés arrivent en propriétés, comme partout.
   const t = useTranslations('assistant');
+  const zoneId = useId();
+  const introId = useId();
   const [state, setState] = useState<State>({step: 'idle'});
   const [question, setQuestion] = useState('');
+  const [ad, setAd] = useState('');
   const titreReponse = useRef<HTMLHeadingElement>(null);
   const champ = useRef<HTMLInputElement>(null);
+  const zone = useRef<HTMLTextAreaElement>(null);
+  const puceAnnonce = useRef<HTMLButtonElement>(null);
   const puces = useRef(new Map<string, HTMLButtonElement>());
-  /** D'où la dernière question est partie : c'est là que le focus revient. */
+  /** D'où la dernière demande est partie : c'est là que le focus revient. */
   const origine = useRef<Origin | null>(null);
   /**
    * Une requête en cours — tenue hors de l'état : puces et champ sont
@@ -158,13 +196,16 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
   // Les puces disparaissent au profit de la réponse : sans ceci, le focus
   // clavier retomberait sur le document, et un lecteur d'écran perdrait sa
   // place. Au retour — et après un échec, où tout a été désactivé le temps de
-  // l'attente — il revient sur ce qui a posé la question.
+  // l'attente — il revient sur ce qui a posé la question ; la zone de
+  // l'annonce prend le focus quand elle s'ouvre.
   useEffect(() => {
     if (state.step === 'done' || state.step === 'streaming') titreReponse.current?.focus();
+    if (state.step === 'adForm') zone.current?.focus();
     if (state.step === 'idle' || state.step === 'failed') {
       const from = origine.current;
       if (from?.kind === 'chip') puces.current.get(from.id)?.focus();
       if (from?.kind === 'field') champ.current?.focus();
+      if (from?.kind === 'match') puceAnnonce.current?.focus();
     }
   }, [state.step]);
 
@@ -217,13 +258,24 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
     }
   }
 
-  async function send(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const asked = question.trim();
-    if (enCours.current || asked === '' || asked.length > QUESTION_MAX_CHARS) return;
+  /**
+   * Un flux, pour une question comme pour une annonce : la route et le corps
+   * changent, tout le reste — décodage, silence, échec, interruption — est le
+   * même. `asked` est la question affichée en titre, ou l'annonce entière,
+   * dont le titre ne montre rien.
+   */
+  async function stream(kind: StreamKind, asked: string) {
     enCours.current = true;
-    origine.current = {kind: 'field'};
-    setState({step: 'streaming', question: asked, text: ''});
+    setState({step: 'streaming', kind, question: asked, text: ''});
+
+    /**
+     * Un échec sans aucun texte reçu — refus préalable, réseau, silence : pour
+     * une question, la vue des puces avec le message ; pour une annonce, la
+     * zone revient avec le message, le texte collé intact — le recruteur ne
+     * recolle pas huit mille caractères parce que le débit était atteint.
+     */
+    const failed = (failure: Failure): State =>
+      kind === 'match' ? {step: 'adForm', failure} : {step: 'failed', failure};
 
     // Le silence est mesuré entre deux morceaux reçus, pas sur le flux entier :
     // une réponse longue a le droit de prendre son temps tant qu'elle avance,
@@ -240,8 +292,8 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
     let settled = false;
     try {
       rearm();
-      const body: ChatRequest = {question: asked, lang};
-      const response = await fetch('/api/chat', {
+      const body: ChatRequest | MatchRequest = kind === 'match' ? {ad: asked, lang} : {question: asked, lang};
+      const response = await fetch(kind === 'match' ? '/api/match' : '/api/chat', {
         method: 'POST',
         headers: {'content-type': 'application/json', accept: 'text/event-stream'},
         body: JSON.stringify(body),
@@ -250,7 +302,7 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
 
       if (!response.ok) {
         const payload: unknown = await response.json().catch(() => null);
-        setState({step: 'failed', failure: failureFor(parseChatRefusal(payload))});
+        setState(failed(failureFor(parseChatRefusal(payload))));
         settled = true;
         return;
       }
@@ -266,14 +318,16 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
           if (settled) break;
           if (item.type === 'delta') {
             text += item.text;
-            setState({step: 'streaming', question: asked, text});
+            setState({step: 'streaming', kind, question: asked, text});
           } else if (item.type === 'done') {
-            setState({step: 'answered', question: asked, text, sources: item.sources.length});
-            setQuestion('');
+            setState({step: 'answered', kind, question: asked, text, sources: item.sources.length});
+            if (kind === 'match') setAd('');
+            else setQuestion('');
             settled = true;
           } else if (item.type === 'error') {
             setState({
               step: 'interrupted',
+              kind,
               question: asked,
               text,
               failure: failureFor('model_unavailable')
@@ -297,8 +351,8 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
       if (!settled) {
         setState(
           text === ''
-            ? {step: 'failed', failure: failureFor(null)}
-            : {step: 'interrupted', question: asked, text, failure: failureFor(null)}
+            ? failed(failureFor(null))
+            : {step: 'interrupted', kind, question: asked, text, failure: failureFor(null)}
         );
         settled = true;
       }
@@ -308,14 +362,42 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
         // un échec ; avec, une interruption qui garde ce qui est arrivé.
         setState(
           text === ''
-            ? {step: 'failed', failure: failureFor(null)}
-            : {step: 'interrupted', question: asked, text, failure: failureFor(null)}
+            ? failed(failureFor(null))
+            : {step: 'interrupted', kind, question: asked, text, failure: failureFor(null)}
         );
       }
     } finally {
       clearTimeout(silence);
       enCours.current = false;
     }
+  }
+
+  async function send(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const asked = question.trim();
+    if (enCours.current || asked === '' || asked.length > QUESTION_MAX_CHARS) return;
+    origine.current = {kind: 'field'};
+    await stream('chat', asked);
+  }
+
+  async function sendAd(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const pasted = ad.trim();
+    if (enCours.current || pasted === '' || pasted.length > AD_MAX_CHARS) return;
+    origine.current = {kind: 'match'};
+    await stream('match', pasted);
+  }
+
+  function openAd() {
+    if (enCours.current) return;
+    origine.current = {kind: 'match'};
+    setState({step: 'adForm'});
+  }
+
+  /** « Retour » depuis la zone : le texte collé est abandonné, la puce reprend le focus. */
+  function cancelAd() {
+    setAd('');
+    setState({step: 'idle'});
   }
 
   const inactif = !hydrate || state.step === 'pending' || state.step === 'streaming';
@@ -384,6 +466,51 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
     </form>
   );
 
+  if (state.step === 'adForm') {
+    return (
+      <form onSubmit={sendAd} className="mt-3.5 flex flex-col gap-2.5">
+        {/* Un nom court pour la zone, l'invite en description : un lecteur
+            d'écran annonce « Votre annonce », puis lit ce qu'il en sera fait. */}
+        <label htmlFor={zoneId} className="text-[13px] font-semibold text-panel-ink">
+          {labels.matchZoneLabel}
+        </label>
+        <p id={introId} className="text-[13px] leading-relaxed text-panel-ink-soft">
+          {labels.matchIntro}
+        </p>
+        <textarea
+          id={zoneId}
+          ref={zone}
+          name="ad"
+          value={ad}
+          // La borne, deux fois : `maxLength` pour la frappe, la coupe pour un
+          // collage que le navigateur laisserait passer — sans jamais couper
+          // un emoji en deux — et le compte le dit.
+          onChange={(event) => setAd(clampAd(event.target.value))}
+          maxLength={AD_MAX_CHARS}
+          rows={8}
+          disabled={inactif}
+          placeholder={labels.matchPlaceholder}
+          aria-describedby={introId}
+          className="w-full resize-y rounded-md border border-panel-rule bg-panel-sunken px-3 py-2 text-[14px] leading-relaxed text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
+        />
+        {state.failure ? failureLine(state.failure) : null}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[12px] text-panel-ink-muted" data-ad-count={ad.length}>
+            {t('matchCount', {count: ad.length, max: AD_MAX_CHARS})}
+          </span>
+          <div className="flex items-center gap-4">
+            <button type="button" onClick={cancelAd} disabled={inactif} className={LINK}>
+              {labels.matchBack}
+            </button>
+            <button type="submit" disabled={inactif || ad.trim() === ''} className={SEND_BUTTON}>
+              {labels.matchSend}
+            </button>
+          </div>
+        </div>
+      </form>
+    );
+  }
+
   if (state.step === 'done') {
     return (
       <div className="mt-3.5 flex flex-col gap-3">
@@ -403,7 +530,8 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
     return (
       <div className="mt-3.5 flex flex-col gap-3" aria-busy={streaming ? true : undefined}>
         <h3 ref={titreReponse} tabIndex={-1} className="text-[14px] font-semibold text-panel-ink outline-none">
-          {state.question}
+          {/* Une annonce ne se répète pas en titre : huit mille caractères, et c'est le recruteur qui l'a écrite. */}
+          {state.kind === 'match' ? labels.matchTitle : state.question}
         </h3>
         {streaming && state.text === '' ? (
           <p role="status" className="text-[13px] text-panel-ink-muted">
@@ -411,7 +539,7 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
           </p>
         ) : null}
         {state.text !== '' ? (
-          <div data-answer={state.step} className={ANSWER}>
+          <div data-answer={state.step} data-kind={state.kind} className={ANSWER}>
             {renderMarkdown(state.text)}
           </div>
         ) : null}
@@ -451,9 +579,9 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
         </div>
       ))}
       <div className="flex flex-wrap gap-1.5">
-        {/* La sixième : elle n'interroge pas le corpus, elle ouvrira
-            l'évaluation d'adéquation (CAP-4). D'où l'accent, et l'inertie. */}
-        <button type="button" disabled className={MATCH_CHIP}>
+        {/* La sixième : elle n'interroge pas le corpus, elle ouvre la zone de
+            l'annonce (CAP-4). D'où l'accent — et, sans JavaScript, l'inertie. */}
+        <button ref={puceAnnonce} type="button" disabled={inactif} onClick={openAd} className={MATCH_CHIP}>
           {matchLabel}
         </button>
       </div>
@@ -465,12 +593,10 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
       ) : null}
       {state.step === 'failed' ? failureLine(state.failure) : null}
       {field}
-      {/* La ligne d'état dit vrai dans les deux cas : le serveur rend celle du
-          visiteur sans JavaScript (puces et champ y restent désactivés) ; une
-          fois hydraté, celle qui dit ce qui répond et ce qui ne répond pas encore. */}
-      <p className="mt-2.5 text-[12px] text-panel-ink-muted">
-        {hydrate ? labels.inactive : labels.withoutScript}
-      </p>
+      {/* La ligne d'état dit vrai : le serveur rend celle du visiteur sans
+          JavaScript (puces et champ y restent désactivés) ; une fois hydraté,
+          tout répond et il n'y a plus rien à dire. */}
+      {hydrate ? null : <p className="mt-2.5 text-[12px] text-panel-ink-muted">{labels.withoutScript}</p>}
     </div>
   );
 }

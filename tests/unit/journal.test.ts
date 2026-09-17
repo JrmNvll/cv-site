@@ -622,6 +622,36 @@ describe('un appel au modèle : réservation, puis finalisation (story 6)', () =
     expect(() => recordCapRefusal({sessionId: session.sessionId, kind: 'hero' as 'chat', question: 'Q'})).toThrowError(/hero/);
     expect(() => recordCapRefusal({sessionId: session.sessionId, kind: 'chat', question: ' '})).toThrowError(/vide/);
   });
+
+  it('une évaluation dʼannonce (kind match, story 7) : réservée, finalisée, refusée au plafond — lʼannonce entière en question', () => {
+    const annonce = `Poste fictif.\n${'Exigence fictive. '.repeat(400)}`.trim();
+    expect(annonce.length).toBeGreaterThan(7000);
+    const entree = reservation({kind: 'match', question: annonce});
+
+    // Réservée en `match`, comme une question.
+    const id = reserved(entree);
+    expect(findExchange(id)).toMatchObject({kind: 'match', status: 'pending', question: annonce, costMicroUsd: 85_000});
+
+    // Finalisée avec ses sources — l'union des marques et du bloc, telle que la passerelle la rend.
+    finalizeExchange(finalisation(id, {answer: '**Points forts**\n- Un point.', sources: ['cv:profil', 'qa:lic-01'], citationOk: false}));
+    expect(findExchange(id)).toMatchObject({
+      kind: 'match',
+      status: 'done',
+      answer: '**Points forts**\n- Un point.',
+      sources: ['cv:profil', 'qa:lic-01'],
+      citationOk: false
+    });
+    // Rejouée dans l'historique avec sa sorte : c'est le contexte qui remplacera l'annonce par un repère.
+    expect(recentExchanges(entree.sessionId, 6).map((exchange) => [exchange.kind, exchange.question])).toEqual([['match', annonce]]);
+
+    // Refusée au plafond : la ligne dit `match`, l'annonce conservée, coût nul.
+    const refus = recordCapRefusal({sessionId: entree.sessionId, kind: 'match', question: annonce, now: LATER});
+    expect(findExchange(refus.id)).toMatchObject({kind: 'match', status: 'cap_reached', question: annonce, costMicroUsd: 0});
+    // Et le plafond compte une réservation `match` comme une autre : le cumul
+    // vaut le coût réel finalisé (53 500), et un micro-USD de trop refuse.
+    const outcome = reserveExchange({...entree, reservationMicroUsd: 5_000_000 - 53_500 + 1, now: LATER});
+    expect(outcome).toEqual({capReached: true, spentMicroUsd: 53_500});
+  });
 });
 
 describe('le cumul du mois (AD-6)', () => {

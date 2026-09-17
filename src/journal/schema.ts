@@ -54,6 +54,19 @@ export type ExchangeKind = (typeof EXCHANGE_KINDS)[number];
 export const EXCHANGE_STATUSES = ['pending', 'done', 'model_error', 'cap_reached'] as const;
 export type ExchangeStatus = (typeof EXCHANGE_STATUSES)[number];
 
+/*
+ * `exchange.citation_ok` — un booléen (`1` / `0`), `NULL` sans réponse. Ce
+ * qu'il veut dire dépend de la sorte (AD-4, AD-17) :
+ *  - `chat` : toutes les sources déclarées dans le bloc `<sources>` existent et
+ *    se citent — donc aussi `1` sans bloc du tout, un refus ;
+ *  - `match` : « tout en ordre » — les quatre parties présentes et dans
+ *    l'ordre, chaque point des deux premières marqué, aucune marque sous les
+ *    écarts, chaque marque et chaque source du bloc valide. Sinon `0`, la
+ *    réponse servie et journalisée quand même ; les raisons ne vivent pas
+ *    ici — seule la ligne applicative `agent.match_structure` les porte.
+ * `sources` reçoit dans les deux cas les seules clés valides.
+ */
+
 /** `'a', 'b'` — la liste telle qu'un `CHECK (x IN (…))` l'attend. */
 function sqlList(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(', ');

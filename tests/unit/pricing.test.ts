@@ -6,6 +6,7 @@ import {describe, expect, it} from 'vitest';
 import {
   CHARS_PER_TOKEN,
   costMicroUsd,
+  MAX_AD_CHARS,
   MAX_QUESTION_CHARS,
   MAX_TOKENS,
   MICRO_USD_PER_TOKEN,
@@ -14,7 +15,7 @@ import {
   PRICING_DATE,
   reservationMicroUsd
 } from '@/agent/pricing';
-import {QUESTION_MAX_CHARS} from '@/app/_lib/chat-contract';
+import {AD_MAX_CHARS, QUESTION_MAX_CHARS} from '@/app/_lib/chat-contract';
 
 describe('la table de prix', () => {
   it('est datée, pour claude-opus-5 : 5 / 25 USD par MTok, écriture de cache × 1,25, lecture × 0,1', () => {
@@ -23,12 +24,14 @@ describe('la table de prix', () => {
     expect(MICRO_USD_PER_TOKEN).toEqual({input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5});
   });
 
-  it('fixe le plafond à 5,00 USD, max_tokens à 1 200 et la question à 1 000 caractères', () => {
+  it('fixe le plafond à 5,00 USD, max_tokens à 1 200, la question à 1 000 caractères et lʼannonce à 8 000', () => {
     expect(MONTHLY_CAP_MICRO_USD).toBe(5_000_000);
     expect(MAX_TOKENS).toBe(1200);
     expect(MAX_QUESTION_CHARS).toBe(1000);
-    // La borne du contrat de la route est la même, recopiée sans import : verrouillée ici.
+    expect(MAX_AD_CHARS).toBe(8000);
+    // Les bornes du contrat des routes sont les mêmes, recopiées sans import : verrouillées ici.
     expect(QUESTION_MAX_CHARS).toBe(MAX_QUESTION_CHARS);
+    expect(AD_MAX_CHARS).toBe(MAX_AD_CHARS);
   });
 });
 

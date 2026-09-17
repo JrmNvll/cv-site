@@ -142,10 +142,19 @@ async function collect(events: AsyncIterable<AgentEvent>): Promise<AgentEvent[]>
 /** Un appel engagé sur la fixture ; le flux simulé attend le pilotage du test. */
 function engage(question = 'Pourquoi la personne fictive est-elle en recherche ?') {
   const context = buildContext({lang: 'fr', question, history: []});
-  const result = gateway.callModel({lang: 'fr', sessionId: SESSION_ID, question, context, now: NOW});
+  const result = gateway.callModel({lang: 'fr', sessionId: SESSION_ID, kind: 'chat', question, context, now: NOW});
   if (!result.ok) throw new Error(`refusé : ${result.reason}`);
   const call = sdk.state.calls.at(-1)!;
   return {result, context, stream: call.stream, params: call.params, options: call.options};
+}
+
+/** Une évaluation engagée sur la fixture, en `kind: 'match'`, dans la langue voulue. */
+function engageMatch(lang: 'fr' | 'en' = 'fr', ad = 'Poste fictif : dix ans de parcours demandés.') {
+  const context = buildContext({lang, question: ad, history: [], mode: 'match'});
+  const result = gateway.callModel({lang, sessionId: SESSION_ID, kind: 'match', question: ad, context, now: NOW});
+  if (!result.ok) throw new Error(`refusé : ${result.reason}`);
+  const call = sdk.state.calls.at(-1)!;
+  return {result, context, stream: call.stream, params: call.params};
 }
 
 /** Laisse la tâche détachée de la passerelle avancer jusqu'à sa finalisation. */
@@ -295,7 +304,7 @@ describe('le plafond (AD-6, étape 2)', () => {
     journal.reserveExchange.mockReturnValue({capReached: true, spentMicroUsd: 4_990_000});
     const context = buildContext({lang: 'fr', question: 'Q ?', history: []});
 
-    const result = gateway.callModel({lang: 'fr', sessionId: SESSION_ID, question: 'Q ?', context, now: NOW});
+    const result = gateway.callModel({lang: 'fr', sessionId: SESSION_ID, kind: 'chat', question: 'Q ?', context, now: NOW});
 
     expect(result).toEqual({ok: false, reason: 'cap_reached'});
     expect(sdk.state.stream).not.toHaveBeenCalled();
@@ -316,7 +325,7 @@ describe('le plafond (AD-6, étape 2)', () => {
     });
     const context = buildContext({lang: 'fr', question: 'Q ?', history: []});
 
-    expect(gateway.callModel({lang: 'fr', sessionId: SESSION_ID, question: 'Q ?', context, now: NOW})).toEqual({
+    expect(gateway.callModel({lang: 'fr', sessionId: SESSION_ID, kind: 'chat', question: 'Q ?', context, now: NOW})).toEqual({
       ok: false,
       reason: 'cap_reached'
     });
@@ -332,7 +341,7 @@ describe('réservation impossible (AD-6, étape 3)', () => {
     });
     const context = buildContext({lang: 'fr', question: 'Q ?', history: []});
 
-    const result = gateway.callModel({lang: 'fr', sessionId: SESSION_ID, question: 'Q ?', context, now: NOW});
+    const result = gateway.callModel({lang: 'fr', sessionId: SESSION_ID, kind: 'chat', question: 'Q ?', context, now: NOW});
 
     expect(result).toEqual({ok: false, reason: 'model_unavailable'});
     expect(sdk.state.stream).not.toHaveBeenCalled();
@@ -539,5 +548,181 @@ describe('ce que la passerelle ne journalise jamais', () => {
       .join('\n');
     expect(tout).toContain('agent.exchange_done');
     expect(tout).not.toContain('Sentinelle-Journal');
+  });
+});
+
+describe('une évaluation dʼannonce (kind match, AD-17)', () => {
+  const EVALUATION_FR =
+    '**Points forts**\n- Dix ans de parcours fictif [cv:profil] [qa:lic-01]\n\n' +
+    '**Compétences transférables**\n- Un outil voisin [voir CV] [qa:sit-02]\n\n' +
+    '**Écarts**\n- Une certification : non documenté dans le dossier\n\n' +
+    '**Conclusion**\nUn échange direct dira le reste.\n\n<sources>qa:lic-01, cv:profil</sources>';
+
+  it('réserve et journalise en kind match, retient les marques fragmentées et le bloc, finalise avec lʼunion des sources', async () => {
+    const {result, stream} = engageMatch();
+
+    expect(journal.reserveExchange).toHaveBeenCalledWith(
+      expect.objectContaining({kind: 'match', question: 'Poste fictif : dix ans de parcours demandés.'})
+    );
+
+    stream.emitText('**Points forts**\n- Dix ans de parcours fictif [cv:pro');
+    stream.emitText('fil] [qa:l');
+    stream.emitText('ic-01]\n\n**Compétences transférables**\n- Un outil voisin [voir CV] [qa:sit-02]\n\n');
+    stream.emitText('**Écarts**\n- Une certification : non documenté dans le dossier\n\n');
+    stream.emitText('**Conclusion**\nUn échange direct dira le reste.\n\n<sour');
+    stream.emitText('ces>qa:lic-01, cv:profil</sources>');
+    stream.emitUsage({input_tokens: 3000, output_tokens: 200, cache_read_input_tokens: 8000, cache_creation_input_tokens: 0});
+    stream.finish();
+
+    const events = await collect(result.events);
+    const deltas = events.filter((event) => event.type === 'delta').map((event) => (event as {text: string}).text);
+    // Rien d'une marque ni du bloc ne sort ; le « [voir CV] » sort, lui.
+    const sorti = deltas.join('');
+    expect(sorti).not.toMatch(/\[(qa|cv):/);
+    expect(sorti).not.toContain('sources>');
+    expect(sorti).not.toContain('lic-01');
+    expect(sorti).toContain('[voir CV]');
+    expect(sorti.replace(/[ \t]+$/gm, '').trimEnd()).toBe(
+      EVALUATION_FR.replace(/ \[(qa|cv):[^\]]+\]/g, '').replace(/\n\n<sources>.*$/, '')
+    );
+    expect(events.at(-1)).toEqual({type: 'done', sources: ['cv:profil', 'qa:lic-01', 'qa:sit-02'], exchangeId: EXCHANGE_ID});
+
+    expect(journal.finalizeExchange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'done',
+        answer:
+          '**Points forts**\n- Dix ans de parcours fictif\n\n' +
+          '**Compétences transférables**\n- Un outil voisin [voir CV]\n\n' +
+          '**Écarts**\n- Une certification : non documenté dans le dossier\n\n' +
+          '**Conclusion**\nUn échange direct dira le reste.',
+        sources: ['cv:profil', 'qa:lic-01', 'qa:sit-02'],
+        citationOk: true
+      })
+    );
+    const lignes = vi.mocked(console.warn).mock.calls.map((call) => String(call[0]));
+    expect(lignes.some((ligne) => ligne.includes('agent.match_structure'))).toBe(false);
+    const done = vi
+      .mocked(console.info)
+      .mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+      .find((entry) => entry.event === 'agent.exchange_done');
+    expect(done).toMatchObject({kind: 'match', citationOk: true, valid: 3});
+  });
+
+  it('une marque invalide : retirée du flux et des sources, citation_ok = 0, agent.match_structure avec la raison', async () => {
+    const {result, stream} = engageMatch();
+    stream.emitText(EVALUATION_FR.replace('[qa:sit-02]', '[qa:inexistante]'));
+    stream.emitUsage({input_tokens: 1, output_tokens: 1});
+    stream.finish();
+
+    const events = await collect(result.events);
+    expect(JSON.stringify(events)).not.toContain('inexistante');
+    expect(events.at(-1)).toEqual({type: 'done', sources: ['cv:profil', 'qa:lic-01'], exchangeId: EXCHANGE_ID});
+    expect(journal.finalizeExchange).toHaveBeenCalledWith(
+      expect.objectContaining({status: 'done', sources: ['cv:profil', 'qa:lic-01'], citationOk: false})
+    );
+    const ligne = vi
+      .mocked(console.warn)
+      .mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+      .find((entry) => entry.event === 'agent.match_structure');
+    // Trois marques, un bloc de deux : l'union en déclare trois, dont une invalide.
+    expect(ligne).toMatchObject({exchangeId: EXCHANGE_ID, reasons: ['invalid_mark'], marks: 3, declared: 3, valid: 2});
+    // Jamais le texte.
+    expect(JSON.stringify(ligne)).not.toContain('Points forts');
+  });
+
+  it('une structure absente ou désordonnée : servie telle quelle, citation_ok = 0, la raison dite', async () => {
+    const {result, stream} = engageMatch();
+    stream.emitText('Le dossier ne couvre pas cette annonce. [qa:lic-01]');
+    stream.emitUsage({input_tokens: 1, output_tokens: 1});
+    stream.finish();
+
+    expect(await collect(result.events)).toEqual([
+      {type: 'delta', text: 'Le dossier ne couvre pas cette annonce. '},
+      {type: 'done', sources: ['qa:lic-01'], exchangeId: EXCHANGE_ID}
+    ]);
+    expect(journal.finalizeExchange).toHaveBeenCalledWith(
+      expect.objectContaining({status: 'done', answer: 'Le dossier ne couvre pas cette annonce.', citationOk: false})
+    );
+    const ligne = vi
+      .mocked(console.warn)
+      .mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+      .find((entry) => entry.event === 'agent.match_structure');
+    expect(ligne).toMatchObject({reasons: ['missing_title']});
+  });
+
+  it('en anglais, cherche les titres anglais', async () => {
+    const {result, stream} = engageMatch('en', 'Fictional position: ten years of career required.');
+    stream.emitText(
+      '**Strengths**\n- Ten years [cv:profil]\n\n**Transferable skills**\n- A tool [qa:lic-01]\n\n' +
+        '**Gaps**\n- A certification: not documented in the dossier\n\n**Conclusion**\nAsk directly.\n\n<sources>cv:profil</sources>'
+    );
+    stream.emitUsage({input_tokens: 1, output_tokens: 1});
+    stream.finish();
+
+    expect((await collect(result.events)).at(-1)).toEqual({type: 'done', sources: ['cv:profil', 'qa:lic-01'], exchangeId: EXCHANGE_ID});
+    expect(journal.finalizeExchange).toHaveBeenCalledWith(expect.objectContaining({citationOk: true}));
+  });
+
+  it('refusée au plafond : journalisée en kind match', () => {
+    journal.reserveExchange.mockReturnValue({capReached: true, spentMicroUsd: 4_990_000});
+    const context = buildContext({lang: 'fr', question: 'Annonce', history: [], mode: 'match'});
+
+    const result = gateway.callModel({lang: 'fr', sessionId: SESSION_ID, kind: 'match', question: 'Annonce', context, now: NOW});
+
+    expect(result).toEqual({ok: false, reason: 'cap_reached'});
+    expect(sdk.state.stream).not.toHaveBeenCalled();
+    expect(journal.recordCapRefusal).toHaveBeenCalledWith({sessionId: SESSION_ID, kind: 'match', question: 'Annonce', now: NOW});
+  });
+
+  it('une marque ouverte au moment dʼune erreur ne sort pas, et le texte partiel journalisé ne la porte pas non plus', async () => {
+    const {result, stream} = engageMatch();
+    stream.emitText('**Points forts**\n- Dix ans [cv:pro');
+    stream.fail(new Error('coupure'));
+
+    expect(await collect(result.events)).toEqual([
+      {type: 'delta', text: '**Points forts**\n- Dix ans '},
+      {type: 'error', reason: 'model_unavailable'}
+    ]);
+    expect(journal.finalizeExchange).toHaveBeenCalledWith(
+      expect.objectContaining({status: 'model_error', answer: '**Points forts**\n- Dix ans', citationOk: null})
+    );
+  });
+
+  it('une question libre nʼest pas contrôlée comme une évaluation : pas de agent.match_structure', async () => {
+    const {result, stream} = engage();
+    stream.emitText('Réponse libre sans titres.\n<sources>qa:lic-01</sources>');
+    stream.emitUsage({input_tokens: 1, output_tokens: 1});
+    stream.finish();
+    await collect(result.events);
+
+    expect(journal.finalizeExchange).toHaveBeenCalledWith(expect.objectContaining({citationOk: true}));
+    const lignes = vi.mocked(console.warn).mock.calls.map((call) => String(call[0]));
+    expect(lignes.some((ligne) => ligne.includes('agent.match_structure'))).toBe(false);
+  });
+
+  it('coupée par max_tokens : une ligne agent.match_truncated dédiée, puis agent.match_structure — done quand même', async () => {
+    const {result, stream} = engageMatch();
+    stream.emitText('**Points forts**\n- Dix ans [cv:profil]\n\n**Compétences transférables**\n- Un outil');
+    stream.emitUsage({input_tokens: 10, output_tokens: 1200});
+    stream.finish('max_tokens');
+
+    expect((await collect(result.events)).at(-1)).toMatchObject({type: 'done', sources: ['cv:profil']});
+    expect(journal.finalizeExchange).toHaveBeenCalledWith(expect.objectContaining({status: 'done', citationOk: false}));
+    const lignes = vi
+      .mocked(console.warn)
+      .mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>);
+    const tronquee = lignes.findIndex((entry) => entry.event === 'agent.match_truncated');
+    const structure = lignes.findIndex((entry) => entry.event === 'agent.match_structure');
+    expect(lignes[tronquee]).toMatchObject({exchangeId: EXCHANGE_ID, kind: 'match', maxTokens: 1200});
+    expect(lignes[structure]).toMatchObject({reasons: ['missing_title']});
+    expect(tronquee).toBeLessThan(structure);
+    // Une question libre coupée par max_tokens ne dit rien de tel.
+    vi.mocked(console.warn).mockClear();
+    const libre = engage();
+    libre.stream.emitText('Réponse coupée');
+    libre.stream.emitUsage({input_tokens: 1, output_tokens: 1200});
+    libre.stream.finish('max_tokens');
+    await collect(libre.result.events);
+    expect(vi.mocked(console.warn).mock.calls.some((call) => String(call[0]).includes('agent.match_truncated'))).toBe(false);
   });
 });

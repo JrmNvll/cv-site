@@ -1,12 +1,14 @@
 /**
- * Ce que `chat.spec.ts` et `chat-cap.spec.ts` ont en commun : le panneau
- * visible, une adresse propre à chaque test, la lecture de `usage.db`, les
- * scénarios du simulateur, et le coût attendu — calculé par la **même** table
- * de prix que le serveur, jamais recopié.
+ * Ce que `chat.spec.ts`, `chat-cap.spec.ts` et `match.spec.ts` ont en commun :
+ * le panneau visible, une adresse propre à chaque test, la lecture de
+ * `usage.db`, les scénarios du simulateur, l'observation d'un flux, et le coût
+ * attendu — calculé par la **même** table de prix que le serveur, jamais
+ * recopié.
  */
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import IntlMessageFormat from 'intl-messageformat';
 import {expect, type BrowserContext, type Locator, type Page, type TestInfo} from '@playwright/test';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
@@ -39,7 +41,31 @@ export const scenarios = JSON.parse(
   cap: {deltas: string[]; text: string; usage: Usage};
   slow: Answered & {initialDelayMs: number};
   spaced: Answered & {spacingMs: number};
+  /** L'évaluation d'une annonce, dans la langue des règles ; sa variante `[invalide]`. */
+  match: Record<Lang, Answered>;
+  matchInvalid: Record<Lang, Answered>;
 };
+
+/** Ce que le simulateur retient d'une requête (`GET /requests`). */
+export type StubRequest = {
+  scenario?: string;
+  lang?: string;
+  fault?: string;
+  model?: string;
+  max_tokens?: number;
+  effort?: string;
+  systemSha?: string;
+  cacheControl?: {type: string};
+  messages?: number;
+  question?: string | null;
+  ad?: string | null;
+  turns?: {role: string; head: string}[];
+};
+
+/** Toutes les requêtes que le simulateur a reçues jusqu'ici. */
+export async function requetesDuSimulateur(): Promise<StubRequest[]> {
+  return (await (await fetch(`${stubURL}/requests`)).json()) as StubRequest[];
+}
 
 export const stubURL = `http://127.0.0.1:${process.env.MODEL_STUB_PORT || scenarios.port}`;
 
@@ -145,7 +171,8 @@ export async function poser(page: Page, panneau: Locator, locale: Lang, question
 }
 
 /**
- * Capture, **dans la page**, les octets que le navigateur reçoit de `/api/chat`.
+ * Capture, **dans la page**, les octets que le navigateur reçoit de `/api/chat`
+ * et de `/api/match`.
  *
  * Chromium ne rend pas à Playwright le corps d'une réponse que la page a lue
  * en flux (« No data found for resource ») : c'est donc la page qui garde une
@@ -161,7 +188,7 @@ export async function capturerLeFlux(page: Page): Promise<void> {
     window.fetch = async (input, init) => {
       const response = await original(input, init);
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      if (!url.endsWith('/api/chat') || response.body === null) return response;
+      if (!/\/api\/(chat|match)$/.test(url) || response.body === null) return response;
       const [pourLaPage, pourLeTest] = response.body.tee();
       const position = captures.push('') - 1;
       void (async () => {
@@ -185,4 +212,40 @@ export async function capturerLeFlux(page: Page): Promise<void> {
 /** Les flux capturés jusqu'ici, dans l'ordre des appels. */
 export function fluxCaptures(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as unknown as {__flux: string[]}).__flux ?? []);
+}
+
+/** « d'après le dossier · 1 source », formaté comme la page le formate. */
+export function ligneDesSources(locale: Lang, count: number): string {
+  const plural = String(new IntlMessageFormat(messages[locale].assistant.answerSources, locale).format({count}));
+  return `${messages[locale].assistant.answerModel} · ${plural}`;
+}
+
+export type EtatDuFlux = {readonly state: string | null; readonly text: string; readonly panneau: string};
+
+/**
+ * Observe la zone de réponse pendant le flux, à haute fréquence, jusqu'à la
+ * fin (`data-answer` ≠ `streaming`) ou l'échéance : chaque état distinct est
+ * retenu. C'est ainsi qu'on voit le texte grandir — et qu'on vérifie qu'à
+ * aucun moment le bloc, ou une marque, n'a été visible.
+ */
+export async function observerLeFlux(page: Page, panneau: Locator, echeanceMs = 8000): Promise<EtatDuFlux[]> {
+  const etats: EtatDuFlux[] = [];
+  const echeance = Date.now() + echeanceMs;
+  while (Date.now() < echeance) {
+    // Un seul aller-retour, sans attente d'élément : la zone n'existe pas
+    // encore avant le premier delta, et n'existe plus après le retour.
+    const lu = await panneau.evaluate((section) => {
+      const zone = section.querySelector<HTMLElement>('[data-answer]');
+      return {
+        state: zone?.getAttribute('data-answer') ?? null,
+        text: zone?.innerText ?? '',
+        panneau: (section as HTMLElement).innerText
+      };
+    });
+    const dernier = etats.at(-1);
+    if (dernier === undefined || dernier.state !== lu.state || dernier.text !== lu.text) etats.push(lu);
+    if (lu.state !== null && lu.state !== 'streaming') break;
+    await page.waitForTimeout(10);
+  }
+  return etats;
 }

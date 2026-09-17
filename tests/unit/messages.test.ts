@@ -74,7 +74,6 @@ describe('catalogues de messages', () => {
           'assistant.eyebrow',
           'assistant.intro',
           'assistant.placeholder',
-          'assistant.inactive',
           'assistant.loading',
           'assistant.answerSource',
           'assistant.back',
@@ -111,9 +110,43 @@ describe('catalogues de messages', () => {
           'errors.no_visitor',
           'errors.rate_limited',
           'errors.cap_reached',
-          'errors.model_unavailable'
+          'errors.model_unavailable',
+          // L'annonce (story 7) : le titre de la réponse, le nom court de la
+          // zone, son invite, son compte, ses boutons.
+          'assistant.matchTitle',
+          'assistant.matchLabel',
+          'assistant.matchIntro',
+          'assistant.matchPlaceholder',
+          'assistant.matchSend',
+          'assistant.matchCount',
+          'assistant.matchBack'
         ])
       );
+      // Tout répond une fois hydraté : la ligne d'état « pas encore » n'a plus d'objet.
+      expect(keys).not.toContain('assistant.inactive');
+    }
+  });
+
+  it('compte les caractères de lʼannonce par deux paramètres ICU, sans chiffre écrit', () => {
+    for (const locale of Object.keys(catalogs)) {
+      const libelle = String(valueAt(catalogs[locale]!, 'assistant.matchCount'));
+      expect(libelle).toContain('{count}');
+      expect(libelle).toContain('{max}');
+      expect(libelle).not.toMatch(/\d/);
+    }
+  });
+
+  it('prévient que le texte collé est conservé, et la ligne sans JavaScript compte six puces', () => {
+    expect(String(valueAt(catalogs.fr!, 'assistant.matchIntro'))).toMatch(/conservé/);
+    expect(String(valueAt(catalogs.en!, 'assistant.matchIntro'))).toMatch(/is kept/);
+    expect(String(valueAt(catalogs.fr!, 'assistant.withoutScript'))).toMatch(/six puces/);
+    expect(String(valueAt(catalogs.en!, 'assistant.withoutScript'))).toMatch(/six chips/);
+    // Un nom court pour la zone : pas la phrase entière de l'invite.
+    for (const locale of Object.keys(catalogs)) {
+      const label = String(valueAt(catalogs[locale]!, 'assistant.matchLabel'));
+      const intro = String(valueAt(catalogs[locale]!, 'assistant.matchIntro'));
+      expect(label.length).toBeLessThan(40);
+      expect(intro.length).toBeGreaterThan(label.length);
     }
   });
 

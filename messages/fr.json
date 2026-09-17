@@ -35,12 +35,18 @@
     "placeholder": "…ou écrivez votre propre question",
     "send": "Envoyer la question",
     "questionLabel": "Votre question",
-    "inactive": "Les questions préparées et le champ libre répondent ; l'annonce, pas encore.",
     "loading": "Un instant…",
     "answerSource": "Réponse écrite par mes soins, sans appel au modèle.",
     "answerModel": "Réponse du modèle, d'après le dossier",
     "answerSources": "{count, plural, one {# source} other {# sources}}",
     "back": "Retour aux questions",
+    "matchTitle": "Adéquation avec l'annonce",
+    "matchLabel": "Votre annonce",
+    "matchIntro": "Collez le texte de l'annonce : l'assistant dit ce qui correspond, ce qui est transférable et ce qui n'est pas documenté — d'après le dossier, sans note ni verdict. Le texte collé est conservé, comme les questions.",
+    "matchPlaceholder": "Le texte de l'annonce…",
+    "matchSend": "Évaluer l'adéquation",
+    "matchCount": "{count} / {max} caractères",
+    "matchBack": "Retour",
     "questions": {
       "lic-01": "Pourquoi est-il en recherche ?",
       "sit-02": "Quand est-il disponible ?",
@@ -50,7 +56,7 @@
       "annonce": "Collez votre annonce → je vous dis ce qui correspond"
     },
     "yearsUnknown": "Que reste-t-il de ses années WinDev ?",
-    "withoutScript": "Les questions préparées et le champ libre ont besoin de JavaScript pour répondre ; le CV, lui, se lit sans."
+    "withoutScript": "Les six puces et le champ libre ont besoin de JavaScript pour répondre ; le CV, lui, se lit sans."
   },
   "errors": {
     "unavailable": "Réponse indisponible pour le moment — réessayez plus tard.",

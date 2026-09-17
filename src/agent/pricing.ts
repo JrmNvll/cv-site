@@ -46,6 +46,14 @@ export const MAX_TOKENS = 1200;
 export const MAX_QUESTION_CHARS = 1000;
 
 /**
+ * Une annonce tient en huit mille caractères (CAP-4, AD-17) : le texte d'une
+ * offre d'emploi ordinaire, pas un cahier des charges. Elle est journalisée
+ * entière et rejouée une seule fois ; au-delà, la réservation grimperait avec
+ * elle pour rien.
+ */
+export const MAX_AD_CHARS = 8000;
+
+/**
  * Un jeton pour deux caractères : mesuré sur le contenu réel le 2026-09-17 —
  * le noyau (YAML, identifiants, ponctuation) tokenise à ≈ 2,2 caractères par
  * jeton, loin des 3 à 4 d'une prose française. La réservation doit surestimer,

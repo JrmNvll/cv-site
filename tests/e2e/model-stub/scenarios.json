@@ -102,5 +102,105 @@
       "cache_read_input_tokens": 100,
       "cache_creation_input_tokens": 0
     }
+  },
+  "match": {
+    "fr": {
+      "deltas": [
+        "**Points forts**\n",
+        "- Dix ans sur un outil fictif demandé [cv:pro",
+        "fil] [qa:l",
+        "ic-01]\n- Une disponibilité immédiate [qa:sit-02]\n\n",
+        "**Compétences transférables**\n- Un atelier voisin de celui demandé [voir CV] [cv:profil]\n\n",
+        "**Écarts**\n- La certification demandée : non documenté dans le dossier\n\n",
+        "**Conclusion**\nPour le reste, un échange direct dira ce que le dossier ne dit pas. Reponse-adequation.\n\n<sour",
+        "ces>qa:lic-01, cv:profil, qa:sit-02</sources>"
+      ],
+      "text": "**Points forts**\n- Dix ans sur un outil fictif demandé\n- Une disponibilité immédiate\n\n**Compétences transférables**\n- Un atelier voisin de celui demandé [voir CV]\n\n**Écarts**\n- La certification demandée : non documenté dans le dossier\n\n**Conclusion**\nPour le reste, un échange direct dira ce que le dossier ne dit pas. Reponse-adequation.",
+      "sources": [
+        "cv:profil",
+        "qa:lic-01",
+        "qa:sit-02"
+      ],
+      "usage": {
+        "input_tokens": 2345,
+        "output_tokens": 180,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    },
+    "en": {
+      "deltas": [
+        "**Strengths**\n",
+        "- Ten years on a requested fictional tool [cv:pro",
+        "fil] [qa:l",
+        "ic-01]\n- Immediate availability [qa:sit-02]\n\n",
+        "**Transferable skills**\n- A workshop close to the requested one [see CV] [cv:profil]\n\n",
+        "**Gaps**\n- The requested certification: not documented in the dossier\n\n",
+        "**Conclusion**\nFor the rest, a direct conversation will tell what the dossier does not. Reponse-adequation.\n\n<sour",
+        "ces>qa:lic-01, cv:profil, qa:sit-02</sources>"
+      ],
+      "text": "**Strengths**\n- Ten years on a requested fictional tool\n- Immediate availability\n\n**Transferable skills**\n- A workshop close to the requested one [see CV]\n\n**Gaps**\n- The requested certification: not documented in the dossier\n\n**Conclusion**\nFor the rest, a direct conversation will tell what the dossier does not. Reponse-adequation.",
+      "sources": [
+        "cv:profil",
+        "qa:lic-01",
+        "qa:sit-02"
+      ],
+      "usage": {
+        "input_tokens": 2345,
+        "output_tokens": 180,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    }
+  },
+  "matchInvalid": {
+    "fr": {
+      "deltas": [
+        "**Points forts**\n",
+        "- Dix ans sur un outil fictif demandé [cv:pro",
+        "fil] [qa:l",
+        "ic-01]\n- Une disponibilité immédiate [qa:inex",
+        "istante]\n\n",
+        "**Compétences transférables**\n- Un atelier voisin de celui demandé [voir CV] [cv:profil]\n\n",
+        "**Écarts**\n- La certification demandée : non documenté dans le dossier\n\n",
+        "**Conclusion**\nPour le reste, un échange direct dira ce que le dossier ne dit pas. Reponse-adequation.\n\n<sour",
+        "ces>qa:lic-01, cv:profil</sources>"
+      ],
+      "text": "**Points forts**\n- Dix ans sur un outil fictif demandé\n- Une disponibilité immédiate\n\n**Compétences transférables**\n- Un atelier voisin de celui demandé [voir CV]\n\n**Écarts**\n- La certification demandée : non documenté dans le dossier\n\n**Conclusion**\nPour le reste, un échange direct dira ce que le dossier ne dit pas. Reponse-adequation.",
+      "sources": [
+        "cv:profil",
+        "qa:lic-01"
+      ],
+      "usage": {
+        "input_tokens": 2345,
+        "output_tokens": 180,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    },
+    "en": {
+      "deltas": [
+        "**Strengths**\n",
+        "- Ten years on a requested fictional tool [cv:pro",
+        "fil] [qa:l",
+        "ic-01]\n- Immediate availability [qa:inex",
+        "istante]\n\n",
+        "**Transferable skills**\n- A workshop close to the requested one [see CV] [cv:profil]\n\n",
+        "**Gaps**\n- The requested certification: not documented in the dossier\n\n",
+        "**Conclusion**\nFor the rest, a direct conversation will tell what the dossier does not. Reponse-adequation.\n\n<sour",
+        "ces>qa:lic-01, cv:profil</sources>"
+      ],
+      "text": "**Strengths**\n- Ten years on a requested fictional tool\n- Immediate availability\n\n**Transferable skills**\n- A workshop close to the requested one [see CV]\n\n**Gaps**\n- The requested certification: not documented in the dossier\n\n**Conclusion**\nFor the rest, a direct conversation will tell what the dossier does not. Reponse-adequation.",
+      "sources": [
+        "cv:profil",
+        "qa:lic-01"
+      ],
+      "usage": {
+        "input_tokens": 2345,
+        "output_tokens": 180,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    }
   }
 }

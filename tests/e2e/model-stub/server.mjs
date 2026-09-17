@@ -1,10 +1,12 @@
 /**
- * Le simulateur de l'API du modèle — **la preuve navigateur** de la story 6.
+ * Le simulateur de l'API du modèle — **la preuve navigateur** des stories 6
+ * et 7.
  *
  * Il parle le format SSE de `POST /v1/messages` sur `ANTHROPIC_BASE_URL` ; le
  * SDK réel fait le reste, et rien n'est facturé. Un appel réel n'a lieu qu'en
- * story 10, sur demande. Trois scénarios, choisis par un marqueur dans la
- * question du visiteur (`scenarios.json`) :
+ * story 10, sur demande. Les scénarios sont choisis par le dernier message du
+ * visiteur (`scenarios.json`) — un marqueur dans la question, ou une annonce
+ * dans `<annonce>` :
  *
  *  - ordinaire : une réponse Markdown, un bloc `<sources>` **fragmenté** sur
  *    plusieurs deltas, des sources valides ;
@@ -16,13 +18,19 @@
  *  - `[lent]` : douze secondes de silence avant le premier delta — la
  *    réflexion du modèle, que le battement de cœur de la route doit couvrir ;
  *  - `[espace]` : des deltas espacés d'une seconde et demie — le temps qu'un
- *    client parte au milieu du flux.
+ *    client parte au milieu du flux ;
+ *  - une annonce (`<annonce>` dans le dernier message) : une évaluation en
+ *    quatre parties dans la langue des règles, titres en gras, marques
+ *    `[qa:…]` / `[cv:…]` **fragmentées** sur plusieurs deltas, un `[` qui
+ *    n'ouvre rien (« [voir CV] »), puis le bloc ; `[invalide]` dans l'annonce
+ *    glisse une marque invalide sur un point fort.
  *
  * Il **vérifie** aussi ce que la passerelle envoie, et répond `400` comme
  * l'API le ferait sur ce qu'AD-6 impose : modèle, `max_tokens`, effort bas,
  * un bloc système en cache, la clé. Et il retient un condensé de chaque
- * requête (`GET /requests`) : deux appels dans la même langue doivent porter
- * le même bloc système — le préfixe de cache.
+ * requête (`GET /requests`) : deux appels dans la même langue — question ou
+ * annonce — doivent porter le même bloc système, le préfixe de cache ; et
+ * l'historique rejoué doit remplacer une annonce évaluée par sa ligne repère.
  *
  * Aucune dépendance, Node seul : lancé par `playwright.config.ts` comme second
  * `webServer`, sur `MODEL_STUB_PORT`.
@@ -149,7 +157,41 @@ async function stream(response, scenario) {
   response.end();
 }
 
-function scenarioFor(question) {
+/** Le dernier message porte-t-il une annonce à évaluer, à la place d'une question ? */
+const AD_BLOCK = /<annonce>\n([\s\S]*?)\n<\/annonce>$/;
+const QUESTION_BLOCK = /<question>\n([\s\S]*?)\n<\/question>$/;
+
+/**
+ * La langue des règles : le bloc système commence par « Tu es » en français.
+ * Une évaluation doit porter les titres de la langue de la page pour que le
+ * contrôle de structure la trouve en ordre.
+ */
+function langOf(system) {
+  return system.startsWith('Tu es') ? 'fr' : 'en';
+}
+
+/**
+ * Une annonce : l'évaluation de la langue des règles — `[invalide]` en
+ * choisit la variante à la marque invalide —, et les autres marqueurs s'y
+ * combinent comme pour une question : `[erreur]` coupe après deux deltas,
+ * `[plafond]` déclare le `usage` du plafond, `[lent]` retarde le premier
+ * delta, `[espace]` espace les suivants.
+ */
+function matchScenarioFor(ad, lang) {
+  const invalid = ad.includes(scenarios.markers.invalid);
+  const base = {name: invalid ? 'match-invalid' : 'match', ...(invalid ? scenarios.matchInvalid : scenarios.match)[lang]};
+  if (ad.includes(scenarios.markers.error)) {
+    return {...base, name: `${base.name}-error`, deltas: base.deltas.slice(0, scenarios.error.deltas.length), fail: true};
+  }
+  if (ad.includes(scenarios.markers.cap)) return {...base, name: `${base.name}-cap`, usage: scenarios.cap.usage};
+  if (ad.includes(scenarios.markers.slow)) return {...base, name: `${base.name}-slow`, initialDelayMs: scenarios.slow.initialDelayMs};
+  if (ad.includes(scenarios.markers.spaced)) return {...base, name: `${base.name}-spaced`, spacingMs: scenarios.spaced.spacingMs};
+  return base;
+}
+
+function scenarioFor(question, lang) {
+  const ad = AD_BLOCK.exec(question);
+  if (ad !== null) return matchScenarioFor(ad[1], lang);
   if (question.includes(scenarios.markers.error)) return {name: 'error', ...scenarios.error, fail: true};
   if (question.includes(scenarios.markers.cap)) return {name: 'cap', ...scenarios.cap};
   if (question.includes(scenarios.markers.invalid)) return {name: 'invalid', ...scenarios.invalid};
@@ -187,9 +229,11 @@ const server = createServer(async (request, response) => {
   }
 
   const last = textOf(body.messages.at(-1).content);
-  const scenario = scenarioFor(last);
+  const lang = langOf(body.system[0].text);
+  const scenario = scenarioFor(last, lang);
   requests.push({
     scenario: scenario.name,
+    lang,
     model: body.model,
     max_tokens: body.max_tokens,
     effort: body.output_config.effort,
@@ -198,9 +242,18 @@ const server = createServer(async (request, response) => {
     cacheControl: body.system[0].cache_control,
     messages: body.messages.length,
     lastUserChars: last.length,
-    // La question du visiteur, dans son bloc `<question>` : de quoi retrouver
-    // la requête d'un test parmi celles des autres — jamais le dossier.
-    question: /<question>\n([\s\S]*?)\n<\/question>$/.exec(last)?.[1] ?? null
+    // La question du visiteur, dans son bloc `<question>`, ou son annonce dans
+    // `<annonce>` : de quoi retrouver la requête d'un test parmi celles des
+    // autres — jamais le dossier.
+    question: QUESTION_BLOCK.exec(last)?.[1] ?? null,
+    ad: AD_BLOCK.exec(last)?.[1] ?? null,
+    // L'historique rejoué, tour par tour, tronqué : questions, repères et
+    // réponses des tours précédents — le dossier n'y est pas, il n'est que
+    // dans le dernier message.
+    turns: body.messages.slice(0, -1).map((message) => ({
+      role: message.role,
+      head: textOf(message.content).slice(0, 120)
+    }))
   });
   await stream(response, scenario);
 });

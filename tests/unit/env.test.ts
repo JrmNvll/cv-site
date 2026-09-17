@@ -8,6 +8,7 @@ import {parseEnv, type EnvSource} from '@/env';
 
 const COMPLETE: EnvSource = {
   ANTHROPIC_API_KEY: 'cle-de-test-sans-valeur',
+  ANTHROPIC_BASE_URL: 'http://127.0.0.1:3901',
   CONTENT_DIR: '/chemin/fictif/content',
   DATA_DIR: '/chemin/fictif/data',
   NEXT_PUBLIC_SITE_URL: 'http://127.0.0.1:3000',
@@ -28,11 +29,12 @@ describe('parseEnv', () => {
     expect(env.ADMIN_DEV).toBe(false);
   });
 
-  it("n'expose que les sept clés du contrat de configuration", () => {
+  it("n'expose que les huit clés du contrat de configuration", () => {
     expect(Object.keys(parseEnv(COMPLETE)).sort()).toEqual(
       [
         'ADMIN_DEV',
         'ANTHROPIC_API_KEY',
+        'ANTHROPIC_BASE_URL',
         'CONTENT_DIR',
         'DATA_DIR',
         'HOSTNAME',
@@ -45,6 +47,7 @@ describe('parseEnv', () => {
   it('applique les valeurs par défaut des variables facultatives', () => {
     const env = parseEnv({
       ...COMPLETE,
+      ANTHROPIC_BASE_URL: undefined,
       HOSTNAME: undefined,
       PORT: undefined,
       ADMIN_DEV: undefined
@@ -53,7 +56,23 @@ describe('parseEnv', () => {
     expect(env.HOSTNAME).toBe('127.0.0.1');
     expect(env.PORT).toBe(3000);
     expect(env.ADMIN_DEV).toBe(false);
+    // Pas d'adresse de simulateur : le SDK parlera à l'API réelle.
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
+
+  it('lit ANTHROPIC_BASE_URL quand elle est là, et une valeur vide comme une absence', () => {
+    expect(parseEnv(COMPLETE).ANTHROPIC_BASE_URL).toBe('http://127.0.0.1:3901');
+    expect(parseEnv({...COMPLETE, ANTHROPIC_BASE_URL: ''}).ANTHROPIC_BASE_URL).toBeUndefined();
+  });
+
+  it.each(['127.0.0.1:3901', 'ftp://simulateur.invalid', 'javascript:alert(1)'])(
+    'refuse une ANTHROPIC_BASE_URL qui nʼest pas une URL http(s) comme « %s »',
+    (value) => {
+      expect(() => parseEnv({...COMPLETE, ANTHROPIC_BASE_URL: value})).toThrowError(
+        /ANTHROPIC_BASE_URL/
+      );
+    }
+  );
 
   it('lit ADMIN_DEV=1 comme un booléen vrai', () => {
     expect(parseEnv({...COMPLETE, ADMIN_DEV: '1'}).ADMIN_DEV).toBe(true);

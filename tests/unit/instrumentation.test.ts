@@ -45,10 +45,13 @@ afterEach(async () => {
   // échoue laisserait la connexion ouverte et les cas suivants échoueraient
   // en cascade sur « déjà ouvert ». Modules neufs et environnement restauré
   // d'abord : `db.ts` charge `@/env`, que le test vient peut-être de casser.
+  // La connaissance vit là aussi : oubliée, sinon un cas verrait celle d'un autre contenu.
   vi.resetModules();
   process.env = {...savedEnv};
   const {closeJournal} = await import('@/journal/db');
   closeJournal();
+  const {resetKnowledge} = await import('@/knowledge');
+  resetKnowledge();
   process.exitCode = 0;
   vi.restoreAllMocks();
   vi.resetModules();
@@ -136,6 +139,71 @@ describe('contenu invalide au démarrage', () => {
   });
 });
 
+describe('connaissance au démarrage', () => {
+  it('construit le noyau et lʼindex des deux langues, et journalise leurs tailles — jamais un texte', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'cv-data-instr-'));
+    process.env.DATA_DIR = dataDir;
+    const exit = spyOnExit();
+    const informe = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const {register} = await import('@/instrumentation');
+    await register();
+
+    expect(exit).not.toHaveBeenCalled();
+    const lignes = informe.mock.calls
+      .map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+      .filter((ligne) => ligne.event === 'knowledge.ready');
+    expect(lignes.map((ligne) => ligne.lang)).toEqual(['fr', 'en']);
+    for (const ligne of lignes) {
+      expect(ligne).toMatchObject({level: 'info', corpusLang: ligne.lang, coreChars: expect.any(Number)});
+      expect(JSON.stringify(ligne)).not.toContain('Sentinelle');
+    }
+    // La connaissance est construite : le noyau est prêt pour la première question.
+    const {core} = await import('@/knowledge');
+    expect(core('fr').length).toBe(lignes[0]!.coreChars);
+  });
+
+  it('arrête le processus quand lʼindex ne peut pas se construire, sans ouvrir le journal', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'cv-data-instr-'));
+    process.env.DATA_DIR = dataDir;
+    vi.doMock('@/knowledge', () => ({
+      ensureKnowledge: () => {
+        throw new Error('index de connaissance impossible (simulé)');
+      }
+    }));
+    const exit = spyOnExit();
+
+    const {register} = await import('@/instrumentation');
+    await register();
+
+    expect(exit).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(stderrOutput()).toContain('index de connaissance impossible');
+    // Le journal n'a pas été ouvert : le premier échec arrête tout.
+    expect(existsSync(join(dataDir, 'usage.db'))).toBe(false);
+    vi.doUnmock('@/knowledge');
+  });
+
+  it("n'essaie pas de construire l'index si le contenu est invalide", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cv-content-instr-'));
+    try {
+      writeFileSync(join(dir, 'cv.yaml'), 'identite:\n  prenom: Camille\n', 'utf8');
+      writeFileSync(join(dir, 'qa.fr.md'), '#### `abc-01` — Question ?\n**Réponse :**\nCorps.\n', 'utf8');
+      process.env.CONTENT_DIR = dir;
+      spyOnExit();
+      const informe = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+      const {register} = await import('@/instrumentation');
+      await register();
+
+      expect(stderrOutput()).toContain('cv.yaml');
+      expect(informe.mock.calls.some((call) => String(call[0]).includes('knowledge.ready'))).toBe(false);
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
+  });
+});
+
 describe('journal au démarrage', () => {
   it('arrête le processus avec un message explicite quand DATA_DIR nʼexiste pas', async () => {
     const absent = join(tmpdir(), 'cv-data-inexistant-' + Date.now());
@@ -170,6 +238,33 @@ describe('journal au démarrage', () => {
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
+  });
+});
+
+describe('ANTHROPIC_BASE_URL au démarrage', () => {
+  it('est dite quand elle est là — lʼhôte seulement, jamais la clé', async () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://127.0.0.1:3901/v1';
+    process.env.ANTHROPIC_API_KEY = 'cle-sentinelle-jamais-journalisee';
+    const avertit = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    spyOnExit();
+
+    const {ensureConfiguration} = await import('@/lib/startup');
+    expect(await ensureConfiguration()).toBe(true);
+
+    const lignes = avertit.mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>);
+    expect(lignes).toEqual([expect.objectContaining({level: 'warn', event: 'config.model_base_url', host: '127.0.0.1:3901'})]);
+    expect(JSON.stringify(lignes)).not.toContain('cle-sentinelle');
+  });
+
+  it('ne dit rien quand elle est absente : le SDK vise lʼAPI réelle', async () => {
+    delete process.env.ANTHROPIC_BASE_URL;
+    const avertit = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    spyOnExit();
+
+    const {ensureConfiguration} = await import('@/lib/startup');
+    expect(await ensureConfiguration()).toBe(true);
+
+    expect(avertit.mock.calls.some((call) => String(call[0]).includes('config.model_base_url'))).toBe(false);
   });
 });
 

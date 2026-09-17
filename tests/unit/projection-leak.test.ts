@@ -7,97 +7,24 @@
  * la story — un champ ajouté demain à `cv.yaml` sans être ajouté à la liste
  * blanche fait échouer ici, et nulle part ailleurs.
  *
- * La méthode : les chemins ci-dessous sont la colonne « non / non » d'AD-8. Le
- * test lit leurs **valeurs réelles dans la fixture**, puis cherche chacune dans
- * le texte des deux projections, dans les deux langues. Rien n'est comparé à une
- * liste écrite à la main : changer la fixture change automatiquement ce qui est
- * cherché.
+ * La méthode : les chemins de `sentinelles.ts` sont la colonne « non / non »
+ * d'AD-8. Le test lit leurs **valeurs réelles dans la fixture**, puis cherche
+ * chacune dans le texte des deux projections, dans les deux langues. Rien n'est
+ * comparé à une liste écrite à la main : changer la fixture change
+ * automatiquement ce qui est cherché. Les mêmes sentinelles servent au noyau
+ * du modèle (`knowledge.test.ts`) : une seule liste, pas deux à faire diverger.
  */
-import {readFileSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
-import {parse} from 'yaml';
 import {describe, expect, it} from 'vitest';
 import {buildProjections} from '@/content/projections';
 import {cvSchema, LANGS} from '@/content/schema';
+import {at, HORS_LISTE_BLANCHE, rawCv as raw, SENTINELLE_MIN, sentinelles, strings} from './sentinelles';
 
-const FIXTURE = fileURLToPath(new URL('../fixtures/content/cv.yaml', import.meta.url));
-const raw = parse(readFileSync(FIXTURE, 'utf8')) as Record<string, unknown>;
 const cv = cvSchema.parse(raw);
 
 const NOW = new Date('2026-09-08T12:00:00Z');
 const projections = Object.fromEntries(
   LANGS.map((lang) => [lang, buildProjections(cv, lang, {hasPhoto: true, now: NOW})])
 );
-
-/**
- * Colonne « non / non » d'AD-8, plus les chemins de fichiers. `[]` traverse un
- * tableau ; un chemin sans suffixe emporte tout son sous-arbre.
- */
-const HORS_LISTE_BLANCHE = [
-  'meta',
-  'identite.prenoms_etat_civil',
-  'identite.lieu_naissance',
-  'identite.photo',
-  'contact.telephone',
-  'contact.adresse',
-  // Nom et fonction d'une référence s'affichent (AD-8, amendé le 2026-09-15) ;
-  // ses coordonnées, elles, ne sortent que par une route.
-  'references[].telephone',
-  'references[].email',
-  'certificats_travail[].signataire',
-  'certificats_travail[].fichier',
-  'formation[].justificatif',
-  'lettre_motivation.fichier',
-  'lettre_motivation.type'
-] as const;
-
-/** Toutes les chaînes d'un sous-arbre, quelle que soit sa profondeur. */
-function strings(node: unknown, found: string[] = []): string[] {
-  if (typeof node === 'string') found.push(node);
-  else if (typeof node === 'number') found.push(String(node));
-  else if (Array.isArray(node)) node.forEach((item) => strings(item, found));
-  else if (node !== null && typeof node === 'object') {
-    Object.values(node).forEach((item) => strings(item, found));
-  }
-  return found;
-}
-
-/** Suit un chemin, en dépliant les tableaux marqués `[]`. */
-function at(root: unknown, path: string): unknown[] {
-  let current: unknown[] = [root];
-  for (const step of path.split('.')) {
-    const key = step.replace('[]', '');
-    const spread = step.endsWith('[]');
-    const next: unknown[] = [];
-    for (const node of current) {
-      if (node === null || typeof node !== 'object') continue;
-      const value = (node as Record<string, unknown>)[key];
-      if (value === undefined) continue;
-      if (spread && Array.isArray(value)) next.push(...value);
-      else next.push(value);
-    }
-    current = next;
-  }
-  return current;
-}
-
-/**
- * Valeurs à ne jamais retrouver.
- *
- * Le seuil est haut — huit caractères — et c'est délibéré : une sentinelle
- * courte (`fr`, `0000`) finirait par apparaître dans une valeur projetée en
- * toute innocence, et ferait échouer pour rien le test dont tout dépend. La
- * fixture donne donc à chaque champ hors liste blanche une valeur longue et
- * unique, et `SENTINELLE_MIN` refuse de chercher ce qui ne prouverait rien.
- */
-const SENTINELLE_MIN = 8;
-const sentinelles = [
-  ...new Set(
-    HORS_LISTE_BLANCHE.flatMap((path) => at(raw, path).flatMap((node) => strings(node))).filter(
-      (value) => value.length >= SENTINELLE_MIN
-    )
-  )
-];
 
 describe('aucun champ hors liste blanche ne sort', () => {
   it('trouve bien des sentinelles à chercher — sinon le test ne prouve rien', () => {

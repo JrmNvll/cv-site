@@ -9,7 +9,8 @@ uniquement** : le contenu (CV, questions/réponses, photo) est privé et vit dan
 - Node.js 24 LTS (`engines` l'impose à l'installation).
 - Un `.env.local` complet — copier `.env.example` et remplir. Le **démarrage**
   échoue tant qu'une variable requise manque ; le build, lui, n'a besoin
-  d'aucun secret.
+  d'aucun secret. `ANTHROPIC_BASE_URL` reste **vide** hors des tests : c'est
+  l'adresse du simulateur, jamais celle de l'API réelle.
 
 ## Vérifier le dépôt
 
@@ -20,10 +21,13 @@ npm run verify
 C'est **la** commande de vérification : elle enchaîne `lint`, `typecheck`,
 `test` et `test:e2e`. Rien n'est considéré vérifié tant qu'elle n'est pas verte
 — en particulier `noindex`, l'attribut `lang`, les cookies de visite et leur
-`Cache-Control`, qui ne sont prouvés que par le navigateur. Les tests
-navigateur construisent et servent l'**artefact de production** : `next dev`
-réécrit `Cache-Control` pour son rechargement à chaud et masquerait le
-comportement réel.
+`Cache-Control`, le texte de l'assistant qui arrive au fil de l'eau, qui ne
+sont prouvés que par le navigateur. Les tests navigateur construisent et
+servent l'**artefact de production** : `next dev` réécrit `Cache-Control` pour
+son rechargement à chaud et masquerait le comportement réel. Ils lancent aussi
+un **simulateur de l'API du modèle** (`tests/e2e/model-stub/server.mjs`) :
+aucun test n'appelle l'API réelle, rien n'est facturé. La suite adverse contre
+l'API réelle (story 10) est à part et se lance sur demande.
 
 ## Scripts
 
@@ -38,6 +42,7 @@ comportement réel.
 | `npm run test:e2e` | Tests navigateur (Playwright ; construit puis sert l'artefact de production) |
 | `npm run verify` | Les quatre précédents, dans l'ordre |
 | `npm run check:content` | Valide le contenu **réel** de `CONTENT_DIR` — hors `verify` |
+| `npm run stub` | Lance le simulateur de l'API du modèle (`MODEL_STUB_PORT`, 3901 par défaut) — pour un essai à la main |
 
 ## Le contenu, et pourquoi il n'est pas ici
 
@@ -103,15 +108,17 @@ nulle part ailleurs. `eslint.config.mjs` en tire les règles de lint,
 | `src/journal/` | Seul propriétaire de `usage.db` : visiteurs, sessions, échanges |
 | `src/app/`, `src/proxy.ts` | Routes, cookies, i18n, rendu |
 | `src/env.ts`, `src/lib/`, `src/i18n/` | Code partagé — n'importe **aucune** couche |
-| `src/instrumentation.ts`, `src/lib/startup.ts` | Amorçage : configuration, contenu, puis journal, avant la première requête |
+| `src/instrumentation.ts`, `src/lib/startup.ts` | Amorçage : configuration, contenu, connaissance, puis journal, avant la première requête |
 | `messages/` | Textes d'interface `fr` / `en` |
 | `scripts/` | Outils de maintenance hors application (`check:content`) |
 | `tests/fixtures/content/` | Contenu **fictif** : les tests ne tournent que dessus |
 | `tests/fixtures/data/` | `DATA_DIR` des tests navigateur, créé par `playwright.config.ts`, ignoré par Git |
+| `tests/e2e/model-stub/` | Le simulateur de l'API du modèle des tests navigateur, et ses scénarios |
 
 `src/proxy.ts` est le seul endroit qui pose un cookie ; `src/env.ts` la seule
 porte d'entrée de la configuration ; `src/content/` le seul module qui lit
-`CONTENT_DIR` ; `src/journal/` le seul qui ouvre `usage.db`. Next 16 remplace
+`CONTENT_DIR` ; `src/journal/` le seul qui ouvre `usage.db` ;
+`src/agent/gateway.ts` le seul qui importe le SDK du modèle. Next 16 remplace
 `middleware.ts` par `proxy.ts` : il n'y a pas de `middleware.ts` dans ce dépôt.
 
 ## Le journal des visites
@@ -127,7 +134,11 @@ pas signés, et c'est une décision — l'identité de visiteur est une étiquet
 journal, pas une autorisation. Une session présentée avec le cookie d'un autre
 visiteur n'est pas écrite. Une question du premier écran insère en plus un
 `exchange` de sorte `hero` (`journal.addExchange()`), finalisé d'emblée : coût
-nul, aucun jeton, la clé de citation de l'entrée en source.
+nul, aucun jeton, la clé de citation de l'entrée en source — cent par session
+au plus, au-delà la réponse est servie sans être journalisée. Une question
+libre suit la séquence d'AD-6 : `reserveExchange()` en `pending` **avant**
+l'appel, `finalizeExchange()` après, avec les quatre compteurs et le coût réel
+(voir « L'assistant » plus bas).
 
 Ce qu'il faut savoir :
 
@@ -135,16 +146,30 @@ Ce qu'il faut savoir :
   inscriptible.** Le site ne le crée pas : il refuse de démarrer, comme pour un
   contenu invalide. En mode WAL, SQLite pose `usage.db-wal` et `usage.db-shm` à
   côté ; les trois sont ignorés par Git.
-- **Le schéma est versionné** (`PRAGMA user_version`, version 2 depuis la story
-  5 : `exchange.kind` admet `hero`). Une base plus récente que le code est
-  refusée ; une base plus ancienne aussi, tant qu'aucun mécanisme de migration
-  n'existe — avant la mise en ligne, une `usage.db` d'une version antérieure se
-  recrée : supprimer le fichier et ses compagnons `-wal` et `-shm`, redémarrer.
+- **Le schéma est versionné** (`PRAGMA user_version`, version 3 depuis la story
+  6 : `exchange.kind` admet `hero`, `exchange.status` admet `cap_reached`). Une
+  base plus récente que le code est refusée ; une base plus ancienne aussi,
+  tant qu'aucun mécanisme de migration n'existe — avant la mise en ligne, une
+  `usage.db` d'une version antérieure se recrée : supprimer le fichier et ses
+  compagnons `-wal` et `-shm`, redémarrer.
 - **Le journal n'efface rien** (AD-7) : insertions, plus une liste fermée de
-  colonnes modifiables — ici `session.last_seen_at`, rien d'autre.
-  `tests/unit/journal.test.ts` relit les sources de `src/journal/` et y refuse
-  `DELETE`, `DROP`, `TRUNCATE` et `REPLACE`, ainsi que tout `UPDATE` hors de
-  cette colonne — un garde textuel, pas une preuve exhaustive.
+  colonnes modifiables — `session.last_seen_at`, et la finalisation d'un
+  échange réservé (`status`, `answer`, `sources`, `citation_ok`, les quatre
+  compteurs, `cost_micro_usd`, `latency_ms`), qui n'atteint qu'une ligne
+  `pending`. `tests/unit/journal.test.ts` relit les sources de `src/journal/`
+  et y refuse `DELETE`, `DROP`, `TRUNCATE` et `REPLACE` — même en commentaire —
+  ainsi que tout `UPDATE` qui ne soit pas l'une de ces deux formes exactes :
+  `UPDATE session SET last_seen_at = … WHERE id = ?` (une seule affectation,
+  celle-là), ou `UPDATE exchange SET <colonnes de la liste ci-dessus, chacune
+  une fois> WHERE id = ? AND status = 'pending'` (exactement cette clause).
+  Un garde textuel, pas une preuve exhaustive.
+- **Une réservation orpheline se règle au démarrage.** Un processus tué entre
+  la réservation et la finalisation laisserait une ligne `pending` comptée
+  tout le mois. À l'ouverture, `settleStalePending()` finalise en
+  `model_error`, à la réservation, sans réponse ni compteurs, toute ligne
+  `pending` vieille de dix minutes ou plus (`PENDING_STALE_MS`), et le dit
+  (`journal.pending_settled`, avec le nombre). Le cumul ne change pas : ce
+  qui était réservé reste compté, ce qui est juste.
 - **Le journal observe, il ne conditionne pas.** Une écriture qui échoue à la
   requête — base verrouillée par un outil externe, disque plein — est dite
   (`journal.write_failed`) et la page est servie quand même. Au démarrage, en
@@ -193,9 +218,109 @@ langue que la page demande, et rend le corps de l'entrée **tel qu'écrit**, en
 Markdown, rendu côté client par un sous-ensemble maîtrisé
 ([`markdown.tsx`](./src/app/[locale]/_components/markdown.tsx) : paragraphes,
 listes, gras, italique — tout le reste en texte, jamais de HTML injecté). Une
-entrée `PRIVÉ`, `PASSE` ou vide vaut `404`. Sans JavaScript, les puces restent
-désactivées ; la sixième (l'annonce à coller) et le champ libre le restent dans
-tous les cas, jusqu'aux stories qui les branchent.
+entrée `PRIVÉ`, `PASSE` ou vide vaut `404`. Sans JavaScript, les puces et le
+champ libre restent désactivés ; la sixième (l'annonce à coller) le reste dans
+tous les cas, jusqu'à la story qui la branche.
+
+## L'assistant : ancrage, passerelle, plafond
+
+**Le champ libre appelle le modèle** (CAP-3), et c'est la seule chose du site
+qui coûte de l'argent. Tout ce qui suit existe pour que la réponse soit fondée
+sur le dossier et rien d'autre, et pour que la dépense reste sous 5 USD par mois
+quoi qu'il arrive (CAP-8).
+
+**La connaissance** (`src/knowledge/`) se construit **au démarrage**, par
+langue, et ne change plus : le **noyau** — la projection `agent` de `cv.yaml`
+avec ses clés de citation, l'index des titres de toutes les entrées, le corps
+des entrées `sys-*`, et l'identifiant + la consigne des entrées `PRIVÉ` ou à
+consigne, **jamais le corps d'une entrée `PRIVÉ`** — et l'**index BM25+**
+(MiniSearch) sur le texte débalisé des entrées ordinaires. Le noyau d'une langue
+est identique octet pour octet d'un appel à l'autre : c'est le préfixe de cache
+du modèle, et la taille de chacun est journalisée au démarrage
+(`knowledge.ready`). Un `qa.en.md` absent fait s'ancrer `/en` sur le corpus
+français avec la consigne de répondre en anglais (`knowledge.corpus_fallback`,
+une fois par processus).
+
+**L'agent** (`src/agent/`) reçoit `{lang, visitorId, sessionId, ip, question}`
+et ne lit jamais la requête. `ask()` valide (1 à 1 000 caractères, caractères
+invisibles retirés, langue servie), passe le **limiteur**, relit les six
+derniers échanges de la session, assemble le contexte — règles fixes puis
+noyau dans un seul bloc `system` en cache ; dans les messages, l'historique,
+puis les douze entrées les mieux classées dans `<dossier>` et la question dans
+`<question>`, deux blocs fermés dont seul le premier fait foi — et appelle la
+**passerelle** (`gateway.ts`, le seul fichier qui importe le SDK), dont la
+séquence ne varie jamais : réservation dans **une transaction du journal**
+(cumul du mois — somme de `exchange.cost_micro_usd` depuis le 1er du mois UTC,
+réservations `pending` comprises — puis refus `cap_reached` si cumul +
+réservation > 5 USD, sinon insertion `pending` avec la réservation, sous le
+même verrou : deux requêtes ne passent pas toutes deux juste sous le plafond)
+→ appel → finalisation avec les quatre compteurs et le coût réel depuis la
+table de prix datée (`pricing.ts`). Une réservation impossible vaut aucun
+appel ; **l'abandon du client n'interrompt ni l'appel ni la finalisation** :
+un appel facturé est un appel compté. Le bloc `<sources>` que le modèle écrit
+en fin de réponse est retenu **côté serveur** (`citations.ts`), jamais
+transmis ; chaque source déclarée est vérifiée, une source invalide est
+retirée et `citation_ok` passe à 0.
+
+**Une reprise, et son prix.** Le SDK reprend l'appel **une fois** après un
+délai de connexion. Si ce délai tombe alors que l'API a déjà reçu la requête,
+l'appel rejoué peut être facturé deux fois quand le journal n'en compte qu'un
+— celui dont les compteurs reviennent. Le cumul peut donc **sous-estimer** la
+dépense réelle, d'au plus un appel par reprise ; c'est le prix d'une reprise
+qui absorbe un incident réseau ordinaire, et c'est dit ici plutôt que caché.
+
+**Le limiteur** : trois fenêtres glissantes en mémoire — 10 questions / 15 min
+par visiteur, 10 / 15 min par adresse, 60 / h pour le site — consommées
+ensemble ou pas du tout. **Son état est perdu au redémarrage** ; c'est le
+plafond persistant du journal qui protège l'argent, pas lui. Un refus de débit
+n'est pas journalisé ; un refus au plafond l'est (`status = 'cap_reached'`,
+coût nul, question conservée).
+
+**Le protocole** (`POST /api/chat`, AD-16) : un refus préalable est un JSON
+`{ok: false, reason}` — `invalid_input` 400 (corps de plus de 8 Kio compris),
+`no_visitor` 401, `rate_limited` 429, `cap_reached` 503, `model_unavailable`
+503 (aussi quand l'agent lève hors de son contrat) —, un flux ouvert est du
+`text/event-stream` avec `delta {text}`, `done {sources, exchangeId}` et
+`error {reason}`. Tant que l'agent n'a rien produit — la réflexion du modèle
+précède son premier mot —, la route envoie un commentaire SSE `: ping` toutes
+les dix secondes ; le navigateur, lui, remet son délai de trente secondes à
+zéro sur tout octet reçu. Chaque raison a son message dans `messages/` ;
+`cap_reached` et `model_unavailable` renvoient au contact direct de la page.
+Le contrat vit une fois, dans `src/app/_lib/chat-contract.ts`, lu par la
+route et par le composant client.
+
+**Ce que coûte une question** : les ordres de grandeur seulement — **la table
+datée de [`src/agent/pricing.ts`](./src/agent/pricing.ts) fait foi**, pas ce
+paragraphe. Avec le noyau réel (≈ 15 000 jetons, mesuré le 2026-09-17, en
+cache après le premier appel), quelques milliers de jetons variables et
+quelques centaines de sortie, une question coûte de l'ordre de quelques
+centimes — le premier appel, qui écrit le cache, en coûte une dizaine ; la
+réservation, elle, suppose le pire cas (tout en écriture de cache, réponse au
+plus long) et vaut deux à trois fois le coût d'un appel en cache. Soit de
+l'ordre de la centaine de questions par mois sous le plafond de 5 USD. Changer
+un prix, un seuil ou le modèle est une décision, pas un réglage.
+
+**Variables** : `ANTHROPIC_API_KEY` (requise, serveur seulement) et
+`ANTHROPIC_BASE_URL` (optionnelle, **tests et simulateur seulement** — vide
+en production, le SDK vise alors l'API réelle ; présente, le démarrage le dit
+en `warn`, `config.model_base_url`, avec l'hôte visé). Le simulateur
+(`tests/e2e/model-stub/server.mjs`) parle le format SSE de `/v1/messages`,
+vérifie ce que la passerelle envoie, et joue des scénarios choisis par un
+marqueur dans la question : une réponse ordinaire au bloc `<sources>`
+fragmenté et aux sources valides, `[invalide]` avec une source invalide en
+plus, `[erreur]` qui coupe après deux deltas, `[lent]` qui attend douze
+secondes avant le premier delta, `[espace]` qui espace ses deltas, et
+`[plafond]` qui déclare un `usage` de plus de 5 USD — ce dernier tourne en
+dernier et isolé (`chromium-plafond`, sans reprise), puisqu'après lui plus
+rien ne passe.
+
+**Essayer à la main, sur le contenu réel, sans rien payer** : lancer le
+simulateur dans un terminal (`npm run stub`), pointer `ANTHROPIC_BASE_URL`
+dessus dans `.env.local` (`http://127.0.0.1:3901`), lancer `npm run dev`,
+poser une question dans le champ libre. Le démarrage journalise la taille du
+noyau (`knowledge.ready`) et rappelle que la passerelle vise le simulateur
+(`config.model_base_url`) ; `usage.db` montre l'échange. Retirer la variable
+ensuite : avec elle, aucune question n'atteint l'API réelle.
 
 **Le rendu est dynamique, et doit le rester.** `/fr` et `/en` portent
 `export const dynamic = 'force-dynamic'`, et atteignent `@/content` par un

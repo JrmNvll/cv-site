@@ -3,9 +3,11 @@
  *
  * Responsabilité : seul propriétaire de `usage.db` (`node:sqlite`, fichier dans
  * `DATA_DIR`) — visiteurs, sessions, échanges, cumul de dépense. Écritures en
- * insertion, plus la liste fermée de colonnes modifiables d'AD-7 ; ici, seule
- * `session.last_seen_at` bouge. Aucune suppression, aucune purge, aucune table
- * d'agrégat.
+ * insertion, plus la liste fermée de colonnes modifiables d'AD-7 : ici,
+ * `session.last_seen_at` et la finalisation d'un échange réservé (`status`,
+ * `answer`, `sources`, `citation_ok`, les quatre compteurs, `cost_micro_usd`,
+ * `latency_ms`) — et rien d'autre. Aucune suppression, aucune purge, aucune
+ * table d'agrégat : le cumul du mois est une somme à la lecture.
  *
  * Dépendances autorisées : `src/env.ts`, `src/lib/`, `node:sqlite`, ses propres
  * types. Interdites : `content`, `knowledge`, `agent`, `app`. Le journal ne
@@ -15,14 +17,20 @@
  * (AD-14) et une seule source pour l'adresse (AD-15).
  *
  * **Surface publique.** `touchSession()` est le seul point d'entrée qui crée ou
- * prolonge une session ; `addExchange()` le seul qui insère un échange —
- * finalisé d'emblée, pour les réponses servies sans appel au modèle ; la
- * réservation puis la finalisation d'un échange qui appelle le modèle (AD-6)
- * viendront avec la passerelle. `findVisitor()`, `findSession()` et
- * `findExchange()` sont la lecture minimale dont les tests et l'admin à venir
- * ont besoin ; `ensureJournal()` ouvre la base à l'amorçage sans en rendre la
- * connexion — l'application n'a pas à la tenir. Seuls les tests passent par
- * `./db` pour ouvrir une base temporaire.
+ * prolonge une session. Trois portes insèrent un échange : `addExchange()`,
+ * finalisé d'emblée, pour les réponses servies sans appel au modèle ;
+ * `reserveExchange()`, en `pending` avec la réservation, **avant** un appel au
+ * modèle — et c'est elle qui tient le plafond, cumul et insertion dans la même
+ * transaction —, que `finalizeExchange()` clôt ensuite avec les quatre
+ * compteurs et le coût réel (AD-6) ; `recordCapRefusal()`, pour une question
+ * refusée au plafond. `monthSpendMicroUsd()` est le cumul du mois — une somme,
+ * jamais un compteur —, `recentExchanges()` l'historique d'une session pour le
+ * contexte (AD-3), et `settleStalePending()` règle au démarrage les
+ * réservations qu'un arrêt brutal a laissées ouvertes. `findVisitor()`, `findSession()` et `findExchange()` sont
+ * la lecture minimale dont les tests et l'admin à venir ont besoin ;
+ * `ensureJournal()` ouvre la base à l'amorçage sans en rendre la connexion —
+ * l'application n'a pas à la tenir. Seuls les tests passent par `./db` pour
+ * ouvrir une base temporaire.
  */
 import type {DatabaseSync} from 'node:sqlite';
 import {isUlid, ulid} from '@/lib/ulid';
@@ -31,11 +39,33 @@ import {journal} from './db';
 /**
  * Ouvre `DATA_DIR/usage.db` — pour l'amorçage (`src/lib/startup.ts`), qui
  * veut qu'un `DATA_DIR` inaccessible arrête le processus avant la première
- * requête, et n'a rien à faire de la connexion elle-même.
+ * requête, et n'a rien à faire de la connexion elle-même. Règle au passage
+ * les réservations qu'un arrêt brutal aurait laissées `pending` : sans cela,
+ * une réservation orpheline compterait dans le cumul tout le mois, sans que
+ * rien ne le dise.
  */
 export function ensureJournal(): void {
   journal();
+  const settled = settleStalePending(new Date());
+  if (settled > 0) {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        event: 'journal.pending_settled',
+        count: settled,
+        staleMs: PENDING_STALE_MS,
+        text: `${settled} réservation(s) restée(s) pending plus de ${PENDING_STALE_MS / 60_000} min, finalisée(s) en model_error à la réservation.`
+      })
+    );
+  }
 }
+
+/**
+ * Au-delà, une ligne `pending` n'attend plus rien : aucun appel ne dure dix
+ * minutes (la passerelle abandonne le flux bien avant), le processus qui l'a
+ * réservée est mort avant de la finaliser.
+ */
+export const PENDING_STALE_MS = 10 * 60_000;
 
 /**
  * Les sessions déjà signalées en `mismatch`, pour n'avertir qu'une fois par
@@ -283,6 +313,14 @@ export type Exchange = {
 };
 
 /**
+ * Au-delà, une session n'insère plus de `hero` : rien ne limite une question
+ * qui ne coûte rien, et un script qui cliquerait en boucle ferait grossir la
+ * base pour toujours (AD-7 — report de la story 5). Cent réponses préparées
+ * par session, c'est vingt fois les cinq puces : un humain n'y arrive pas.
+ */
+export const HERO_EXCHANGES_PER_SESSION = 100;
+
+/**
  * Insère un échange **déjà répondu** — le cas des questions du premier écran :
  * la réponse est celle du corpus, aucun jeton n'a été consommé, le coût est
  * nul et les citations sont exactes par construction (AD-7 : insertion, rien
@@ -294,8 +332,12 @@ export type Exchange = {
  * session est refusé par la base — l'appelant a créé ou prolongé la session
  * juste avant (`touchSession`), il ne reste qu'à s'y rattacher. L'identifiant
  * est un ULID daté de l'instant de l'échange, comme les autres.
+ *
+ * Rend `null`, sans rien écrire, quand la session a déjà atteint
+ * `HERO_EXCHANGES_PER_SESSION` : la réponse est servie quand même, elle n'est
+ * plus journalisée.
  */
-export function addExchange(input: AddExchangeInput): {readonly id: string} {
+export function addExchange(input: AddExchangeInput): {readonly id: string} | null {
   if (!isUlid(input.sessionId)) {
     throw new TypeError('addExchange : sessionId doit être un ULID validé');
   }
@@ -316,7 +358,14 @@ export function addExchange(input: AddExchangeInput): {readonly id: string} {
   const id = ulid(now.getTime());
   const db = journal();
 
-  transaction(db, () => {
+  return transaction(db, () => {
+    // Compté dans la transaction : deux clics simultanés ne passent pas tous
+    // deux sous la borne.
+    const {n} = db
+      .prepare("SELECT count(*) AS n FROM exchange WHERE session_id = ? AND kind = 'hero'")
+      .get(input.sessionId) as {n: number};
+    if (n >= HERO_EXCHANGES_PER_SESSION) return null;
+
     db.prepare(
       `INSERT INTO exchange (id, session_id, kind, status, question, answer, sources, citation_ok,
                              input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
@@ -333,8 +382,333 @@ export function addExchange(input: AddExchangeInput): {readonly id: string} {
       latency,
       now.toISOString()
     );
+    return {id};
+  });
+}
+
+/** Les sortes d'échange qui appellent le modèle — réservées, puis finalisées (AD-6). */
+export type ModelExchangeKind = Exclude<ExchangeKind, 'hero'>;
+
+/** Ce que la passerelle sait **avant** l'appel : la question, ce qu'elle réserve, et le plafond. */
+export type ReserveExchangeInput = {
+  readonly sessionId: string;
+  readonly kind: ModelExchangeKind;
+  readonly question: string;
+  /** Le coût estimé de l'appel, en micro-USD entiers — compté dans le cumul tant que l'échange est `pending`. */
+  readonly reservationMicroUsd: number;
+  /** Le plafond mensuel, en micro-USD entiers : la réservation est refusée si cumul + réservation le dépasse. */
+  readonly capMicroUsd: number;
+  /** L'instant de la réservation ; par défaut, maintenant. Sert aux tests. */
+  readonly now?: Date;
+};
+
+/** Réservé — ou refusé au plafond, avec le cumul du mois qui a décidé. */
+export type ReserveOutcome =
+  | {readonly id: string; readonly capReached?: undefined}
+  | {readonly capReached: true; readonly spentMicroUsd: number};
+
+/** Un entier positif ou nul, ou une erreur — un coût n'est jamais approximatif. */
+function microUsd(value: number, what: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new TypeError(`${what} doit être un entier de micro-USD positif ou nul`);
+  }
+  return value;
+}
+
+/**
+ * Réserve un échange **avant** l'appel au modèle (AD-6, étapes 1 à 3), en une
+ * seule transaction `BEGIN IMMEDIATE` : le cumul du mois est lu, comparé au
+ * plafond, et la ligne `pending` insérée — sans qu'aucune autre réservation
+ * puisse se glisser entre les deux. C'est **ici** que le plafond tient, pas
+ * dans la passerelle : deux requêtes simultanées ne peuvent pas passer toutes
+ * deux juste sous 5 USD, quel que soit ce qu'un `await` fera un jour dans le
+ * code appelant.
+ *
+ * Réservée : une ligne `pending` dont `cost_micro_usd` vaut la réservation,
+ * comptée dans le cumul dès maintenant ; ni réponse, ni sources, ni compteurs,
+ * `finalizeExchange()` les posera. Refusée : rien n'est écrit, l'appelant
+ * journalise le refus (`recordCapRefusal`). Une réservation qui **échoue** —
+ * base verrouillée, disque plein — lève : la passerelle n'appelle alors pas
+ * le modèle.
+ */
+export function reserveExchange(input: ReserveExchangeInput): ReserveOutcome {
+  if (!isUlid(input.sessionId)) {
+    throw new TypeError('reserveExchange : sessionId doit être un ULID validé');
+  }
+  if (input.kind === ('hero' as string)) {
+    throw new TypeError('reserveExchange : hero ne se réserve pas, il s’insère déjà répondu');
+  }
+  if (input.question.trim() === '') {
+    throw new TypeError('reserveExchange : question ne peut pas être vide');
+  }
+  const reservation = microUsd(input.reservationMicroUsd, 'reserveExchange : reservationMicroUsd');
+  const cap = microUsd(input.capMicroUsd, 'reserveExchange : capMicroUsd');
+  const now = input.now ?? new Date();
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('reserveExchange : now doit être une date valide');
+  }
+  const id = ulid(now.getTime());
+  const db = journal();
+
+  return transaction(db, () => {
+    const spent = monthSpendWith(db, now);
+    if (spent + reservation > cap) return {capReached: true, spentMicroUsd: spent};
+    db.prepare(
+      `INSERT INTO exchange (id, session_id, kind, status, question, answer, sources, citation_ok,
+                             input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                             cost_micro_usd, latency_ms, at)
+       VALUES (?, ?, ?, 'pending', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL, ?)`
+    ).run(id, input.sessionId, input.kind, input.question, reservation, now.toISOString());
+    return {id};
+  });
+}
+
+/** Les quatre compteurs de `usage` que l'API rend (AD-6, étape 3). */
+export type ExchangeUsage = {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheCreationTokens: number;
+};
+
+/** Ce que la passerelle sait **après** l'appel — ou après son échec. */
+export type FinalizeExchangeInput = {
+  readonly id: string;
+  /** `done` : répondu, fin de tour normale ; `model_error` : exception du SDK ou du réseau, avant ou pendant le flux. */
+  readonly status: 'done' | 'model_error';
+  /** Le texte reçu, sans le bloc `<sources>` — partiel, ou vide, après une erreur. */
+  readonly answer: string;
+  /** Les sources **valides** seulement (AD-4) ; `[]` après une erreur. */
+  readonly sources: readonly string[];
+  /** Résultat du contrôle des citations ; `null` quand il n'a pas eu lieu (erreur). */
+  readonly citationOk: boolean | null;
+  /** Les compteurs rendus par l'API, ou `null` si l'appel n'en a pas rendu. */
+  readonly usage: ExchangeUsage | null;
+  /** Le coût réel depuis la table de prix — ou la réservation, faute de compteurs. */
+  readonly costMicroUsd: number;
+  readonly latencyMs: number;
+};
+
+/**
+ * La seule instruction qui touche un `exchange` (AD-7 : la liste fermée des
+ * colonnes modifiables), sur **une ligne `pending`** et rien d'autre. Rend le
+ * nombre de lignes atteintes : 0 ou 1. Partagée par la finalisation d'un appel
+ * et par le règlement des réservations orphelines au démarrage.
+ */
+function applyFinalization(
+  db: DatabaseSync,
+  input: Omit<FinalizeExchangeInput, 'costMicroUsd' | 'latencyMs'> & {
+    readonly costMicroUsd: number;
+    readonly latencyMs: number;
+  }
+): number {
+  const usage = input.usage;
+  const {changes} = db
+    .prepare(
+      `UPDATE exchange
+       SET status = ?, answer = ?, sources = ?, citation_ok = ?,
+           input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
+           cost_micro_usd = ?, latency_ms = ?
+       WHERE id = ? AND status = 'pending'`
+    )
+    .run(
+      input.status,
+      input.answer,
+      JSON.stringify(input.sources),
+      input.citationOk === null ? null : input.citationOk ? 1 : 0,
+      usage?.inputTokens ?? null,
+      usage?.outputTokens ?? null,
+      usage?.cacheReadTokens ?? null,
+      usage?.cacheCreationTokens ?? null,
+      input.costMicroUsd,
+      input.latencyMs,
+      input.id
+    );
+  return Number(changes);
+}
+
+/**
+ * Finalise un échange réservé (AD-6, étape 3). N'atteint **qu'une ligne
+ * `pending`** : une ligne déjà finalisée, ou inconnue, fait lever — une double
+ * finalisation écraserait le coût réel, et une finalisation sans réservation
+ * aurait contourné le cumul.
+ */
+export function finalizeExchange(input: FinalizeExchangeInput): void {
+  if (!isUlid(input.id)) {
+    throw new TypeError('finalizeExchange : id doit être un ULID validé');
+  }
+  if (input.status !== 'done' && input.status !== 'model_error') {
+    throw new TypeError(`finalizeExchange : statut « ${String(input.status)} » hors de done | model_error`);
+  }
+  const cost = microUsd(input.costMicroUsd, 'finalizeExchange : costMicroUsd');
+  const usage = input.usage;
+  if (usage !== null) {
+    for (const [name, value] of Object.entries(usage)) {
+      if (!Number.isInteger(value) || value < 0) {
+        throw new TypeError(`finalizeExchange : usage.${name} doit être un entier positif ou nul`);
+      }
+    }
+  }
+  const latency = Number.isFinite(input.latencyMs) ? Math.max(0, Math.round(input.latencyMs)) : 0;
+  const db = journal();
+
+  transaction(db, () => {
+    const changes = applyFinalization(db, {...input, costMicroUsd: cost, latencyMs: latency});
+    if (changes !== 1) {
+      throw new Error(
+        `finalizeExchange : aucun échange pending « ${input.id} » — déjà finalisé, ou jamais réservé`
+      );
+    }
+  });
+}
+
+/**
+ * Règle les réservations orphelines : toute ligne `pending` vieille de
+ * `PENDING_STALE_MS` ou plus est finalisée en `model_error`, sans réponse, sans
+ * source, sans compteurs, **à la réservation** — ce qu'elle a coûté au plus.
+ * Chaque ligne passe par la même instruction que la finalisation d'un appel :
+ * rien d'autre ne touche un `exchange`. Rend le nombre de lignes réglées.
+ */
+export function settleStalePending(now: Date): number {
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('settleStalePending : now doit être une date valide');
+  }
+  const before = new Date(now.getTime() - PENDING_STALE_MS).toISOString();
+  const db = journal();
+  return transaction(db, () => {
+    const stale = db
+      .prepare("SELECT id, cost_micro_usd FROM exchange WHERE status = 'pending' AND at <= ?")
+      .all(before) as {id: string; cost_micro_usd: number | null}[];
+    let settled = 0;
+    for (const row of stale) {
+      settled += applyFinalization(db, {
+        id: row.id,
+        status: 'model_error',
+        answer: '',
+        sources: [],
+        citationOk: null,
+        usage: null,
+        costMicroUsd: row.cost_micro_usd ?? 0,
+        latencyMs: 0
+      });
+    }
+    return settled;
+  });
+}
+
+/** Une question refusée au plafond : ce qu'il en reste à journaliser. */
+export type CapRefusalInput = {
+  readonly sessionId: string;
+  readonly kind: ModelExchangeKind;
+  readonly question: string;
+  /** L'instant du refus ; par défaut, maintenant. Sert aux tests. */
+  readonly now?: Date;
+};
+
+/**
+ * Journalise une question refusée au plafond de dépense (AD-6, étape 2 ;
+ * AD-16 : « l'échange est journalisé dans tous les cas »). `status =
+ * 'cap_reached'`, coût nul, la question conservée — Jérémie doit pouvoir lire
+ * ce qu'on lui a demandé pendant que l'assistant se taisait. Aucun appel n'a eu
+ * lieu : ni réponse, ni compteurs.
+ */
+export function recordCapRefusal(input: CapRefusalInput): {readonly id: string} {
+  if (!isUlid(input.sessionId)) {
+    throw new TypeError('recordCapRefusal : sessionId doit être un ULID validé');
+  }
+  if (input.kind === ('hero' as string)) {
+    throw new TypeError('recordCapRefusal : hero ne coûte rien, il n’atteint pas le plafond');
+  }
+  if (input.question.trim() === '') {
+    throw new TypeError('recordCapRefusal : question ne peut pas être vide');
+  }
+  const now = input.now ?? new Date();
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('recordCapRefusal : now doit être une date valide');
+  }
+  const id = ulid(now.getTime());
+  const db = journal();
+
+  transaction(db, () => {
+    db.prepare(
+      `INSERT INTO exchange (id, session_id, kind, status, question, answer, sources, citation_ok,
+                             input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                             cost_micro_usd, latency_ms, at)
+       VALUES (?, ?, ?, 'cap_reached', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, ?)`
+    ).run(id, input.sessionId, input.kind, input.question, now.toISOString());
   });
   return {id};
+}
+
+/** Le premier jour du mois de `now`, à minuit UTC, en ISO 8601 — comparable tel quel à `exchange.at`. */
+export function monthStart(now: Date): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+/** La somme du mois, sur une connexion donnée — dans ou hors transaction. */
+function monthSpendWith(db: DatabaseSync, now: Date): number {
+  const {total} = db
+    .prepare('SELECT coalesce(sum(cost_micro_usd), 0) AS total FROM exchange WHERE at >= ?')
+    .get(monthStart(now)) as {total: number};
+  return total;
+}
+
+/**
+ * Le cumul du mois, en micro-USD : la somme de `exchange.cost_micro_usd`
+ * depuis le 1er du mois UTC, réservations `pending` **comprises** (AD-6,
+ * étape 1). Aucune table de compteur : une somme à la lecture, sur l'index
+ * `exchange(at)` — un redémarrage ne remet donc rien à zéro. Une lecture pour
+ * qui veut savoir (tests, admin) ; la réservation, elle, fait sa propre somme
+ * dans sa transaction.
+ */
+export function monthSpendMicroUsd(now: Date = new Date()): number {
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('monthSpendMicroUsd : now doit être une date valide');
+  }
+  return monthSpendWith(journal(), now);
+}
+
+/** Un échange répondu, tel que l'historique du contexte le reprend (AD-3). */
+export type RecentExchange = {
+  readonly id: string;
+  readonly kind: ExchangeKind;
+  readonly question: string;
+  /** Sans bloc `<sources>` : il n'a jamais été écrit en base. */
+  readonly answer: string;
+  /** ISO 8601 UTC. */
+  readonly at: string;
+};
+
+/**
+ * Les `limit` derniers échanges `done` d'une session, **du plus ancien au plus
+ * récent** — l'ordre d'une conversation. Toute sorte confondue : une question
+ * du premier écran fait partie de ce que le visiteur a déjà lu. Un échange
+ * `pending`, en erreur ou refusé n'a rien à reprendre.
+ */
+export function recentExchanges(sessionId: string, limit: number): readonly RecentExchange[] {
+  if (!isUlid(sessionId)) {
+    throw new TypeError('recentExchanges : sessionId doit être un ULID validé');
+  }
+  if (!Number.isInteger(limit) || limit < 0) {
+    throw new TypeError('recentExchanges : limit doit être un entier positif ou nul');
+  }
+  if (limit === 0) return [];
+  const rows = journal()
+    .prepare(
+      `SELECT id, kind, question, answer, at FROM exchange
+       WHERE session_id = ? AND status = 'done'
+       ORDER BY at DESC, id DESC LIMIT ?`
+    )
+    .all(sessionId, limit) as {
+    id: string;
+    kind: ExchangeKind;
+    question: string;
+    answer: string | null;
+    at: string;
+  }[];
+  return rows
+    .reverse()
+    .map((row) => ({id: row.id, kind: row.kind, question: row.question, answer: row.answer ?? '', at: row.at}));
 }
 
 /**

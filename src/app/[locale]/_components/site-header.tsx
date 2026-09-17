@@ -39,7 +39,14 @@ export async function SiteHeader({identite, contact, locale}: SiteHeaderProps) {
           label={t('languages.label')}
           names={names}
         />
-        <ul aria-label={t('header.contact')} className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {/* `id="contact"` : l'ancre vers laquelle le panneau renvoie quand
+            l'assistant ne peut pas répondre — plafond atteint, modèle
+            indisponible (AD-16 : « affichent le contact direct »). */}
+        <ul
+          id="contact"
+          aria-label={t('header.contact')}
+          className="flex flex-wrap items-center gap-x-5 gap-y-2"
+        >
           {/* `empty:hidden` : sans JavaScript, `ContactReveal` ne rend rien — et un
               élément de liste vide laisserait un écart de grille visible. */}
           <li className="empty:hidden">

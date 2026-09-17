@@ -33,9 +33,13 @@
     "eyebrow": "Posez-moi vos questions",
     "intro": "Il répond avec mes propres réponses — rien d'inventé.",
     "placeholder": "…ou écrivez votre propre question",
-    "inactive": "Les questions préparées répondent ; le champ libre et l'annonce, pas encore.",
+    "send": "Envoyer la question",
+    "questionLabel": "Votre question",
+    "inactive": "Les questions préparées et le champ libre répondent ; l'annonce, pas encore.",
     "loading": "Un instant…",
     "answerSource": "Réponse écrite par mes soins, sans appel au modèle.",
+    "answerModel": "Réponse du modèle, d'après le dossier",
+    "answerSources": "{count, plural, one {# source} other {# sources}}",
     "back": "Retour aux questions",
     "questions": {
       "lic-01": "Pourquoi est-il en recherche ?",
@@ -46,12 +50,16 @@
       "annonce": "Collez votre annonce → je vous dis ce qui correspond"
     },
     "yearsUnknown": "Que reste-t-il de ses années WinDev ?",
-    "withoutScript": "Les questions préparées ont besoin de JavaScript pour répondre ; le CV, lui, se lit sans."
+    "withoutScript": "Les questions préparées et le champ libre ont besoin de JavaScript pour répondre ; le CV, lui, se lit sans."
   },
   "errors": {
     "unavailable": "Réponse indisponible pour le moment — réessayez plus tard.",
     "invalid_input": "Demande invalide : rechargez la page et réessayez.",
-    "content_unavailable": "Cette réponse n'est pas disponible pour le moment."
+    "content_unavailable": "Cette réponse n'est pas disponible pour le moment.",
+    "no_visitor": "Session introuvable — rechargez la page et réessayez.",
+    "rate_limited": "Trop de questions en peu de temps — réessayez dans quelques minutes.",
+    "cap_reached": "Le budget mensuel de l'assistant est épuisé. Posez-moi votre question directement :",
+    "model_unavailable": "L'assistant est indisponible pour le moment. Posez-moi votre question directement :"
   },
   "sections": {
     "career": "Parcours",

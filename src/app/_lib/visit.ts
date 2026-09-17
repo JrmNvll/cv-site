@@ -110,23 +110,28 @@ export type VisitRequest = {
  * L'échec au **démarrage**, lui, arrête le processus (`startup.ts`) : c'est
  * là qu'un `DATA_DIR` mal configuré doit être vu, pas à la première visite.
  */
-/** Ce que `recordVisit` a fait, et pour quels identifiants — une seule lecture des cookies. */
-export type RecordedVisit = TouchSessionResult & VisitIds;
+/**
+ * Ce que `recordVisit` a fait, pour quels identifiants et quelle adresse — une
+ * seule lecture des cookies, une seule de l'adresse (AD-15) : l'agent reçoit
+ * la même `ip` que le journal, sans relire la requête.
+ */
+export type RecordedVisit = TouchSessionResult & VisitIds & {readonly ip: string};
 
 export async function recordVisit(request: VisitRequest): Promise<RecordedVisit | null> {
   const ids = visitIds(request.cookies);
   if (ids === null) return null;
+  const ip = clientIp(request.headers);
 
   try {
     const {touchSession} = await import('@/journal');
     const result = touchSession({
       ...ids,
-      ip: clientIp(request.headers),
+      ip,
       userAgent: bounded(request.headers.get('user-agent')),
       referer: provenance(request.headers.get('referer')),
       lang: request.lang
     });
-    return {...result, ...ids};
+    return {...result, ...ids, ip};
   } catch (error) {
     console.error(
       JSON.stringify({

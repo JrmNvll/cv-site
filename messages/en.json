@@ -33,9 +33,13 @@
     "eyebrow": "Ask me anything",
     "intro": "It answers with my own words — nothing invented.",
     "placeholder": "…or write your own question",
-    "inactive": "The prepared questions answer; the free-text field and the job ad, not yet.",
+    "send": "Send the question",
+    "questionLabel": "Your question",
+    "inactive": "The prepared questions and the free-text field answer; the job ad, not yet.",
     "loading": "One moment…",
     "answerSource": "An answer I wrote myself — no call to the model.",
+    "answerModel": "Answer from the model, based on the dossier",
+    "answerSources": "{count, plural, one {# source} other {# sources}}",
     "back": "Back to the questions",
     "questions": {
       "lic-01": "Why is he looking?",
@@ -46,12 +50,16 @@
       "annonce": "Paste your job ad → I'll tell you what matches"
     },
     "yearsUnknown": "What is left of his WinDev years?",
-    "withoutScript": "The prepared questions need JavaScript to answer; the CV itself reads without it."
+    "withoutScript": "The prepared questions and the free-text field need JavaScript to answer; the CV itself reads without it."
   },
   "errors": {
     "unavailable": "The answer is unavailable right now — try again later.",
     "invalid_input": "Invalid request: reload the page and try again.",
-    "content_unavailable": "This answer is not available at the moment."
+    "content_unavailable": "This answer is not available at the moment.",
+    "no_visitor": "Session not found — reload the page and try again.",
+    "rate_limited": "Too many questions in a short time — try again in a few minutes.",
+    "cap_reached": "The assistant's monthly budget is used up. Ask me your question directly:",
+    "model_unavailable": "The assistant is unavailable right now. Ask me your question directly:"
   },
   "sections": {
     "career": "Career",

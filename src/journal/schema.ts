@@ -1,9 +1,9 @@
 /**
  * Le schéma de `usage.db` — les trois entités du squelette d'architecture
  * (`erDiagram` de l'`ARCHITECTURE-SPINE`), créées ensemble dès la première
- * ouverture. `exchange` reçoit ses premières lignes avec les questions du
- * premier écran (`kind = 'hero'`, coût nul) ; `chat` et `match` viennent avec
- * les stories qui appellent le modèle.
+ * ouverture. `exchange` reçoit les questions du premier écran (`kind = 'hero'`,
+ * coût nul) et les appels au modèle (`chat`, puis `match`) : réservés en
+ * `pending` avant l'appel, finalisés après (AD-6).
  *
  * Conventions (AD-7 et « Identifiants & dates ») :
  *  - tables et colonnes en `snake_case`, identifiants ULID en texte ;
@@ -29,9 +29,11 @@
  * Historique :
  *  - 1 : les trois tables, `exchange.kind` limité à `chat` et `match` ;
  *  - 2 : `exchange.kind` admet `hero` — les questions du premier écran, servies
- *    sans appel au modèle.
+ *    sans appel au modèle ;
+ *  - 3 : `exchange.status` admet `cap_reached` — une question refusée au
+ *    plafond de dépense, journalisée « dans tous les cas » (AD-16), coût nul.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Les sortes d'échange, liste close. `hero` : une des questions du premier
@@ -42,8 +44,14 @@ export const SCHEMA_VERSION = 2;
 export const EXCHANGE_KINDS = ['chat', 'match', 'hero'] as const;
 export type ExchangeKind = (typeof EXCHANGE_KINDS)[number];
 
-/** Les états d'un échange (AD-6, AD-16) — même règle. */
-export const EXCHANGE_STATUSES = ['pending', 'done', 'model_error'] as const;
+/**
+ * Les états d'un échange (AD-6, AD-16) — même règle. `pending` : réservé
+ * avant l'appel, `cost_micro_usd` vaut la réservation ; `done` : répondu ;
+ * `model_error` : l'appel a échoué, avant ou pendant le flux ; `cap_reached` :
+ * refusé au plafond, sans appel, coût nul. Les refus de débit, eux, ne
+ * s'écrivent pas — ce serait un vecteur de croissance de la base.
+ */
+export const EXCHANGE_STATUSES = ['pending', 'done', 'model_error', 'cap_reached'] as const;
 export type ExchangeStatus = (typeof EXCHANGE_STATUSES)[number];
 
 /** `'a', 'b'` — la liste telle qu'un `CHECK (x IN (…))` l'attend. */

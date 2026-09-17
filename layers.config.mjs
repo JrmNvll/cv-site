@@ -10,7 +10,8 @@
  *    ├──────▶ journal
  *    └──────▶ content
  *
- *   bootstrap ──▶ content   (hors graphe : voir `LAYER_PATHS.bootstrap`)
+ *   bootstrap ──▶ content     (hors graphe : voir `LAYER_PATHS.bootstrap`)
+ *       ├─────▶ knowledge
  *       └─────▶ journal
  *
  * Ce module est consommé par `eslint.config.mjs` (qui fait échouer le lint) et
@@ -27,12 +28,13 @@ export const LAYER_PATHS = {
   app: ['src/app', 'src/proxy.ts'],
   /**
    * L'amorçage du processus. Il n'est pas *dans* le graphe, il est **au-dessus** :
-   * quelque chose doit valider la configuration, charger le contenu et ouvrir le
-   * journal avant la première requête, et arrêter le processus si l'un des trois
-   * ne va pas (AD-2, AD-7, AD-9). Ce quelque chose ne peut appartenir à aucune
-   * couche — `content` et `journal` sont trop bas pour se déclencher eux-mêmes,
-   * `app` arrive trop tard. Deux fichiers nommés, et il faut un motif d'amorçage
-   * pour en ajouter un troisième.
+   * quelque chose doit valider la configuration, charger le contenu, construire
+   * l'index de connaissance et ouvrir le journal avant la première requête, et
+   * arrêter le processus si l'un des quatre ne va pas (AD-2, AD-3, AD-7, AD-9).
+   * Ce quelque chose ne peut appartenir à aucune couche — `content`, `knowledge`
+   * et `journal` sont trop bas pour se déclencher eux-mêmes, `app` arrive trop
+   * tard. Deux fichiers nommés, et il faut un motif d'amorçage pour en ajouter un
+   * troisième.
    */
   bootstrap: ['src/instrumentation.ts', 'src/lib/startup.ts'],
   /**
@@ -62,9 +64,12 @@ export const FORBIDDEN_LAYERS = {
   // `journal` n'importe rien d'autre que ses propres types.
   journal: ['content', 'knowledge', 'agent', 'app'],
   // L'amorçage ne touche que ce qui doit être prêt avant la première requête :
-  // il valide, charge et ouvre, il n'orchestre rien. `journal` parce que la base
-  // s'ouvre au démarrage comme le contenu (AD-7) ; tout le reste attend.
-  bootstrap: ['knowledge', 'agent', 'app'],
+  // il valide, charge, construit et ouvre, il n'orchestre rien. `journal` parce
+  // que la base s'ouvre au démarrage comme le contenu (AD-7) ; `knowledge` parce
+  // qu'une entrée qui casse l'index doit arrêter le processus au lancement, pas
+  // à la première question d'un recruteur (AD-3). `agent`, lui, reste hors de
+  // portée : il n'a rien à préparer, et c'est lui qui appelle le modèle.
+  bootstrap: ['agent', 'app'],
   // L'outillage lit le contenu, et rien d'autre.
   scripts: ['knowledge', 'agent', 'journal', 'app'],
   // Fermé par défaut : le code partagé ne dépend d'aucune couche.

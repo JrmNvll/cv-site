@@ -293,14 +293,17 @@ for (const {name, viewport} of VIEWPORTS) {
       await expect(panneau.getByRole('heading', {level: 3})).toHaveCount(0);
     });
 
-    test('la sixième puce et le champ libre restent désactivés (stories 6 et 7)', async ({page}) => {
+    test('la sixième puce reste désactivée (story 7) ; le champ libre répond (story 6)', async ({page}) => {
+      // Le test « inerte » de la story 3, inversé par la story 5 pour les puces,
+      // par la story 6 pour le champ — et non supprimé : un assistant muet ne
+      // doit plus passer la suite en silence. La sixième attend la story 7.
       await page.goto('/fr');
       const panneau = await ouvrirPanneau(page, 'fr', viewport.width);
 
       await expect(
         panneau.getByRole('button', {name: heroLabel('fr', MATCH_QUESTION), exact: true})
       ).toBeDisabled();
-      await expect(panneau.getByRole('textbox')).toBeDisabled();
+      await expect(panneau.getByRole('textbox', {name: messages.fr.assistant.questionLabel})).toBeEnabled();
       // Et la ligne d'état le dit, une fois hydraté.
       await expect(panneau.getByText(messages.fr.assistant.inactive)).toBeVisible();
       await expect(panneau.getByText(messages.fr.assistant.withoutScript)).toHaveCount(0);
@@ -334,7 +337,7 @@ test.describe('sans JavaScript', () => {
     test.describe(name, () => {
       test.use({viewport});
 
-      test('les six puces restent désactivées : rien ne promet ce qui ne peut pas répondre', async ({
+      test('les six puces et le champ libre restent désactivés : rien ne promet ce qui ne peut pas répondre', async ({
         page
       }) => {
         await page.goto('/fr');
@@ -344,6 +347,7 @@ test.describe('sans JavaScript', () => {
           await expect(puce).toBeVisible();
           await expect(puce).toBeDisabled();
         }
+        await expect(panneau.getByRole('textbox', {name: messages.fr.assistant.questionLabel})).toBeDisabled();
         // La ligne d'état ne ment pas : c'est celle du visiteur sans JavaScript.
         await expect(panneau.getByText(messages.fr.assistant.withoutScript)).toBeVisible();
         await expect(panneau.getByText(messages.fr.assistant.inactive)).toHaveCount(0);

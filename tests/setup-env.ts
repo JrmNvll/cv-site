@@ -16,6 +16,9 @@ const fixtures = fileURLToPath(new URL('./fixtures/content', import.meta.url));
 const dataDir = mkdtempSync(join(tmpdir(), 'cv-site-tests-'));
 
 process.env.ANTHROPIC_API_KEY = 'cle-de-test-sans-valeur';
+// Un port fermé : un appel au modèle qui échapperait à un simulacre échoue
+// immédiatement (connexion refusée) au lieu d'atteindre l'API réelle et de coûter.
+process.env.ANTHROPIC_BASE_URL = 'http://127.0.0.1:9';
 process.env.CONTENT_DIR = fixtures;
 process.env.DATA_DIR = dataDir;
 process.env.NEXT_PUBLIC_SITE_URL = 'http://127.0.0.1:3000';

@@ -15,9 +15,12 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "check:content": "node scripts/check-content.mjs",
+    "stub": "node tests/e2e/model-stub/server.mjs",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run test:e2e"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.124.0",
+    "minisearch": "7.2.0",
     "next": "16.3.4",
     "next-intl": "4.14.2",
     "react": "19.2.8",
@@ -35,6 +38,7 @@
     "@types/react-dom": "19.2.7",
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.4",
+    "intl-messageformat": "11.2.14",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "vitest": "5.0.0"

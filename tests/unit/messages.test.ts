@@ -9,6 +9,7 @@ import {describe, expect, it} from 'vitest';
 import en from '../../messages/en.json';
 import fr from '../../messages/fr.json';
 import {HERO_QUESTIONS, MATCH_QUESTION} from '@/app/[locale]/_components/hero-questions';
+import {CHAT_REFUSAL_REASONS} from '@/app/_lib/chat-contract';
 import {routing} from '@/i18n/routing';
 
 type Catalog = {[key: string]: string | Catalog};
@@ -100,9 +101,41 @@ describe('catalogues de messages', () => {
           'references.pending',
           'references.label',
           'references.unavailable',
-          'notFound.heading'
+          'notFound.heading',
+          // Le champ libre (story 6) : ses libellés, la mention sous une
+          // réponse du modèle, et chaque raison de refus d'AD-16.
+          'assistant.send',
+          'assistant.questionLabel',
+          'assistant.answerModel',
+          'assistant.answerSources',
+          'errors.no_visitor',
+          'errors.rate_limited',
+          'errors.cap_reached',
+          'errors.model_unavailable'
         ])
       );
+    }
+  });
+
+  /**
+   * Chaque `reason` d'AD-16 a sa clé `errors.<reason>` : un refus sans
+   * message afficherait un chemin de clé. La liste vient du contrat de la
+   * route, pas d'une copie.
+   */
+  it('porte un message pour chaque raison de refus de /api/chat', () => {
+    for (const locale of Object.keys(catalogs)) {
+      const keys = flatten(catalogs[locale]!);
+      for (const reason of CHAT_REFUSAL_REASONS) {
+        expect(keys).toContain(`errors.${reason}`);
+      }
+    }
+  });
+
+  it('compte les sources au pluriel ICU, sans chiffre écrit', () => {
+    for (const locale of Object.keys(catalogs)) {
+      const libelle = String(valueAt(catalogs[locale]!, 'assistant.answerSources'));
+      expect(libelle).toMatch(/\{count, plural,/);
+      expect(libelle).not.toMatch(/\d/);
     }
   });
 

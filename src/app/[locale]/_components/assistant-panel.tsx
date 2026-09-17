@@ -8,15 +8,15 @@
  * sert les deux — d'où `titleId` : deux copies dans le document, une visible
  * par largeur d'écran, et un identifiant ne peut pas être porté deux fois.
  *
- * **Le cadre est serveur, les puces sont client.** Titre, intro, champ libre et
- * ligne d'état sont rendus ici ; les cinq puces et la zone de réponse vivent
- * dans `hero-questions-client.tsx`, qui ne reçoit que des libellés et des
- * identifiants — la réponse arrive par la route, après un clic, jamais dans le
- * HTML servi. Le champ libre (story 6) et la sixième puce (story 7) restent
- * `disabled` plutôt que muets : un bouton qui ne fait rien quand on clique
- * dessus est pire qu'un bouton visiblement hors service, et un état `disabled`
- * est annoncé par un lecteur d'écran. La ligne d'état dit ce qui répond et ce
- * qui ne répond pas encore.
+ * **Le cadre est serveur, le reste est client.** Titre et intro sont rendus
+ * ici ; les cinq puces, le champ libre, la zone de réponse et la ligne d'état
+ * vivent dans `hero-questions-client.tsx`, qui ne reçoit que des libellés et
+ * des identifiants — une réponse arrive par une route, après un geste, jamais
+ * dans le HTML servi. Sans JavaScript, puces et champ restent `disabled`
+ * plutôt que muets : un bouton qui ne fait rien quand on clique dessus est pire
+ * qu'un bouton visiblement hors service, et un état `disabled` est annoncé par
+ * un lecteur d'écran. La sixième puce (story 7) l'est dans tous les cas. La
+ * ligne d'état dit ce qui répond et ce qui ne répond pas encore.
  *
  * **Les libellés sont de l'interface, pas du contenu** : ils vivent dans
  * `messages/*.json`. La correspondance libellé → entrée du corpus, elle, vit
@@ -88,41 +88,25 @@ export async function AssistantPanel({titleId, experiences}: AssistantPanelProps
         labels={{
           loading: t('assistant.loading'),
           answerSource: t('assistant.answerSource'),
+          answerModel: t('assistant.answerModel'),
           back: t('assistant.back'),
           inactive: t('assistant.inactive'),
-          withoutScript: t('assistant.withoutScript')
+          withoutScript: t('assistant.withoutScript'),
+          placeholder: t('assistant.placeholder'),
+          questionLabel: t('assistant.questionLabel'),
+          send: t('assistant.send'),
+          contact: t('header.contact')
         }}
         errors={{
           unavailable: t('errors.unavailable'),
           invalid_input: t('errors.invalid_input'),
-          content_unavailable: t('errors.content_unavailable')
+          content_unavailable: t('errors.content_unavailable'),
+          no_visitor: t('errors.no_visitor'),
+          rate_limited: t('errors.rate_limited'),
+          cap_reached: t('errors.cap_reached'),
+          model_unavailable: t('errors.model_unavailable')
         }}
       />
-
-      <div className="mt-3.5 flex items-center gap-3 rounded-md border border-panel-rule bg-panel-sunken px-3 py-2">
-        <input
-          type="text"
-          disabled
-          placeholder={t('assistant.placeholder')}
-          aria-label={t('assistant.eyebrow')}
-          className="min-w-0 grow bg-transparent text-[14px] text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
-        />
-        <svg
-          viewBox="0 0 24 24"
-          width="16"
-          height="16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-          className="shrink-0 text-panel-accent"
-        >
-          <line x1="5" y1="12" x2="19" y2="12" />
-          <polyline points="12 5 19 12 12 19" />
-        </svg>
-      </div>
     </section>
   );
 }

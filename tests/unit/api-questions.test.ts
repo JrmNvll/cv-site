@@ -327,6 +327,17 @@ describe('le journal observe, il ne conditionne pas', () => {
     expect(journal.addExchange).not.toHaveBeenCalled();
   });
 
+  it('sert la réponse avec exchangeId null quand la session a atteint sa borne dʼéchanges hero', async () => {
+    // `addExchange` rend `null` au-delà de `HERO_EXCHANGES_PER_SESSION` (report de la story 5).
+    journal.addExchange.mockReturnValue(null);
+
+    const reponse = await appel('lic-01', '?lang=fr', COOKIES);
+
+    expect(reponse.status).toBe(200);
+    expect(await reponse.json()).toMatchObject({answer: expect.any(String), exchangeId: null});
+    expect(journal.addExchange).toHaveBeenCalledTimes(1);
+  });
+
   it('rattache lʼéchange à une session que la route vient de créer', async () => {
     journal.touchSession.mockReturnValue({outcome: 'created', visitorCreated: true});
 

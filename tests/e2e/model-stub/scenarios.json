@@ -1,0 +1,106 @@
+{
+  "port": 3901,
+  "markers": {
+    "invalid": "[invalide]",
+    "error": "[erreur]",
+    "cap": "[plafond]",
+    "slow": "[lent]",
+    "spaced": "[espace]"
+  },
+  "delayMs": 80,
+  "ordinary": {
+    "deltas": [
+      "Voici une ",
+      "réponse **simu",
+      "lée** au dossier. Reponse-simulee.",
+      "\n\n- point un\n",
+      "- point deux\n\n<sour",
+      "ces>qa:lic-01, cv:pro",
+      "fil</sources>"
+    ],
+    "text": "Voici une réponse **simulée** au dossier. Reponse-simulee.\n\n- point un\n- point deux",
+    "sources": [
+      "qa:lic-01",
+      "cv:profil"
+    ],
+    "usage": {
+      "input_tokens": 1234,
+      "output_tokens": 90,
+      "cache_read_input_tokens": 5678,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "invalid": {
+    "deltas": [
+      "Voici une ",
+      "réponse **simu",
+      "lée** au dossier. Reponse-simulee.",
+      "\n\n- point un\n",
+      "- point deux\n\n<sour",
+      "ces>qa:lic-01, qa:inex",
+      "istante</sources>"
+    ],
+    "text": "Voici une réponse **simulée** au dossier. Reponse-simulee.\n\n- point un\n- point deux",
+    "sources": [
+      "qa:lic-01"
+    ],
+    "usage": {
+      "input_tokens": 1234,
+      "output_tokens": 90,
+      "cache_read_input_tokens": 5678,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "error": {
+    "deltas": [
+      "Début de ",
+      "réponse partielle."
+    ],
+    "text": "Début de réponse partielle."
+  },
+  "cap": {
+    "deltas": [
+      "Réponse ",
+      "coûteuse."
+    ],
+    "text": "Réponse coûteuse.",
+    "usage": {
+      "input_tokens": 1000000,
+      "output_tokens": 2000,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "slow": {
+    "initialDelayMs": 12000,
+    "deltas": [
+      "Réponse ",
+      "après réflexion. Reponse-lente."
+    ],
+    "text": "Réponse après réflexion. Reponse-lente.",
+    "sources": [],
+    "usage": {
+      "input_tokens": 100,
+      "output_tokens": 10,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "spaced": {
+    "spacingMs": 1500,
+    "deltas": [
+      "Premier ",
+      "morceau, ",
+      "puis le ",
+      "dernier."
+    ],
+    "text": "Premier morceau, puis le dernier.",
+    "sources": [],
+    "usage": {
+      "input_tokens": 200,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 100,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}

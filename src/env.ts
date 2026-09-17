@@ -4,7 +4,7 @@
  * Toute la configuration vient de l'environnement, jamais du code : aucune URL,
  * aucun chemin, aucun secret n'est écrit en dur ailleurs que dans `.env.example`
  * (qui ne porte aucune valeur). Le schéma ci-dessous reflète **exactement** les
- * sept clés de `.env.example`.
+ * huit clés de `.env.example`.
  *
  * Le parsage a lieu au chargement du module : si une variable requise manque, le
  * démarrage échoue avec un message qui nomme la variable. Aucun repli, aucune
@@ -27,6 +27,21 @@ function required(name: string) {
 export const envSchema = z.object({
   /** Clé API Anthropic. Serveur uniquement, jamais transmise au navigateur (AD-6). */
   ANTHROPIC_API_KEY: required('ANTHROPIC_API_KEY'),
+  /**
+   * Adresse de l'API du modèle — **tests et simulateur seulement**. Absente en
+   * production : le SDK parle alors à l'API réelle. Les tests navigateur la
+   * pointent vers `tests/e2e/model-stub/server.mjs`, qui parle le format de
+   * l'API sans rien facturer ; les tests unitaires vers un port fermé, pour
+   * qu'un appel qui échapperait à un simulacre échoue au lieu de coûter. Elle
+   * est passée **explicitement** au client du SDK (`src/agent/gateway.ts`) :
+   * rien d'autre que ce fichier ne lit l'environnement.
+   */
+  ANTHROPIC_BASE_URL: z
+    .url({
+      protocol: /^https?$/,
+      error: 'ANTHROPIC_BASE_URL doit être une URL absolue en http ou https (voir .env.example)'
+    })
+    .optional(),
   /**
    * Répertoire du contenu privé en lecture seule : cv.yaml, qa.*.md, assets/ (AD-2).
    *
@@ -81,7 +96,7 @@ export type Env = z.infer<typeof envSchema>;
 export type EnvSource = Record<string, string | undefined>;
 
 /** Clés dont une valeur vide équivaut à une absence : la valeur par défaut s'applique. */
-const OPTIONAL_KEYS = ['HOSTNAME', 'PORT', 'ADMIN_DEV'] as const;
+const OPTIONAL_KEYS = ['ANTHROPIC_BASE_URL', 'HOSTNAME', 'PORT', 'ADMIN_DEV'] as const;
 
 /**
  * Valide une source d'environnement et renvoie la configuration typée.

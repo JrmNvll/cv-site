@@ -94,21 +94,24 @@ export async function GET(
   // Le geste prolonge la session (AD-14), puis l'échange s'y rattache. Sans
   // cookies valides, `recordVisit` rend `null` et rien n'est écrit ; une
   // session présentée avec le cookie d'un autre visiteur (`mismatch`) n'est
-  // pas prolongée, et un échange ne s'y rattache pas non plus.
+  // pas prolongée, et un échange ne s'y rattache pas non plus. Au-delà de
+  // `HERO_EXCHANGES_PER_SESSION`, le journal rend `null` : la réponse est
+  // servie, `exchangeId` aussi — nul.
   const visit = await recordVisit({cookies: request.cookies, headers: request.headers, lang});
   let exchangeId: string | null = null;
   if (visit !== null && visit.outcome !== 'mismatch') {
     try {
       const {addExchange} = await import('@/journal');
-      exchangeId = addExchange({
-        sessionId: visit.sessionId,
-        kind: 'hero',
-        question: entry.question,
-        answer: entry.corps,
-        sources: [entry.source],
-        citationOk: true,
-        latencyMs: performance.now() - started
-      }).id;
+      exchangeId =
+        addExchange({
+          sessionId: visit.sessionId,
+          kind: 'hero',
+          question: entry.question,
+          answer: entry.corps,
+          sources: [entry.source],
+          citationOk: true,
+          latencyMs: performance.now() - started
+        })?.id ?? null;
     } catch (error) {
       // Même règle que la visite : l'échec du journal se dit, la réponse part.
       console.error(

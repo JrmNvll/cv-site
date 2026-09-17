@@ -117,12 +117,14 @@ describe('recordVisit', () => {
       lang: 'en'
     });
 
-    // Le résultat porte aussi les identifiants validés : une seule lecture des cookies.
+    // Le résultat porte aussi les identifiants validés et l'adresse : une
+    // seule lecture des cookies, une seule de l'adresse — l'agent reçoit la même.
     expect(result).toEqual({
       outcome: 'created',
       visitorCreated: true,
       visitorId: VISITOR_ID,
-      sessionId: SESSION_ID
+      sessionId: SESSION_ID,
+      ip: 'dev'
     });
     expect(journal.touchSession).toHaveBeenCalledTimes(1);
     expect(journal.touchSession).toHaveBeenCalledWith({

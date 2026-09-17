@@ -1,16 +1,31 @@
-import {mkdirSync, rmSync} from 'node:fs';
+import {mkdirSync, readFileSync, rmSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {defineConfig, devices} from '@playwright/test';
 
 /**
- * Vérification navigateur du socle : redirection de langue, balise `noindex`,
- * cookies de visite, journal des visites. Playwright construit et lance
- * lui-même l'artefact de production.
+ * Vérification navigateur : redirection de langue, balise `noindex`, cookies
+ * de visite, journal des visites, questions du premier écran, et l'assistant
+ * — contre un **simulateur** de l'API du modèle. Playwright construit et lance
+ * lui-même l'artefact de production, et le simulateur avec lui.
  */
 // `||` et non `??` : une variable présente mais vide donnerait `http://:3000`.
 const HOST = process.env.HOSTNAME || '127.0.0.1';
 const PORT = process.env.PORT || '3000';
 const baseURL = `http://${HOST}:${PORT}`;
+
+/**
+ * Le simulateur du modèle (`tests/e2e/model-stub/server.mjs`) : le site lui
+ * parle par `ANTHROPIC_BASE_URL`, le SDK réel fait le reste, rien n'est
+ * facturé. Un appel réel n'a lieu qu'en story 10, sur demande. Le port vient
+ * du même fichier que les scénarios, pour que les tests et le serveur lisent
+ * la même valeur.
+ */
+const STUB_PORT = String(
+  process.env.MODEL_STUB_PORT ||
+    (JSON.parse(readFileSync(resolve(__dirname, 'tests/e2e/model-stub/scenarios.json'), 'utf8')) as {port: number})
+      .port
+);
+const stubURL = `http://127.0.0.1:${STUB_PORT}`;
 
 /**
  * Chemins **absolus**, résolus depuis ce fichier — pas depuis le répertoire
@@ -54,27 +69,52 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry'
   },
-  projects: [{name: 'chromium', use: {...devices['Desktop Chrome']}}],
-  webServer: {
-    // Build de **production**, pas `next dev` : le serveur de développement
-    // réécrit `Cache-Control` pour son rechargement à chaud, et masquerait donc
-    // l'en-tête posé par `proxy.ts`. On vérifie l'artefact qui part en ligne.
-    command: 'npm run build && npm run start',
-    url: baseURL,
-    // Toujours un serveur neuf : la vérification ne doit pas dépendre d'un
-    // serveur déjà lancé avec une autre configuration.
-    reuseExistingServer: false,
-    timeout: 180_000,
-    // Configuration explicite : sans elle, le serveur hériterait du `.env.local`
-    // du poste et l'assertion sur `/admin` dépendrait de la machine.
-    env: {
-      HOSTNAME: HOST,
-      PORT,
-      ADMIN_DEV: '0',
-      ANTHROPIC_API_KEY: 'cle-de-test-sans-valeur',
-      CONTENT_DIR: FIXTURES,
-      DATA_DIR: DATA,
-      NEXT_PUBLIC_SITE_URL: baseURL
+  projects: [
+    {name: 'chromium', use: {...devices['Desktop Chrome']}, testIgnore: /chat-cap\.spec\.ts/},
+    // Le plafond, **en dernier et isolé** : une fois la dépense du mois
+    // au-dessus de 5 USD dans `usage.db`, plus aucune question ne passe —
+    // tout ce qui appelle le modèle doit avoir tourné avant.
+    {
+      name: 'chromium-plafond',
+      use: {...devices['Desktop Chrome']},
+      testMatch: /chat-cap\.spec\.ts/,
+      dependencies: ['chromium'],
+      // Pas rejouable : une reprise trouverait la dépense déjà en base et
+      // recevrait `503` dès la première question — elle ne prouverait rien.
+      retries: 0
     }
-  }
+  ],
+  webServer: [
+    {
+      // Le simulateur d'abord : le site doit pouvoir lui parler dès sa première question.
+      command: 'node tests/e2e/model-stub/server.mjs',
+      url: `${stubURL}/health`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: {MODEL_STUB_PORT: STUB_PORT}
+    },
+    {
+      // Build de **production**, pas `next dev` : le serveur de développement
+      // réécrit `Cache-Control` pour son rechargement à chaud, et masquerait donc
+      // l'en-tête posé par `proxy.ts`. On vérifie l'artefact qui part en ligne.
+      command: 'npm run build && npm run start',
+      url: baseURL,
+      // Toujours un serveur neuf : la vérification ne doit pas dépendre d'un
+      // serveur déjà lancé avec une autre configuration.
+      reuseExistingServer: false,
+      timeout: 180_000,
+      // Configuration explicite : sans elle, le serveur hériterait du `.env.local`
+      // du poste et l'assertion sur `/admin` dépendrait de la machine.
+      env: {
+        HOSTNAME: HOST,
+        PORT,
+        ADMIN_DEV: '0',
+        ANTHROPIC_API_KEY: 'cle-de-test-sans-valeur',
+        ANTHROPIC_BASE_URL: stubURL,
+        CONTENT_DIR: FIXTURES,
+        DATA_DIR: DATA,
+        NEXT_PUBLIC_SITE_URL: baseURL
+      }
+    }
+  ]
 });

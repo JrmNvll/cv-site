@@ -48,6 +48,7 @@ contact:
   # Affichable : la commune telle que le CV la dit, sans lien avec `adresse`.
   localite: Bourgade-Fictive (Contrée)
   linkedin: linkedin.exemple.invalid/in/camille-durand-fictif
+  github: github.exemple.invalid/compte-fictif
 
 profil:
   fr: >-

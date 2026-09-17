@@ -155,7 +155,9 @@ export const cvSchema = z.object({
      * rien n'est dérivé de l'adresse postale, qui ne sort jamais (AD-8).
      */
     localite: localizedText.optional(),
-    linkedin: profileUrl.optional()
+    linkedin: profileUrl.optional(),
+    /** Public par nature, comme LinkedIn : affiché et connu du modèle. */
+    github: profileUrl.optional()
   }),
 
   profil: localizedText,

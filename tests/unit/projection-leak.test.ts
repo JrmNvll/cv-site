@@ -73,7 +73,7 @@ describe('aucun champ hors liste blanche par sa clé non plus', () => {
       ['age', 'date_naissance', 'nationalite', 'nom', 'photo', 'prenom', 'sous_titre', 'titre'].sort()
     );
     // Le courriel n'est plus dans ce que la page reçoit : il sort par une route.
-    expect(Object.keys(contact).sort()).toEqual(['linkedin', 'localite'].sort());
+    expect(Object.keys(contact).sort()).toEqual(['github', 'linkedin', 'localite'].sort());
   });
 
   it.each(LANGS)('display (%s) ne porte pas le courriel — le modèle, si', (lang) => {
@@ -84,7 +84,7 @@ describe('aucun champ hors liste blanche par sa clé non plus', () => {
   it.each(LANGS)('agent (%s) ne porte ni photo ni téléphone', (lang) => {
     const {identite, contact} = projections[lang]!.agent;
     expect(Object.keys(identite)).not.toContain('photo');
-    expect(Object.keys(contact).sort()).toEqual(['email', 'linkedin', 'localite', 'source'].sort());
+    expect(Object.keys(contact).sort()).toEqual(['email', 'github', 'linkedin', 'localite', 'source'].sort());
   });
 
   it("n'expose ni les signataires ni les fichiers des certificats", () => {

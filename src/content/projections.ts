@@ -80,10 +80,15 @@ type Identite = {
   readonly age?: number;
 };
 
-type Contact = {readonly email: string; readonly localite?: string; readonly linkedin?: string};
+type Contact = {
+  readonly email: string;
+  readonly localite?: string;
+  readonly linkedin?: string;
+  readonly github?: string;
+};
 
 /**
- * Ce que la page reçoit du contact : LinkedIn et la localité. Le courriel,
+ * Ce que la page reçoit du contact : LinkedIn, GitHub et la localité. Le courriel,
  * comme le téléphone, n'est jamais dans le HTML servi — il sort par
  * `/api/contact/email`, sur geste explicite (AD-8, amendé le 2026-09-15). Le
  * modèle, lui, le connaît : un recruteur qui le demande l'obtient.
@@ -276,7 +281,8 @@ export function buildProjections(
   const displayContact: DisplayContact = compact({
     // La localité, jamais l'adresse : `contact.adresse` n'est pas lue ici.
     localite: text(cv.contact.localite, 'contact.localite'),
-    linkedin: absoluteUrl(cv.contact.linkedin)
+    linkedin: absoluteUrl(cv.contact.linkedin),
+    github: absoluteUrl(cv.contact.github)
   } as DisplayContact);
   const contact: Contact = {email: cv.contact.email, ...displayContact};
 

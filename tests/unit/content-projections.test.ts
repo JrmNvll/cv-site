@@ -82,6 +82,17 @@ describe('projection display — ce que la page reçoit', () => {
     expect(fr.display.contact).not.toHaveProperty('email');
     expect(fr.agent.contact.email).toBe('camille.durand@exemple.invalid');
     expect(fr.display.contact.linkedin).toBeDefined();
+    // GitHub, public comme LinkedIn : affiché et connu du modèle, rendu absolu
+    // depuis la forme sans schéma de la fixture.
+    expect(fr.display.contact.github).toBe('https://github.exemple.invalid/compte-fictif');
+    expect(fr.agent.contact.github).toBe('https://github.exemple.invalid/compte-fictif');
+  });
+
+  it('nʼinvente pas de profil GitHub : sans le champ, pas de clé', () => {
+    const {github: _github, ...contact} = cv.contact;
+    const sans = buildProjections({...cv, contact}, 'fr', {hasPhoto: true, now: NOW});
+    expect(sans.display.contact).not.toHaveProperty('github');
+    expect(sans.agent.contact).not.toHaveProperty('github');
   });
 
   it('annonce la photo par sa présence, jamais par son chemin', () => {

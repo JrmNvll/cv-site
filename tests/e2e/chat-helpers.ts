@@ -33,14 +33,33 @@ export const scenarios = JSON.parse(
   readFileSync(resolve(__dirname, 'model-stub/scenarios.json'), 'utf8')
 ) as {
   port: number;
-  markers: {invalid: string; error: string; cap: string; slow: string; spaced: string};
+  markers: {
+    invalid: string;
+    error: string;
+    cap: string;
+    slow: string;
+    spaced: string;
+    refusal: string;
+    private: string;
+    graded: string;
+    digits: string;
+    wrongLanguage: string;
+  };
   delayMs: number;
+  /** Ce qu'un scénario qui ne lisait pas le cache lit au second appel d'une session. */
+  secondCall: {cache_read_input_tokens: number};
   ordinary: Answered;
   invalid: Answered;
   error: {deltas: string[]; text: string};
   cap: {deltas: string[]; text: string; usage: Usage};
   slow: Answered & {initialDelayMs: number};
   spaced: Answered & {spacingMs: number};
+  /** Story 10, le mini-jeu de la suite adverse : un refus sans bloc dans la langue des règles, une entrée PRIVÉ citée, des chiffres, l'autre langue, une note. */
+  refusal: Record<Lang, Answered>;
+  private: Answered;
+  digits: Answered;
+  wrongLanguage: Record<Lang, Answered>;
+  matchGraded: Record<Lang, Answered>;
   /** L'évaluation d'une annonce, dans la langue des règles ; sa variante `[invalide]`. */
   match: Record<Lang, Answered>;
   matchInvalid: Record<Lang, Answered>;

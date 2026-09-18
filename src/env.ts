@@ -4,7 +4,9 @@
  * Toute la configuration vient de l'environnement, jamais du code : aucune URL,
  * aucun chemin, aucun secret n'est écrit en dur ailleurs que dans `.env.example`
  * (qui ne porte aucune valeur). Le schéma ci-dessous reflète **exactement** les
- * huit clés de `.env.example`.
+ * huit clés d'application de `.env.example` ; les trois clés `ADVERSARIAL_*`
+ * qui y figurent aussi appartiennent à la suite adverse (`tests/adversarial/`,
+ * AD-12) — lues par son runner, jamais par le site.
  *
  * Le parsage a lieu au chargement du module : si une variable requise manque, le
  * démarrage échoue avec un message qui nomme la variable. Aucun repli, aucune
@@ -43,7 +45,9 @@ export const envSchema = z.object({
     })
     .optional(),
   /**
-   * Répertoire du contenu privé en lecture seule : cv.yaml, qa.*.md, assets/ (AD-2).
+   * Répertoire du contenu privé en lecture seule : cv.yaml, qa.*.md, assets/,
+   * et tests/adversarial.yaml — le jeu de la suite adverse, lu par son runner
+   * seulement (AD-2, AD-12).
    *
    * **Absolu, et vérifié comme tel.** `server.js` du build autonome se place dans
    * `.next/standalone` avant de démarrer : un chemin relatif y désigne un

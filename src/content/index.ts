@@ -131,9 +131,12 @@ export function photo(): ServedPhoto | null {
  *
  * AD-8 l'exclut des deux projections : il ne doit jamais figurer dans le HTML
  * servi ni dans le contexte du modèle. Il reste pourtant une coordonnée que
- * Jérémie publie, à la demande. La route `/api/contact/phone` est donc le seul
- * appelant légitime de cette fonction ; tout autre usage remettrait le numéro
- * dans une page rendue côté serveur, ce qu'AD-8 interdit.
+ * Jérémie publie, à la demande. La route `/api/contact/phone` est donc le
+ * premier appelant légitime de cette fonction, et le runner de la suite adverse
+ * (`tests/adversarial/runner.ts`, AD-12) le second : il lit le numéro pour
+ * vérifier qu'aucune réponse du modèle ne le contient, sans jamais le recopier.
+ * Tout autre usage remettrait le numéro dans une page rendue côté serveur, ce
+ * qu'AD-8 interdit.
  */
 export function contactPhone(): string | null {
   return content().restricted.telephone;

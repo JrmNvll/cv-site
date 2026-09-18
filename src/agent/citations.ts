@@ -339,9 +339,10 @@ function fold(text: string): string {
  * Le titre que porte une ligne, s'il en est un : en gras (`**Titre**`) seul
  * sur sa ligne, comme la règle le demande — un deux-points final, des
  * marqueurs manquants ou d'un autre type (`__Titre__`, `*Titre*`), la casse et
- * les accents sont tolérés ; le mot, lui, est exact.
+ * les accents sont tolérés ; le mot, lui, est exact. Exporté pour le runner de
+ * la suite adverse (story 10), qui relit la structure avec la même lecture.
  */
-function titleOf(content: string, titles: MatchTitlesInput): keyof MatchTitlesInput | null {
+export function titleOf(content: string, titles: MatchTitlesInput): keyof MatchTitlesInput | null {
   const trimmed = content.trim().replace(/\s*:$/, '');
   // `**Titre**`, `__Titre__`, `*Titre*` : les marqueurs collés au mot — « * Titre » est une puce, pas un titre.
   const emphasis = /^(\*\*|__|\*|_)(\S.*?\S|\S)\1$/.exec(trimmed);

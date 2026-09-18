@@ -8,14 +8,20 @@
  * code. Il ne lit rien d'autre que le contenu, n'écrit rien, et n'affiche jamais
  * le corps d'une entrée.
  *
+ * S'il existe, le jeu de tests adverses (`tests/adversarial.yaml`, AD-12) est
+ * compté et validé par le même schéma que le runner
+ * (`tests/adversarial/schema.ts`) — et chaque source attendue doit exister
+ * dans le contenu. Rien du jeu n'est affiché : ni une question, ni une annonce.
+ *
  * Usage :
  *   npm run check:content              (CONTENT_DIR pris dans l'env ou .env.local)
  *   npm run check:content -- <chemin>
  */
 import {existsSync, readFileSync} from 'node:fs';
 import {registerHooks} from 'node:module';
-import {dirname, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {parse as parseYaml} from 'yaml';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -95,6 +101,104 @@ function citationKeys(agent) {
   };
   Object.values(agent).forEach(walk);
   return keys;
+}
+
+/** L'en-tête que `parseSuite` met devant ses anomalies, une par ligne. */
+const SCHEMA_HEADER = /^Jeu de tests adverses invalide — \d+ anomalie\(s\) :\n/;
+
+/**
+ * Le jeu de tests adverses, s'il existe : validé par le schéma du runner, puis
+ * confronté au contenu comme le runner le fait avant tout appel — chaque
+ * source attendue ou tolérée existe et se cite dans la langue du cas (`qa:`
+ * une entrée ordinaire, `cv:` une clé de la projection) ; chaque formulation
+ * attendue est un fragment d'une entrée `sys-*` ou des règles fixes du prompt
+ * (refus, renvoi), d'une consigne `PRIVÉ` ou d'une entrée `sys-*` (`private`).
+ * Un corpus anglais vide renvoie au français, comme `knowledge` le fait.
+ *
+ * Les règles fixes sont **lues comme un texte** (`src/agent/prompts.ts`), pas
+ * importées : l'outillage n'atteint pas la couche `agent` (`layers.config.mjs`),
+ * et il ne lui faut que la chaîne. Rend les lignes à afficher et les
+ * anomalies ; n'affiche jamais une question, une annonce ni un texte du contenu.
+ */
+async function describeAdversarial(dir, content, keys) {
+  const file = join(dir, 'tests', 'adversarial.yaml');
+  if (!existsSync(file)) return {lines: ['  tests/adversarial.yaml absent — la suite adverse (AD-12) nʼa pas de jeu'], issues: []};
+
+  const {missingWordings, parseSuite, wordingsOf} = await import('../tests/adversarial/schema.ts');
+  let suite;
+  try {
+    suite = parseSuite(parseYaml(readFileSync(file, 'utf8')));
+  } catch (error) {
+    // Le message du schéma porte déjà une anomalie par ligne, sous un en-tête :
+    // on garde les lignes. Toute autre erreur (YAML illisible…) est rendue entière.
+    const message = error instanceof Error ? error.message : String(error);
+    if (!SCHEMA_HEADER.test(message)) return {lines: [], issues: [message]};
+    const detail = message.replace(SCHEMA_HEADER, '').split('\n').map((line) => line.trim().replace(/^- /, ''));
+    return {lines: [], issues: detail};
+  }
+
+  // Le corpus de chaque langue — le français quand l'anglais est vide (AD-5).
+  const corpusOf = (lang) => (content.qa[lang].length > 0 ? content.qa[lang] : content.qa.fr);
+  // Les règles fixes de chaque langue, telles qu'écrites dans `RULES_FR` et
+  // `RULES_EN` ; si la forme du fichier change, tout le fichier fait foi.
+  const promptsSource = readFileSync(resolve(ROOT, 'src', 'agent', 'prompts.ts'), 'utf8');
+  const rulesOf = (lang) => {
+    const found = new RegExp(`const RULES_${lang.toUpperCase()} = \`([\\s\\S]*?)\`;`).exec(promptsSource);
+    return found === null ? promptsSource : found[1];
+  };
+  const citable = {};
+  const wordingSources = {};
+  for (const lang of ['fr', 'en']) {
+    const entries = corpusOf(lang);
+    citable[lang] = new Set(keys);
+    for (const entry of entries) {
+      if (entry.statut === 'normale') citable[lang].add(entry.source);
+    }
+    wordingSources[lang] = {
+      sys: entries.filter((entry) => entry.statut === 'normale' && entry.id.startsWith('sys-')).map((entry) => entry.corps ?? ''),
+      directives: entries.filter((entry) => entry.statut === 'PRIVÉ' && entry.consigne !== null).map((entry) => entry.consigne),
+      rules: rulesOf(lang)
+    };
+  }
+  const issues = [];
+  const count = (pick) => {
+    const tally = {};
+    for (const entry of suite.cases) {
+      const key = pick(entry);
+      tally[key] = (tally[key] ?? 0) + 1;
+    }
+    return Object.entries(tally)
+      .map(([key, n]) => `${key} ${n}`)
+      .join(' · ');
+  };
+  for (const entry of suite.cases) {
+    for (const id of entry.sources_any ?? []) {
+      if (!citable[entry.lang].has(id)) issues.push(`cas ${entry.id} : source attendue inconnue ou non citable en « ${entry.lang} » — ${id}`);
+    }
+    for (const id of entry.sources_allowed ?? []) {
+      if (!citable[entry.lang].has(id)) issues.push(`cas ${entry.id} : source tolérée inconnue ou non citable en « ${entry.lang} » — ${id}`);
+    }
+    const sources = wordingSources[entry.lang];
+    const haystacks =
+      entry.expect === 'refusal' || entry.expect === 'redirect'
+        ? [...sources.sys, sources.rules]
+        : entry.expect === 'private'
+          ? [...sources.sys, ...sources.directives]
+          : null;
+    if (haystacks !== null) {
+      const where = entry.expect === 'private' ? 'ni consigne PRIVÉ' : 'ni des règles fixes';
+      for (const wording of missingWordings(wordingsOf(entry), haystacks)) {
+        issues.push(`cas ${entry.id} : la formulation « ${wording} » n'est le fragment d'aucune entrée sys-* ${where} en « ${entry.lang} »`);
+      }
+    }
+  }
+  const groups = new Set(suite.cases.filter((entry) => entry.group !== undefined).map((entry) => entry.group)).size;
+  return {
+    lines: [
+      `  tests/adversarial.yaml ${String(suite.cases.length).padStart(3)} cas · langues : ${count((entry) => entry.lang)} · attentes : ${count((entry) => entry.expect)} · groupes ${groups}`
+    ],
+    issues
+  };
 }
 
 /**
@@ -178,6 +282,18 @@ async function main() {
       ' (une entrée orpheline en anglais aurait fait échouer le chargement)\n'
   );
 
+  console.log('Suite adverse');
+  const adversarial = await describeAdversarial(dir, content, keys);
+  for (const line of adversarial.lines) console.log(line);
+  if (adversarial.issues.length > 0) {
+    // Dit, et retenu dans le code de sortie — mais les avertissements du
+    // contenu s'affichent quand même : ils ne dépendent pas du jeu.
+    console.error(`  jeu invalide — ${adversarial.issues.length} anomalie(s) :`);
+    for (const issue of adversarial.issues) console.error(`  - ${issue}`);
+    process.exitCode = 1;
+  }
+  console.log('');
+
   if (warnings.length === 0) {
     console.log('Aucun avertissement.');
   } else {
@@ -185,7 +301,9 @@ async function main() {
     for (const warning of warnings) console.log(`  - ${formatIssue(warning)}`);
   }
 
-  console.log('\nContenu valide.');
+  console.log(
+    adversarial.issues.length === 0 ? '\nContenu valide.' : '\nContenu valide ; jeu de tests adverses invalide (voir ci-dessus).'
+  );
 }
 
 await main();

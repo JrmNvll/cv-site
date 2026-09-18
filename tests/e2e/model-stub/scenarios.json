@@ -5,9 +5,17 @@
     "error": "[erreur]",
     "cap": "[plafond]",
     "slow": "[lent]",
-    "spaced": "[espace]"
+    "spaced": "[espace]",
+    "refusal": "[refus]",
+    "private": "[privé]",
+    "graded": "[note]",
+    "digits": "[chiffres]",
+    "wrongLanguage": "[langue]"
   },
   "delayMs": 80,
+  "secondCall": {
+    "cache_read_input_tokens": 5678
+  },
   "ordinary": {
     "deltas": [
       "Voici une ",
@@ -103,6 +111,106 @@
       "cache_creation_input_tokens": 0
     }
   },
+  "refusal": {
+    "fr": {
+      "deltas": [
+        "Le dossier ne couvre ",
+        "pas ce point. Reponse-refus."
+      ],
+      "text": "Le dossier ne couvre pas ce point. Reponse-refus.",
+      "sources": [],
+      "usage": {
+        "input_tokens": 900,
+        "output_tokens": 40,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 5678
+      }
+    },
+    "en": {
+      "deltas": [
+        "The file does not cover ",
+        "this point. Reponse-refus."
+      ],
+      "text": "The file does not cover this point. Reponse-refus.",
+      "sources": [],
+      "usage": {
+        "input_tokens": 900,
+        "output_tokens": 40,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 5678
+      }
+    }
+  },
+  "private": {
+    "deltas": [
+      "Cette réponse cite une entrée privée ",
+      "mais renvoie vers un échange direct. Reponse-privee.\n\n<sour",
+      "ces>qa:sal-01, qa:lic-01</sources>"
+    ],
+    "text": "Cette réponse cite une entrée privée mais renvoie vers un échange direct. Reponse-privee.",
+    "sources": [
+      "qa:lic-01"
+    ],
+    "usage": {
+      "input_tokens": 1234,
+      "output_tokens": 90,
+      "cache_read_input_tokens": 5678,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "digits": {
+    "deltas": [
+      "Joignable au 00 000 00 07, ",
+      "référence 1234567. Reponse-chiffres.\n\n<sour",
+      "ces>qa:lic-01</sources>"
+    ],
+    "text": "Joignable au 00 000 00 07, référence 1234567. Reponse-chiffres.",
+    "sources": [
+      "qa:lic-01"
+    ],
+    "usage": {
+      "input_tokens": 1234,
+      "output_tokens": 90,
+      "cache_read_input_tokens": 5678,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "wrongLanguage": {
+    "fr": {
+      "deltas": [
+        "This is an answer in the wrong language: ",
+        "the file does not have that, and this is all of it. Reponse-langue.\n\n<sour",
+        "ces>qa:lic-01</sources>"
+      ],
+      "text": "This is an answer in the wrong language: the file does not have that, and this is all of it. Reponse-langue.",
+      "sources": [
+        "qa:lic-01"
+      ],
+      "usage": {
+        "input_tokens": 1234,
+        "output_tokens": 90,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    },
+    "en": {
+      "deltas": [
+        "Voici une réponse dans la mauvaise langue : ",
+        "le dossier ne dit pas cela, et c'est tout ce que je sais. Reponse-langue.\n\n<sour",
+        "ces>qa:lic-01</sources>"
+      ],
+      "text": "Voici une réponse dans la mauvaise langue : le dossier ne dit pas cela, et c'est tout ce que je sais. Reponse-langue.",
+      "sources": [
+        "qa:lic-01"
+      ],
+      "usage": {
+        "input_tokens": 1234,
+        "output_tokens": 90,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    }
+  },
   "match": {
     "fr": {
       "deltas": [
@@ -140,6 +248,56 @@
         "ces>qa:lic-01, cv:profil, qa:sit-02</sources>"
       ],
       "text": "**Strengths**\n- Ten years on a requested fictional tool\n- Immediate availability\n\n**Transferable skills**\n- A workshop close to the requested one [see CV]\n\n**Gaps**\n- The requested certification: not documented in the dossier\n\n**Conclusion**\nFor the rest, a direct conversation will tell what the dossier does not. Reponse-adequation.",
+      "sources": [
+        "cv:profil",
+        "qa:lic-01",
+        "qa:sit-02"
+      ],
+      "usage": {
+        "input_tokens": 2345,
+        "output_tokens": 180,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    }
+  },
+  "matchGraded": {
+    "fr": {
+      "deltas": [
+        "**Points forts**\n",
+        "- Dix ans sur un outil fictif demandé [cv:pro",
+        "fil] [qa:l",
+        "ic-01]\n- Une disponibilité immédiate [qa:sit-02]\n\n",
+        "**Compétences transférables**\n- Un atelier voisin de celui demandé [voir CV] [cv:profil]\n\n",
+        "**Écarts**\n- La certification demandée : non documenté dans le dossier\n\n",
+        "**Conclusion**\nNote globale 8/10, recommandé. Pour le reste, un échange direct dira ce que le dossier ne dit pas. Reponse-adequation.\n\n<sour",
+        "ces>qa:lic-01, cv:profil, qa:sit-02</sources>"
+      ],
+      "text": "**Points forts**\n- Dix ans sur un outil fictif demandé\n- Une disponibilité immédiate\n\n**Compétences transférables**\n- Un atelier voisin de celui demandé [voir CV]\n\n**Écarts**\n- La certification demandée : non documenté dans le dossier\n\n**Conclusion**\nNote globale 8/10, recommandé. Pour le reste, un échange direct dira ce que le dossier ne dit pas. Reponse-adequation.",
+      "sources": [
+        "cv:profil",
+        "qa:lic-01",
+        "qa:sit-02"
+      ],
+      "usage": {
+        "input_tokens": 2345,
+        "output_tokens": 180,
+        "cache_read_input_tokens": 5678,
+        "cache_creation_input_tokens": 0
+      }
+    },
+    "en": {
+      "deltas": [
+        "**Strengths**\n",
+        "- Ten years on a requested fictional tool [cv:pro",
+        "fil] [qa:l",
+        "ic-01]\n- Immediate availability [qa:sit-02]\n\n",
+        "**Transferable skills**\n- A workshop close to the requested one [see CV] [cv:profil]\n\n",
+        "**Gaps**\n- The requested certification: not documented in the dossier\n\n",
+        "**Conclusion**\nOverall 8/10, recommended. For the rest, a direct conversation will tell what the dossier does not. Reponse-adequation.\n\n<sour",
+        "ces>qa:lic-01, cv:profil, qa:sit-02</sources>"
+      ],
+      "text": "**Strengths**\n- Ten years on a requested fictional tool\n- Immediate availability\n\n**Transferable skills**\n- A workshop close to the requested one [see CV]\n\n**Gaps**\n- The requested certification: not documented in the dossier\n\n**Conclusion**\nOverall 8/10, recommended. For the rest, a direct conversation will tell what the dossier does not. Reponse-adequation.",
       "sources": [
         "cv:profil",
         "qa:lic-01",

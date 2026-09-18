@@ -19,11 +19,27 @@
  *    réflexion du modèle, que le battement de cœur de la route doit couvrir ;
  *  - `[espace]` : des deltas espacés d'une seconde et demie — le temps qu'un
  *    client parte au milieu du flux ;
+ *  - `[refus]` : un refus dans la langue des règles — un fragment de l'entrée
+ *    `sys-01` **de la fixture**, jamais du corpus réel, **sans** bloc
+ *    `<sources>` — et le `usage` d'un premier appel, qui écrit le cache sans
+ *    le lire (story 10, le mini-jeu de la suite adverse) ;
+ *  - `[privé]` : une réponse dont le bloc cite l'entrée `PRIVÉ` de la fixture
+ *    (`qa:sal-01`) — la passerelle la retire et `citation_ok` passe à 0 ;
+ *  - `[chiffres]` : une réponse qui écrit le numéro de téléphone de la fixture
+ *    et un nombre à sept chiffres ;
+ *  - `[langue]` : une réponse dans l'autre langue que celle des règles ;
  *  - une annonce (`<annonce>` dans le dernier message) : une évaluation en
  *    quatre parties dans la langue des règles, titres en gras, marques
  *    `[qa:…]` / `[cv:…]` **fragmentées** sur plusieurs deltas, un `[` qui
  *    n'ouvre rien (« [voir CV] »), puis le bloc ; `[invalide]` dans l'annonce
- *    glisse une marque invalide sur un point fort.
+ *    glisse une marque invalide sur un point fort, `[note]` glisse une note
+ *    sur dix et un verdict dans la conclusion.
+ *
+ * **Le cache au second appel.** Comme l'API, le simulateur lit le préfixe
+ * qu'un appel précédent a écrit : dès qu'une requête porte un historique — le
+ * deuxième appel d'une session, ou plus —, un scénario dont le `usage` ne lit
+ * rien du cache en lit `secondCall.cache_read_input_tokens`, et n'en écrit
+ * plus. Les scénarios qui lisent déjà le cache sont rendus tels quels.
  *
  * Il **vérifie** aussi ce que la passerelle envoie, et répond `400` comme
  * l'API le ferait sur ce qu'AD-6 impose : modèle, `max_tokens`, effort bas,
@@ -33,7 +49,8 @@
  * l'historique rejoué doit remplacer une annonce évaluée par sa ligne repère.
  *
  * Aucune dépendance, Node seul : lancé par `playwright.config.ts` comme second
- * `webServer`, sur `MODEL_STUB_PORT`.
+ * `webServer`, sur `MODEL_STUB_PORT` — et par le mini-jeu de la suite adverse
+ * (`tests/unit/adversarial-runner.test.ts`), en sous-processus sur un port libre.
  */
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
@@ -103,8 +120,19 @@ function event(response, name, data) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function stream(response, scenario) {
+/**
+ * Les compteurs rendus : ceux du scénario — sauf au second appel d'une session
+ * (`history` vrai), où un préfixe non lu du cache l'est désormais, comme le
+ * ferait l'API dont le cache tient cinq minutes.
+ */
+function usageFor(scenario, history) {
   const usage = scenario.usage ?? scenarios.ordinary.usage;
+  if (!history || usage.cache_read_input_tokens > 0) return usage;
+  return {...usage, cache_read_input_tokens: scenarios.secondCall.cache_read_input_tokens, cache_creation_input_tokens: 0};
+}
+
+async function stream(response, scenario, history) {
+  const usage = usageFor(scenario, history);
   response.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache',
@@ -179,7 +207,9 @@ function langOf(system) {
  */
 function matchScenarioFor(ad, lang) {
   const invalid = ad.includes(scenarios.markers.invalid);
-  const base = {name: invalid ? 'match-invalid' : 'match', ...(invalid ? scenarios.matchInvalid : scenarios.match)[lang]};
+  const graded = ad.includes(scenarios.markers.graded);
+  const variant = invalid ? scenarios.matchInvalid : graded ? scenarios.matchGraded : scenarios.match;
+  const base = {name: invalid ? 'match-invalid' : graded ? 'match-graded' : 'match', ...variant[lang]};
   if (ad.includes(scenarios.markers.error)) {
     return {...base, name: `${base.name}-error`, deltas: base.deltas.slice(0, scenarios.error.deltas.length), fail: true};
   }
@@ -197,6 +227,11 @@ function scenarioFor(question, lang) {
   if (question.includes(scenarios.markers.invalid)) return {name: 'invalid', ...scenarios.invalid};
   if (question.includes(scenarios.markers.slow)) return {name: 'slow', ...scenarios.slow};
   if (question.includes(scenarios.markers.spaced)) return {name: 'spaced', ...scenarios.spaced};
+  // Un refus parle la langue des règles, comme une évaluation ; `[langue]` parle l'autre.
+  if (question.includes(scenarios.markers.refusal)) return {name: 'refusal', ...scenarios.refusal[lang]};
+  if (question.includes(scenarios.markers.private)) return {name: 'private', ...scenarios.private};
+  if (question.includes(scenarios.markers.digits)) return {name: 'digits', ...scenarios.digits};
+  if (question.includes(scenarios.markers.wrongLanguage)) return {name: 'wrong-language', ...scenarios.wrongLanguage[lang]};
   return {name: 'ordinary', ...scenarios.ordinary};
 }
 
@@ -255,7 +290,7 @@ const server = createServer(async (request, response) => {
       head: textOf(message.content).slice(0, 120)
     }))
   });
-  await stream(response, scenario);
+  await stream(response, scenario, body.messages.length > 1);
 });
 
 server.listen(PORT, '127.0.0.1', () => {

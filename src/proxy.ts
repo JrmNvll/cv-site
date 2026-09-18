@@ -7,7 +7,12 @@
  *  2. pose des cookies `cv_visitor` et `cv_session` (AD-14) — **sauf** sur
  *     `/admin*` : l'admin ne se journalise pas, il ne crée ni ne prolonge
  *     aucune session, et rien ne doit lui poser un cookie de visite. La
- *     réponse reste `private, no-store` : ce qu'elle montre est à Jérémie.
+ *     réponse reste `private, no-store` : ce qu'elle montre est à Jérémie ;
+ *  3. sur toute réponse de document, dit si la requête portait une adresse
+ *     de client valide (`X-Client-IP-Seen: 1` ou `0`, AD-15) — jamais la
+ *     valeur. C'est la seule preuve automatique, après un déploiement, qu'un
+ *     `header_up` mal orthographié dans le Caddyfile ne laisse pas un journal
+ *     sans adresses : le test de fumée l'exige derrière le proxy.
  *
  * L'ordre compte : le routage produit d'abord la réponse (redirection, réécriture
  * ou passage), **puis** les cookies sont posés dessus. Les poser avant les
@@ -15,11 +20,13 @@
  *
  * C'est le **seul** endroit de l'application qui pose un cookie.
  */
+import {isIP} from 'node:net';
 import {NextResponse, type NextRequest} from 'next/server';
 import createIntlMiddleware from 'next-intl/middleware';
 import {env} from '@/env';
 import {routing} from '@/i18n/routing';
 import {isAdminServed} from '@/lib/admin-served';
+import {CLIENT_IP_HEADER} from '@/lib/client-ip';
 import {isUlid, ulid} from '@/lib/ulid';
 import {SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
 
@@ -37,6 +44,12 @@ export const VISITOR_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
 /** Toute réponse portant un cookie de visite est propre à un visiteur — et l'admin l'est à Jérémie. */
 export const CACHE_CONTROL_VISIT = 'private, no-store';
+/**
+ * `1` si la requête porte un `X-Client-IP` valide, `0` sinon — jamais la valeur
+ * (AD-15). Même lecture que `clientIp()` (`isIP`), sans passer par elle : elle
+ * journalise l'absence, et ce n'est pas le rôle du proxy.
+ */
+export const CLIENT_IP_SEEN_HEADER = 'X-Client-IP-Seen';
 
 /**
  * Valeur du cookie de session : `<ulid>.<timestamp>`.
@@ -98,6 +111,13 @@ function isAdminPath(pathname: string): boolean {
   return pathname === '/admin' || pathname.startsWith('/admin/');
 }
 
+/** Pose `X-Client-IP-Seen` sur la réponse, d'après la requête. */
+function attachClientIpSeen(request: NextRequest, response: NextResponse): NextResponse {
+  const value = request.headers.get(CLIENT_IP_HEADER)?.trim() ?? '';
+  response.headers.set(CLIENT_IP_SEEN_HEADER, value !== '' && isIP(value) !== 0 ? '1' : '0');
+  return response;
+}
+
 export default function proxy(request: NextRequest): NextResponse {
   const {pathname} = request.nextUrl;
 
@@ -110,10 +130,10 @@ export default function proxy(request: NextRequest): NextResponse {
     // Aucun cookie : une visite de l'admin n'est pas une visite du CV. Mais
     // pas de cache partagé non plus — ce que l'admin montre est privé.
     response.headers.set('Cache-Control', CACHE_CONTROL_VISIT);
-    return response;
+    return attachClientIpSeen(request, response);
   }
 
-  return attachVisitCookies(request, handleI18nRouting(request));
+  return attachClientIpSeen(request, attachVisitCookies(request, handleI18nRouting(request)));
 }
 
 export const config = {

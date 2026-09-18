@@ -1,6 +1,6 @@
 Ce site est un curriculum vitæ personnel : il ne vend rien, ne collecte rien à votre insu et n'est pas fait pour être trouvé par un moteur de recherche. Cette page dit qui le publie, ce qu'il conserve de votre visite et pourquoi, ce qu'il transmet, et comment exercer vos droits. La technique est décrite dans [Comment ce site est construit](/fr/comment).
 
-Dernière mise à jour : 17 septembre 2026.
+Dernière mise à jour : 18 septembre 2026.
 
 ## Qui publie ce site
 
@@ -8,7 +8,7 @@ Ce site est publié par {name}, à titre personnel, dans le cadre de sa recherch
 
 ## Hébergement
 
-Le site tourne sur un serveur privé virtuel loué chez {hebergeur}, sous Windows Server 2025, administré par l'éditeur lui-même. Le nom de domaine est géré chez Cloudflare ; le certificat HTTPS est délivré par Let's Encrypt. Le journal des visites décrit ci-dessous est conservé sur ce serveur ; l'éditeur en fait des sauvegardes manuelles, à intervalles réguliers.
+Le site tourne sur un serveur privé virtuel loué chez {hebergeur}, sous Windows Server 2025, administré par l'éditeur lui-même. Le nom de domaine est géré chez Cloudflare ; le certificat HTTPS est délivré par Let's Encrypt. Le journal des visites décrit ci-dessous est conservé sur ce serveur ; il est sauvegardé automatiquement chaque nuit, et ces sauvegardes sont conservées quatorze jours sur le serveur ; l'éditeur en fait en outre des copies manuelles. Le serveur mandataire qui reçoit les connexions (Caddy) tient un journal d'accès technique — adresse IP, navigateur, URL demandée, horodatage — tenu par tranches d'un mégaoctet ; chaque tranche archivée est effacée automatiquement après quatorze jours au plus.
 
 ## Cookies
 
@@ -43,7 +43,7 @@ Aucun script de mesure d'audience, aucun réseau social embarqué, aucune police
 
 ## Vos droits
 
-Vous pouvez demander l'accès aux données qui vous concernent — les sessions et les questions liées à votre visite —, leur rectification ou leur effacement. La demande se fait par courriel, à l'adresse de la rubrique « Contact » ; votre adresse IP et la date approximative de votre visite suffisent à les retrouver — l'identifiant du cookie, que vous ne pouvez pas lire, n'est pas nécessaire. L'application n'efface rien d'elle-même ; sur demande, l'éditeur efface à la main les données liées à votre visite et consigne cet effacement. Sans JavaScript, le bouton du courriel n'apparaît pas : les profils LinkedIn et GitHub de la page CV restent alors le moyen de le joindre.
+Vous pouvez demander l'accès aux données qui vous concernent — les sessions et les questions liées à votre visite —, leur rectification ou leur effacement. La demande se fait par courriel, à l'adresse de la rubrique « Contact » ; votre adresse IP et la date approximative de votre visite suffisent à les retrouver — l'identifiant du cookie, que vous ne pouvez pas lire, n'est pas nécessaire. L'application n'efface rien d'elle-même ; sur demande, l'éditeur efface à la main les données liées à votre visite et consigne cet effacement — il porte sur le journal des visites ; les sauvegardes et les tranches archivées du journal d'accès technique expirent d'elles-mêmes sous quatorze jours. Sans JavaScript, le bouton du courriel n'apparaît pas : les profils LinkedIn et GitHub de la page CV restent alors le moyen de le joindre.
 
 ## Site non indexé
 

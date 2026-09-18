@@ -35,13 +35,14 @@ voir « La suite adverse » plus bas.
 | Commande | Effet |
 | --- | --- |
 | `npm run dev` | Développement sur `http://127.0.0.1:3000` |
-| `npm run build` | Build autonome (`.next/standalone/server.js`) |
-| `npm run start` | Sert le build autonome (`node .next/standalone/server.js`) |
+| `npm run build` | Build autonome, puis `postbuild` : `.next/static` et `public/` recopiés dans `.next/standalone` — l'artefact complet |
+| `npm run start` | Sert l'artefact : `node start.mjs` — charge `.env.local` (l'environnement prime), force `127.0.0.1`, importe `server.js` |
 | `npm run lint` | ESLint, frontières de couches comprises |
 | `npm run typecheck` | `next typegen` puis `tsc --noEmit` |
 | `npm run test` | Tests unitaires (Vitest) |
 | `npm run test:e2e` | Tests navigateur (Playwright ; construit puis sert l'artefact de production) |
 | `npm run verify` | Les quatre précédents, dans l'ordre |
+| `npm run test:smoke -- --base-url <url> [--behind-proxy]` | Test de fumée contre une **URL réelle** (production, ou l'artefact local) — sans appel au modèle ; `--behind-proxy` exige ce que Caddy fournit, et un test sauté y vaut échec ; voir « Déploiement » |
 | `npm run test:adversarial` | La suite adverse contre l'**API réelle** (AD-12) — **payante**, hors `verify`, sur demande, avec `ADVERSARIAL_CONFIRM=<date du jour>` ; voir plus bas |
 | `npm run check:content` | Valide le contenu **réel** de `CONTENT_DIR`, jeu adverse compris — hors `verify` |
 | `npm run stub` | Lance le simulateur de l'API du modèle (`MODEL_STUB_PORT`, 3901 par défaut) — pour un essai à la main |
@@ -115,11 +116,13 @@ nulle part ailleurs. `eslint.config.mjs` en tire les règles de lint,
 | `messages/` | Textes d'interface `fr` / `en` |
 | `docs/` | [`decisions.md`](./docs/decisions.md) : les dix-sept décisions d'architecture (AD-1 à AD-17), titre et règle en une ligne chacune — ce que les commentaires `AD-n` du code désignent |
 | `raw-text-loader.cjs` | À la racine, avec la configuration : le chargeur qui inline un `.md` du projet comme chaîne au build (les textes des pages de prose) |
-| `scripts/` | Outils de maintenance hors application (`check:content`) |
+| `scripts/` | Outils hors application : `check:content`, `postbuild` (artefact complet), `smoke` (lance le test de fumée) |
+| `start.mjs` | À la racine : le démarrage en production — `.env.local`, boucle locale, artefact (voir « Déploiement ») |
 | `tests/adversarial/` | La suite adverse (AD-12) : le schéma du jeu, le runner, le test contre l'API réelle — hors `verify` |
 | `tests/fixtures/content/` | Contenu **fictif** : les tests ne tournent que dessus — `tests/adversarial.yaml` y est le mini-jeu du runner |
 | `tests/fixtures/data/` | `DATA_DIR` des tests navigateur, créé par `playwright.config.ts`, ignoré par Git |
 | `tests/e2e/model-stub/` | Le simulateur de l'API du modèle des tests navigateur, et ses scénarios |
+| `tests/smoke/` | Le test de fumée contre une URL réelle (`playwright.smoke.config.ts`, sans `webServer`) — hors `verify` |
 
 `src/proxy.ts` est le seul endroit qui pose un cookie — et il n'en pose aucun
 sur `/admin*` ; `src/env.ts` la seule porte d'entrée de la configuration ; `src/content/` le seul module qui lit
@@ -195,8 +198,11 @@ Ce qu'il faut savoir :
   `Referer` est réduit à son origine et son chemin, sans chaîne de requête.
 - **Sauvegarder à chaud, c'est copier trois fichiers** — ou un seul, proprement :
   en mode WAL, une copie de `usage.db` seul peut ignorer les dernières écritures.
-  Préférer `sqlite3 usage.db ".backup copie.db"` ou `VACUUM INTO`, ou arrêter le
-  service d'abord. À cadrer avec le déploiement (story 11).
+  Sur le VPS, `backup.ps1` du cadre commun copie chaque base SQLite par
+  `VACUUM INTO`, chaque nuit — une copie cohérente même pendant une écriture ;
+  à la main, `sqlite3 usage.db ".backup copie.db"`. Un arrêt brutal du
+  service (NSSM ne signale pas) est sûr en mode WAL : rien n'est perdu de ce
+  qui a été validé, le point de contrôle se fait à l'ouverture suivante.
 - **L'adresse vient de `X-Client-IP`, posé par Caddy** (AD-15), par la seule
   fonction [`clientIp()`](./src/lib/client-ip.ts) : `dev` hors production,
   `unknown` si l'en-tête manque — avec un avertissement, une fois par processus.
@@ -626,9 +632,9 @@ rapport contient les réponses entières : il vit hors des dépôts — et
 `DATA_DIR/adversarial/` **accumule** les exécutions, sans purge : à nettoyer à
 la main. La table des verdicts s'affiche aussi sur la sortie standard. Une
 exception dans un cas est un échec (`exception : …`), et le rapport est écrit
-quand même. **La story 11 exigera, avant tout déploiement, un rapport vert
-récent dont la provenance concorde** avec le commit déployé, le contenu, le
-jeu et le modèle.
+quand même. **Le déploiement exige un rapport vert récent dont la provenance
+concorde** avec le commit déployé, le contenu, le jeu et le modèle — voir
+« Déploiement ».
 
 **Un budget par exécution**, en plus du plafond mensuel : le runner a sa
 propre base, donc son propre cumul. `ADVERSARIAL_BUDGET_MICRO_USD` (défaut
@@ -681,6 +687,184 @@ changer un seuil (budget, plafond, `k`) sont des décisions à prendre avec
 Jérémie, cas par cas, et chaque retouche se rejoue. Lancer le jeu réel est
 une décision aussi : jamais sans un « oui » explicite pour l'exécution en cours.
 
+## Déploiement
+
+Le site tourne sur le VPS Windows de Jérémie, dans le **cadre d'exploitation
+commun** du dépôt `dotfiles` (`vps/` : `setup.ps1`, `service.ps1`, `deploy.ps1`,
+`backup.ps1`, `apps.json`, un `Caddyfile` partagé — sa fiche est `vps/vps.md`,
+section « cv-site »). Ce dépôt n'a **aucun** script de déploiement ni de
+service qui lui soit propre (AD-13, réécrit par la story 11) : ce qu'il apporte
+se limite à ce qui est à lui — comment il démarre, ce qu'il exige de Caddy,
+comment on le prouve. Rien ici ne porte un secret, une adresse ni un
+identifiant : `.env.local` et le fichier d'identifiants de l'admin sont posés à
+la main sur le serveur, hors dépôt. `service.ps1` et `deploy.ps1` vérifient la
+**présence** de `.env.local`, jamais son contenu ; `admin.caddy`, lui, n'est
+vérifié que par `caddy validate` — c'est Caddy qui refuse de démarrer sans lui.
+
+**Comment il démarre.** Le service Windows (NSSM, compte `svc-apps`) lance
+`node start.mjs` dans la release courante avec `NODE_ENV=production` et rien
+d'autre. [`start.mjs`](./start.mjs) fait alors ce que l'artefact autonome ne
+fait pas lui-même : il charge `.env.local` **sans écraser** une variable déjà
+posée par l'environnement — une variable vide compte pour absente — (absent,
+ce n'est pas une erreur ; illisible, en UTF-16 ou binaire, le démarrage
+échoue avec le remède), refuse un `ANTHROPIC_BASE_URL` valorisé dans le
+fichier sous le service (le site viserait un simulateur), force
+`HOSTNAME=127.0.0.1` s'il manque (`server.js` écouterait sinon sur toutes les
+interfaces, alors que Caddy est la seule porte publique, AD-10 — une autre
+interface passe, avec un avertissement `start.hostname_not_loopback`), vérifie
+que l'artefact est complet, puis importe `.next/standalone/server.js`. `npm
+run start` est cette commande ; les tests navigateur l'exécutent avec
+`START_SKIP_ENV_FILE=1` (tout vient de `playwright.config.ts`, rien du poste),
+et la preuve du démarrage vient avec `verify`. `npm run build` enchaîne
+`postbuild` ([`scripts/postbuild.mjs`](./scripts/postbuild.mjs)) qui recopie
+`.next/static` et `public/` dans `.next/standalone` — sans quoi les pages
+sortiraient sans style et chaque script répondrait `404`. La copie est un
+miroir, rejouable ; un échec est nommé, cible et code.
+
+**Ce que le VPS attend, posé une fois par Jérémie** (`C:\Apps\cv-site\shared\`) :
+
+- `.env.local` — les **sept clés d'application** de `.env.example` :
+  `ANTHROPIC_API_KEY`, `CONTENT_DIR` (`C:\Data\cv-site\content`), `DATA_DIR`
+  (`C:\Data\cv-site`), `NEXT_PUBLIC_SITE_URL` (`https://cv.jnouvelle.com`),
+  `HOSTNAME` (`127.0.0.1`), `PORT` (`3001` — celui d'`apps.json`, sinon la
+  sonde de `deploy.ps1` échoue), `ADMIN_DEV` (`0`). `ANTHROPIC_BASE_URL`
+  **absente ou vide** : valorisée, `start.mjs` refuse de démarrer sous le
+  service. Les `ADVERSARIAL_*` de `.env.example` n'ont pas leur place sur le
+  serveur (la suite adverse tourne sur le PC). Valeurs simples, sans
+  guillemets ni `$` : deux analyseurs lisent ce fichier — `@next/env` au
+  build, `parseEnv` de Node au démarrage. **UTF-8** : `Out-File -Encoding utf8`
+  (une marque d'ordre des octets est tolérée ; l'UTF-16 que PowerShell 5.1
+  écrit par défaut est refusé, avec le message). `NEXT_PUBLIC_SITE_URL` est
+  **inlinée au build** : la changer, c'est redéployer un tag, pas redémarrer.
+  Copié dans chaque release par `deploy.ps1`, qui refuse de déployer sans lui.
+- `admin.caddy` — le `basic_auth` de `/admin*`, **importé** par le bloc
+  `cv.jnouvelle.com` du `Caddyfile` par son chemin exact. Il contient
+  `basic_auth /admin* { <utilisateur> <hachage bcrypt> }`, le hachage venant de
+  `caddy hash-password` sur le serveur. **Fermé par défaut** : tant que le
+  fichier manque, Caddy refuse la configuration entière (« File to import
+  not found »), rien n'est rechargé et l'admin n'est jamais exposé — une
+  substitution d'environnement vide aurait pu laisser passer un `basic_auth`
+  absent. Revers : le retirer bloque le prochain rechargement ou redémarrage
+  de Caddy, pour tous les sites ; on le remplace, on ne le supprime pas. Caddy
+  tourne sous `svc-apps`, qui a la lecture sur `shared\` : c'est ce qui lui
+  permet de lire ce fichier au redémarrage.
+- Le DNS : `cv.jnouvelle.com` en enregistrement `A` vers le VPS, « DNS only »
+  chez Cloudflare ; certificat Let's Encrypt par le défi HTTP. La variante
+  « proxy orange » (adresse du client par `CF-Connecting-IP`, `trusted_proxies`,
+  défi DNS-01) est décrite dans `vps.md`, pas activée.
+
+**Ce que Caddy fait pour le site** (bloc `cv.jnouvelle.com`, snippet `commun`
+compris) — le partage de responsabilité entre le proxy et l'application :
+
+| Caddy | L'application |
+| --- | --- |
+| TLS, redirection HTTP → HTTPS, `Strict-Transport-Security` (`includeSubDomains`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, en-tête `Server` retiré | — |
+| `X-Robots-Tag: noindex, nofollow` sur **toute** réponse (AD-11) | `<meta name="robots">` sur chaque page, `robots.txt` qui interdit tout |
+| `X-Client-IP` posé depuis `client_ip`, en écrasant toute valeur entrante (AD-15) | `clientIp()` ne lit que cet en-tête ; `unknown` s'il manque ; le proxy applicatif répond `X-Client-IP-Seen: 1` ou `0` sur chaque document — jamais la valeur — et la fumée exige `1` derrière Caddy |
+| `basic_auth` sur `/admin*` (AD-10) | Aucune authentification ; vérification d'origine sur les mutations |
+| Journal d'accès JSON par site (tranches de 1 Mio, archives effacées après 14 jours), compression | Journal des visites dans `usage.db` |
+
+Aucune CSP dans le proxy : elle appartient aux réponses qui la connaissent
+(`/api/photo` pose la sienne ; celle des pages reste à décider).
+
+**Le contenu voyage par `scp`, jamais par le déploiement.** Il est privé, lu au
+démarrage, et vit dans `C:\Data\cv-site\content\` — un dossier de données que
+`deploy.ps1` ne touche jamais. Depuis le PC : `cv.yaml`, `qa.fr.md`, `qa.en.md`
+et `assets\` vers `vps:C:/Data/cv-site/content/`, puis `Restart-Service
+cv-site` (sauf avant la première release : le service n'a pas encore de
+`current` à démarrer). Une mise à jour du CV n'est **pas** une release. Un
+contenu invalide arrête le processus au démarrage — mais le **service ne
+s'arrête pas** : NSSM relance Node toutes les cinq secondes (`AppExit Default
+Restart`), le service reste `Running` et `service.log` répète l'erreur, fichier
+et ligne. Après tout `Restart-Service`, contrôler `127.0.0.1:3001/fr` (ou
+lancer la fumée). Le contenu précédent est dans `C:\Backups\<jour>\cv-site\content\` ;
+`npm run check:content -- <dossier>` sur le PC, avant l'envoi, évite
+l'aller-retour. `usage.db` est créé par le site au premier démarrage et
+sauvegardé chaque nuit par `backup.ps1` (`VACUUM INTO` : copie cohérente même
+pendant une écriture ; 14 jours sur le serveur). À l'arrêt, NSSM envoie un
+Ctrl-C (un `SIGINT` pour Node) puis tue le processus après 1,5 s ;
+l'application ne l'intercepte pas — c'est le mode WAL qui rend l'arrêt sûr :
+ce qui est validé est durable, le point de contrôle se fait à l'ouverture
+suivante. Pour **restaurer** une sauvegarde : `usage.db` seul — ne pas
+recopier les `usage.db-wal` et `usage.db-shm` que la sauvegarde pose à côté,
+un WAL étranger rejoué sur une base restaurée la corromprait.
+
+**Le premier déploiement, dans l'ordre** — ce que Claude fait sur la demande
+explicite de Jérémie, et jamais de lui-même :
+
+1. **Jérémie** pose `admin.caddy` et `.env.local` dans `shared\`, et le DNS.
+2. `dotfiles` : `git push` (origin et `vps`), puis `ssh vps git -C C:\Ops pull`
+   et **`caddy validate`** — qui refuse tant que `admin.caddy` manque.
+3. `ssh vps … service.ps1 -App cv-site`, **rejoué** (idempotent) : aujourd'hui
+   NSSM porte encore `next start` ; ce passage réapplique `start.mjs` et la
+   sonde `/fr` d'`apps.json`, et crée `C:\Data\cv-site\content`.
+4. Sur le PC, une fois : `git remote add vps vps:C:/Repos/cv-site.git` — le
+   remote n'existe pas encore dans ce dépôt.
+5. `scp` du contenu (ci-dessus), **sans** `Restart-Service` : pas de release.
+6. **Un tour adverse complet vert, à provenance concordante** : le rapport de
+   `npm run test:adversarial` (payant, sur consentement daté — voir « La suite
+   adverse ») doit être `ok`, complet, et sa provenance (commit, condensés du
+   contenu et du jeu, modèle) doit être celle qu'on déploie. Sans lui, pas de
+   tag (AD-12).
+7. `npm run verify` vert ; tag `vX.Y.Z` sur `main` ; `git push origin main
+   --tags` ; `git push vps main --tags`.
+8. `deploy.ps1 -App cv-site -Tag vX.Y.Z` par SSH : clone du tag à côté de ce
+   qui tourne, `.env.local` copié, `npm ci --include=dev` **sur le serveur**
+   (donc le binaire natif de `sharp` de la plateforme qui sert), `npm run
+   build` (`postbuild` compris), bascule de `current`, santé sur
+   `127.0.0.1:3001/fr` sous 60 s. Au premier déploiement, sans release
+   précédente, une santé en échec **arrête le script** (« aucune release
+   précédente ») et laisse le service démarré — pas de retour arrière
+   possible ; aux suivants, retour automatique sur la release précédente.
+9. `Resolve-DnsName cv.jnouvelle.com -Type A` doit donner l'adresse du VPS ;
+   puis `caddy reload`, puis **`Restart-Service caddy`** : le `reload` résout
+   l'import avec le compte SSH, seul un redémarrage prouve que le service,
+   sous `svc-apps`, lit `admin.caddy` — quelques secondes de coupure pour
+   cave.jnouvelle.com.
+10. **La preuve** : `npm run test:smoke -- --base-url https://cv.jnouvelle.com
+    --behind-proxy` depuis le PC (ci-dessous).
+11. **Le regard de Jérémie**, avec une liste : une question libre — le flux
+    arrive progressivement et les sources sont citées ; une annonce collée —
+    l'évaluation d'adéquation ; `/admin` — les identifiants sont demandés, et
+    la session de sa visite porte son adresse réelle. Les sessions `unknown`
+    des sondes de `deploy.ps1` (qui parlent à Node sans passer par Caddy) sont
+    attendues, filtrées par défaut.
+
+Les déploiements suivants : étapes 6 à 8, puis 10 et 11. Retour arrière à la
+demande : `deploy.ps1 -App cv-site -Rollback`, ou redéployer le tag précédent.
+
+**Le test de fumée** (`tests/smoke/`, [`playwright.smoke.config.ts`](./playwright.smoke.config.ts),
+lancé par [`scripts/smoke.mjs`](./scripts/smoke.mjs)), contre une URL réelle :
+pas de `webServer`, pas de fixture, un seul worker, aucune trace, l'agent
+utilisateur `cv-site-smoke/x.y.z` — pour que ses visites se reconnaissent dans
+le journal. Il n'affirme que des **propriétés**, jamais un texte — l'URL réelle
+sert le contenu réel : pages `200` avec `lang` et `noindex`, la 404 en
+document complet, `robots.txt`, cookies `HttpOnly`/`Secure`/`SameSite=Lax`,
+aucun `mailto:`, `tel:`, numéro ni adresse électronique dans les six
+documents, une feuille de style, un script et la photo servis par l'artefact
+(`postbuild`, `sharp`), une puce du premier écran qui répond sans requête
+sortante (coût nul), `/api/questions/lic-01?lang=fr` → `200`, `/api/chat` et
+`/api/match` qui refusent un corps invalide en `400 invalid_input` (AD-16). Il
+**n'appelle jamais le modèle**. Six vérifications n'ont de sens que derrière
+Caddy — `/admin*` → `401` avec `WWW-Authenticate: Basic`, sans contenu, sous
+toutes ses graphies (`//admin`, `/%61dmin`…) ; `X-Robots-Tag` sur toute
+réponse ; HSTS (`includeSubDomains`) et `nosniff` ; la redirection HTTP →
+HTTPS ; `X-Client-IP-Seen: 1` : `--behind-proxy` (ou `SMOKE_BEHIND_PROXY=1`)
+les exige, et **un test sauté y vaut échec**. Sans lui, elles sont sautées :
+le reporter `list` les montre par un tiret sous le titre « derrière Caddy —
+sautés sans --behind-proxy », et le lanceur les compte en fin d'exécution
+avec leur raison — jamais vertes en silence. Sans URL, refus immédiat.
+
+```sh
+npm run test:smoke -- --base-url https://cv.jnouvelle.com --behind-proxy   # la prod
+npm run build && npm run start                                            # puis, à côté :
+npm run test:smoke -- --base-url http://127.0.0.1:3000                    # l'artefact local, sans proxy
+```
+
+Contre l'artefact local, le serveur se lance avec les variables des tests
+(`CONTENT_DIR` sur la fixture, `ANTHROPIC_BASE_URL` sur un port fermé) : le
+test ne pose aucune question libre, mais autant que rien ne puisse coûter.
+
 ## Règles de contribution
 
 - Aucun secret, aucune donnée personnelle réelle dans le dépôt.
@@ -696,5 +880,7 @@ une décision aussi : jamais sans un « oui » explicite pour l'exécution en co
 l'installation (`@img/sharp-<os>-<arch>`, dépendances optionnelles). L'artefact autonome
 (`.next/standalone`) recopie celui de la machine qui a construit : **construire sur la même
 plateforme que celle qui sert** — ici Windows x64 des deux côtés — ou faire `npm ci` sur le
-serveur. Next 16 installe déjà `sharp` pour son propre optimiseur d'images ; il est déclaré
-ici explicitement parce que le code l'importe.
+serveur. C'est ce que fait `deploy.ps1` (`npm ci` puis `npm run build` sur le VPS), et le test
+de fumée le prouve après chaque déploiement : `/api/photo?s=2` doit répondre `200` en image.
+Next 16 installe déjà `sharp` pour son propre optimiseur d'images ; il est déclaré ici
+explicitement parce que le code l'importe.

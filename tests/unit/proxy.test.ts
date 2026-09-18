@@ -341,3 +341,46 @@ describe('périmètre du matcher', () => {
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 });
+
+describe('X-Client-IP-Seen (AD-15)', () => {
+  /** Une requête de document, avec ou sans l'en-tête que Caddy pose. */
+  function requete(path: string, clientIp?: string): NextRequest {
+    return new NextRequest(new URL(path, 'http://127.0.0.1:3000'), {
+      headers: clientIp === undefined ? {} : {'x-client-ip': clientIp}
+    });
+  }
+
+  it('répond 1 quand la requête porte une adresse valide — IPv4 ou IPv6 —, sans jamais la répéter', async () => {
+    const {default: proxy, CLIENT_IP_SEEN_HEADER} = await loadProxy();
+    for (const adresse of ['203.0.113.7', '2001:db8::1', ' 203.0.113.7 ']) {
+      const response = proxy(requete('/fr', adresse));
+      expect(response.headers.get(CLIENT_IP_SEEN_HEADER), adresse).toBe('1');
+      // Hors des en-têtes internes `x-middleware-*`, par lesquels Next relaie
+      // les en-têtes de requête à la route et qu'il retire avant le client.
+      const visibles = [...response.headers.entries()].filter(([name]) => !name.startsWith('x-middleware-'));
+      expect(JSON.stringify(visibles)).not.toContain(adresse.trim());
+    }
+  });
+
+  it('répond 0 sans en-tête, ou avec une valeur qui nʼest pas une adresse', async () => {
+    const {default: proxy, CLIENT_IP_SEEN_HEADER} = await loadProxy();
+    expect(proxy(requete('/fr')).headers.get(CLIENT_IP_SEEN_HEADER)).toBe('0');
+    // Une liste « a, b » (Caddy qui ajouterait au lieu d'écraser), un nom, du vide.
+    for (const valeur of ['203.0.113.7, 198.51.100.1', 'localhost', '', 'unknown']) {
+      expect(proxy(requete('/fr', valeur)).headers.get(CLIENT_IP_SEEN_HEADER), JSON.stringify(valeur)).toBe('0');
+    }
+  });
+
+  it('le pose aussi sur /admin — servi ou non — et sur une redirection', async () => {
+    const production = await loadProxy({adminDev: '0', nodeEnv: 'production'});
+    expect(production.default(requete('/admin', '203.0.113.7')).headers.get(production.CLIENT_IP_SEEN_HEADER)).toBe('1');
+    const developpement = await loadProxy({adminDev: '0', nodeEnv: 'development'});
+    const fermee = developpement.default(requete('/admin'));
+    expect(fermee.status).toBe(404);
+    expect(fermee.headers.get(developpement.CLIENT_IP_SEEN_HEADER)).toBe('0');
+    // La racine redirige vers /fr : l'en-tête est sur la réponse finale, comme les cookies.
+    const redirection = developpement.default(requete('/', '203.0.113.7'));
+    expect(redirection.status).toBeGreaterThanOrEqual(300);
+    expect(redirection.headers.get(developpement.CLIENT_IP_SEEN_HEADER)).toBe('1');
+  });
+});

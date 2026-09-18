@@ -1,6 +1,6 @@
 This site is a personal CV: it sells nothing, collects nothing without telling you, and is not meant to be found by a search engine. This page says who publishes it, what it keeps from your visit and why, what it passes on, and how to exercise your rights. The technology is described in [How this site is built](/en/comment).
 
-Last updated: 17 September 2026.
+Last updated: 18 September 2026.
 
 ## Who publishes this site
 
@@ -8,7 +8,7 @@ This site is published by {name}, in a personal capacity, as part of his job sea
 
 ## Hosting
 
-The site runs on a virtual private server rented from {hebergeur}, running Windows Server 2025, administered by the publisher himself. The domain name is managed at Cloudflare; the HTTPS certificate is issued by Let's Encrypt. The visit log described below is kept on that server; the publisher backs it up by hand, at regular intervals.
+The site runs on a virtual private server rented from {hebergeur}, running Windows Server 2025, administered by the publisher himself. The domain name is managed at Cloudflare; the HTTPS certificate is issued by Let's Encrypt. The visit log described below is kept on that server; it is backed up automatically every night, and those backups are kept for fourteen days on the server; the publisher also makes manual copies. The reverse proxy that receives connections (Caddy) keeps a technical access log — IP address, browser, requested URL, timestamp — kept in one-megabyte slices; each archived slice is deleted automatically after fourteen days at most.
 
 ## Cookies
 
@@ -43,7 +43,7 @@ No audience-measurement script, no embedded social network, no font or resource 
 
 ## Your rights
 
-You may ask for access to the data that concerns you, the sessions and questions tied to your visit, and ask for its rectification or its erasure. The request is made by email, at the address in the "Contact" section; your IP address and the approximate date of your visit are enough to find it, and the cookie identifier, which you cannot read, is not needed. The application deletes nothing by itself; on request, the publisher deletes the data tied to your visit by hand and records that deletion. Without JavaScript, the email button does not appear: the LinkedIn and GitHub profiles on the CV page then remain the way to reach him.
+You may ask for access to the data that concerns you, the sessions and questions tied to your visit, and ask for its rectification or its erasure. The request is made by email, at the address in the "Contact" section; your IP address and the approximate date of your visit are enough to find it, and the cookie identifier, which you cannot read, is not needed. The application deletes nothing by itself; on request, the publisher deletes the data tied to your visit by hand and records that deletion — that deletion concerns the visit log; the backups and the archived slices of the technical access log expire on their own within fourteen days. Without JavaScript, the email button does not appear: the LinkedIn and GitHub profiles on the CV page then remain the way to reach him.
 
 ## Not indexed
 

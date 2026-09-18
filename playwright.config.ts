@@ -103,9 +103,12 @@ export default defineConfig({
       // serveur déjà lancé avec une autre configuration.
       reuseExistingServer: false,
       timeout: 180_000,
-      // Configuration explicite : sans elle, le serveur hériterait du `.env.local`
-      // du poste et l'assertion sur `/admin` dépendrait de la machine.
+      // Configuration explicite, et `start.mjs` ne lit **pas** `.env.local`
+      // (`START_SKIP_ENV_FILE`) : le serveur ne dépend de rien d'autre que ce
+      // qui est écrit ici — l'assertion sur `/admin` ne dépend pas du poste, et
+      // la suite est hermétique avec ou sans `.env.local`.
       env: {
+        START_SKIP_ENV_FILE: '1',
         HOSTNAME: HOST,
         PORT,
         ADMIN_DEV: '0',

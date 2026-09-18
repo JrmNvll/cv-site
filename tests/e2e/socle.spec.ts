@@ -85,6 +85,20 @@ test('une réponse porteuse de cookie nʼest jamais mise en cache partagé', asy
   expect(cacheControl).toContain('no-store');
 });
 
+test('sans Caddy devant, X-Client-IP-Seen vaut 0 — et 1 dès que la requête porte une adresse (AD-15)', async ({request}) => {
+  // Les tests parlent à Node directement : aucun `X-Client-IP`. Derrière le
+  // proxy, le test de fumée exige `1` ; ici, on prouve les deux branches, et
+  // que la valeur n'est jamais répétée.
+  const sans = await request.get('/fr');
+  expect(sans.headers()['x-client-ip-seen']).toBe('0');
+  const avec = await request.get('/fr', {headers: {'X-Client-IP': '203.0.113.7'}});
+  expect(avec.headers()['x-client-ip-seen']).toBe('1');
+  expect(JSON.stringify(avec.headers())).not.toContain('203.0.113.7');
+  // Sur l'admin aussi, et sur une route API : rien — le proxy ne voit pas les routes.
+  expect((await request.get('/admin', {maxRedirects: 0})).headers()['x-client-ip-seen']).toBe('0');
+  expect((await request.get('/robots.txt')).headers()['x-client-ip-seen']).toBeUndefined();
+});
+
 test('le visiteur est reconnu à la visite suivante', async ({page, context}) => {
   await page.goto('/fr');
   const first = (await context.cookies()).find((cookie) => cookie.name === 'cv_visitor')!.value;

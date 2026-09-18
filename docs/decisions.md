@@ -53,8 +53,10 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
 - **AD-9 — Secrets et configuration par l'environnement uniquement.** `ANTHROPIC_API_KEY`,
   `CONTENT_DIR`, `DATA_DIR`, `NEXT_PUBLIC_SITE_URL`, `HOSTNAME`, `PORT`, `ADMIN_DEV` — et
   `ANTHROPIC_BASE_URL`, réservée aux tests, signalée si posée — validés au démarrage par
-  `src/env.ts` ; le Caddyfile est versionné avec des substitutions d'environnement ;
-  `.env.example` sans valeurs, `.env*` ignorés.
+  `src/env.ts` ; le Caddyfile, versionné dans le cadre d'exploitation, **importe par chemin exact
+  un fichier d'identifiants hors dépôt** (le `basic_auth` de l'admin, posé à la main sur le
+  serveur) — s'il manque, Caddy refuse toute la configuration ; `.env.example` sans valeurs,
+  `.env*` ignorés (précisé par la story 11).
 - **AD-10 — Le proxy est la seule porte ; l'admin vit hors localisation et sous sa seule
   protection.** Node n'écoute que sur `127.0.0.1` ; Caddy termine TLS et protège `/admin*` par
   `basic_auth` ; l'admin vit hors `[locale]`, en français, hors du routage next-intl ; toute
@@ -70,11 +72,16 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
   réponse couverte cite des sources valides, aucun refus n'en porte, aucune entrée `PRIVÉ` n'est
   citée, le téléphone n'apparaît jamais, le cache de prompt est lu au second appel ; aucune mise
   en production sans suite verte.
-- **AD-13 — Déploiement reproductible sur le VPS Windows.** Deux services Windows, Caddy et
-  l'application (`node server.js` du build autonome, via NSSM) ; un script fait tout : `git pull`,
-  `npm ci`, `npm run build`, copie de `.next/standalone` avec `public/` et `.next/static`,
-  redémarrage ; deux environnements seulement, développement et production ; sauvegarde
-  quotidienne de `DATA_DIR` hors du serveur.
+- **AD-13 — Déploiement reproductible sur le VPS Windows, par le cadre commun.** L'application
+  s'insère dans le cadre d'exploitation partagé du VPS (`dotfiles/vps` : registre des apps,
+  `service.ps1`, `deploy.ps1`, `backup.ps1`, un Caddyfile) et n'a aucun script ni service
+  propre : un service Windows par app (NSSM) lance `node start.mjs` — qui charge `.env.local`,
+  force la boucle locale et importe l'artefact autonome — dans une **release** par tag
+  (`releases\<tag>` + jonction `current`) ; `deploy.ps1` clone le tag, copie `.env.local`,
+  `npm ci`, `npm run build` (dont `postbuild`, qui rend l'artefact complet), bascule, sonde
+  la santé et revient sur la release précédente si elle échoue. Sauvegarde nocturne de
+  `DATA_DIR` **sur le serveur** (`VACUUM INTO` pour SQLite, 14 jours) ; la copie **hors** du
+  serveur est manuelle, par l'éditeur. Réécrit par la story 11.
 - **AD-14 — Un visiteur, une session : cookies posés par `proxy.ts`, session tenue par
   `journal`.** Sur chaque requête de document, le proxy lit ou pose `cv_visitor` (ULID, 400 jours)
   et `cv_session` (ULID, cookie de session, renouvelé après 30 minutes d'inactivité), `HttpOnly`,
@@ -84,9 +91,12 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
   autorisation ; le journal observe la visite sans la conditionner ; l'admin ne se journalise
   pas.
 - **AD-15 — Une seule source pour l'adresse du client.** Caddy pose `X-Client-IP` depuis son
-  `client_ip` (proxy Cloudflare de confiance ou DNS seul, selon la configuration), en écrasant
-  toute valeur entrante ; `X-Forwarded-For` n'est jamais lu ; une seule fonction
-  (`src/lib/client-ip.ts`) rend l'adresse, `journal` et le limiteur la reçoivent en paramètre.
+  `client_ip`, en écrasant toute valeur entrante ; `X-Forwarded-For` n'est jamais lu ; une seule
+  fonction (`src/lib/client-ip.ts`) rend l'adresse, `journal` et le limiteur la reçoivent en
+  paramètre. **DNS seul, tranché le 2026-09-18** : le domaine pointe directement sur le serveur,
+  Caddy voit l'adresse réelle et obtient son certificat par le défi HTTP ; le proxy applicatif
+  répond `X-Client-IP-Seen: 1` ou `0` — jamais la valeur — pour que le test de fumée prouve,
+  après chaque déploiement, que l'en-tête arrive.
 - **AD-16 — Protocole de réponse de `/api/chat` et `/api/match`.** Refus préalable en JSON
   `{ok: false, reason}` avec un statut par raison (`invalid_input` 400, `no_visitor` 401,
   `rate_limited` 429, `cap_reached` 503, `model_unavailable` 503) ; flux `text/event-stream` avec

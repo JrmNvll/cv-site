@@ -122,7 +122,11 @@ export type HeroQuestionsClientProps = {
     readonly matchBack: string;
     /** Le lien vers les coordonnées, quand l'assistant renvoie au contact direct. */
     readonly contact: string;
+    /** Le lien vers les mentions, au point de collecte : sous le champ, sous la zone de l'annonce. */
+    readonly privacy: string;
   };
+  /** L'adresse des mentions de la langue courante — une ancre ordinaire, jamais un `Link`. */
+  readonly privacyHref: string;
   /** Les messages d'échec, par `reason` ; `unavailable` pour tout le reste. */
   readonly errors: {
     readonly unavailable: string;
@@ -167,7 +171,14 @@ type State =
 /** Ce vers quoi le focus revient au retour : la puce cliquée, le champ, ou la sixième puce. */
 type Origin = {readonly kind: 'chip'; readonly id: string} | {readonly kind: 'field'} | {readonly kind: 'match'};
 
-export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: HeroQuestionsClientProps) {
+export function HeroQuestionsClient({
+  lang,
+  rows,
+  matchLabel,
+  labels,
+  errors,
+  privacyHref
+}: HeroQuestionsClientProps) {
   const hydrate = useSyncExternalStore(sansAbonnement, surLeNavigateur, surLeServeur);
   // Les seuls libellés formatés au moment de l'affichage : le nombre de
   // sources n'est connu qu'à la fin du flux, le compte de l'annonce change à
@@ -431,46 +442,60 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
     </p>
   );
 
+  // Au point de collecte — sous le champ libre, sous la zone de l'annonce —,
+  // un lien discret vers la page qui dit ce que le site conserve (story 9).
+  // Une ancre ordinaire : la navigation complète journalise la visite (AD-14).
+  const privacy = (
+    <p className="text-[11.5px] text-panel-ink-muted">
+      <a href={privacyHref} className="underline-offset-4 hover:text-panel-ink-soft hover:underline focus-visible:underline">
+        {labels.privacy}
+      </a>
+    </p>
+  );
+
   const field = (
-    <form
-      onSubmit={send}
-      className="mt-3.5 flex items-center gap-3 rounded-md border border-panel-rule bg-panel-sunken px-3 py-2"
-    >
-      <input
-        ref={champ}
-        type="text"
-        name="question"
-        value={question}
-        onChange={(event) => setQuestion(event.target.value)}
-        maxLength={QUESTION_MAX_CHARS}
-        disabled={inactif}
-        autoComplete="off"
-        placeholder={labels.placeholder}
-        aria-label={labels.questionLabel}
-        className="min-w-0 grow bg-transparent text-[14px] text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
-      />
-      <button
-        type="submit"
-        disabled={inactif || question.trim() === ''}
-        aria-label={labels.send}
-        className="shrink-0 cursor-pointer text-panel-accent disabled:cursor-not-allowed disabled:opacity-60"
+    <>
+      <form
+        onSubmit={send}
+        className="mt-3.5 flex items-center gap-3 rounded-md border border-panel-rule bg-panel-sunken px-3 py-2"
       >
-        <svg
-          viewBox="0 0 24 24"
-          width="16"
-          height="16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
+        <input
+          ref={champ}
+          type="text"
+          name="question"
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          maxLength={QUESTION_MAX_CHARS}
+          disabled={inactif}
+          autoComplete="off"
+          placeholder={labels.placeholder}
+          aria-label={labels.questionLabel}
+          className="min-w-0 grow bg-transparent text-[14px] text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
+        />
+        <button
+          type="submit"
+          disabled={inactif || question.trim() === ''}
+          aria-label={labels.send}
+          className="shrink-0 cursor-pointer text-panel-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <line x1="5" y1="12" x2="19" y2="12" />
-          <polyline points="12 5 19 12 12 19" />
-        </svg>
-      </button>
-    </form>
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12 5 19 12 12 19" />
+          </svg>
+        </button>
+      </form>
+      {privacy}
+    </>
   );
 
   if (state.step === 'adForm') {
@@ -514,6 +539,7 @@ export function HeroQuestionsClient({lang, rows, matchLabel, labels, errors}: He
             </button>
           </div>
         </div>
+        {privacy}
       </form>
     );
   }

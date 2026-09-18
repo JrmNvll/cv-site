@@ -48,12 +48,16 @@ test('robots.txt interdit tout', async ({request}) => {
   expect(body).toContain('disallow: /');
 });
 
-test('la visite pose cv_visitor et cv_session en HttpOnly, Secure, SameSite=Lax', async ({
+test('la visite pose cv_visitor et cv_session en HttpOnly, Secure, SameSite=Lax — et aucun autre cookie', async ({
   page,
   context
 }) => {
   await page.goto('/fr');
   const cookies = await context.cookies();
+
+  // Ce que les mentions légales déclarent : deux cookies techniques, et aucun
+  // autre. Le navigateur est la seule preuve qui compte.
+  expect(cookies.map((cookie) => cookie.name).sort()).toEqual(['cv_session', 'cv_visitor']);
 
   const visitor = cookies.find((cookie) => cookie.name === 'cv_visitor');
   const session = cookies.find((cookie) => cookie.name === 'cv_session');

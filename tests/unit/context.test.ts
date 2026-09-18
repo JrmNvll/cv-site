@@ -40,12 +40,15 @@ describe('les règles fixes', () => {
     // Troisième personne, jamais elle-même ; le journal n'est jamais nié ; le téléphone, jamais.
     expect(fr).toMatch(/troisième personne/);
     expect(fr).toMatch(/ne te fais jamais passer pour elle/);
-    expect(fr).toMatch(/Mentions légales & confidentialité/);
+    // La page des mentions, par son titre et son chemin (story 9) — celui de la langue de la réponse.
+    expect(fr).toMatch(/page « Mentions légales & confidentialité » du site \(\/fr\/mentions\)\./);
+    expect(fr).not.toContain('/en/mentions');
     expect(fr).toMatch(/jamais de numéro de téléphone/);
     expect(fr).toMatch(/réponds en français/);
     expect(en).toMatch(/third person/);
     expect(en).toMatch(/never impersonate/);
-    expect(en).toMatch(/Legal notice & privacy/);
+    expect(en).toMatch(/"Legal notice & privacy" page \(\/en\/mentions\)\./);
+    expect(en).not.toContain('/fr/mentions');
     expect(en).toMatch(/never give out a phone number/);
     expect(en).toMatch(/answer in English/);
     // Hors périmètre : selon sys-*, sans bloc sources.

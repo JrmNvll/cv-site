@@ -106,10 +106,12 @@ nulle part ailleurs. `eslint.config.mjs` en tire les règles de lint,
 | `src/knowledge/` | Index de récupération lexicale par langue, noyau, index des titres |
 | `src/agent/` | `ask()` / `match()`, passerelle Anthropic, plafond de dépense, citations |
 | `src/journal/` | Seul propriétaire de `usage.db` : visiteurs, sessions, échanges |
-| `src/app/`, `src/proxy.ts` | Routes, cookies, i18n, rendu — deux racines : `(site)` (le CV, `[locale]`, journalisé) et `(admin)` (`/admin`, français, jamais journalisé) ; `global-not-found.tsx`, la 404 de toute URL sans route |
+| `src/app/`, `src/proxy.ts` | Routes, cookies, i18n, rendu — deux racines : `(site)` (le CV, `[locale]`, les deux pages de prose `comment/` et `mentions/`, journalisées) et `(admin)` (`/admin`, français, jamais journalisé) ; `global-not-found.tsx`, la 404 de toute URL sans route |
 | `src/env.ts`, `src/lib/`, `src/i18n/` | Code partagé — n'importe **aucune** couche |
 | `src/instrumentation.ts`, `src/lib/startup.ts` | Amorçage : configuration, contenu, connaissance, puis journal, avant la première requête |
 | `messages/` | Textes d'interface `fr` / `en` |
+| `docs/` | [`decisions.md`](./docs/decisions.md) : les dix-sept décisions d'architecture (AD-1 à AD-17), titre et règle en une ligne chacune — ce que les commentaires `AD-n` du code désignent |
+| `raw-text-loader.cjs` | À la racine, avec la configuration : le chargeur qui inline un `.md` du projet comme chaîne au build (les textes des pages de prose) |
 | `scripts/` | Outils de maintenance hors application (`check:content`) |
 | `tests/fixtures/content/` | Contenu **fictif** : les tests ne tournent que dessus |
 | `tests/fixtures/data/` | `DATA_DIR` des tests navigateur, créé par `playwright.config.ts`, ignoré par Git |
@@ -159,7 +161,11 @@ Ce qu'il faut savoir :
   compteurs, `cost_micro_usd`, `latency_ms`), qui n'atteint qu'une ligne
   `pending` ; et les trois choses que l'administrateur écrit, `visitor.name`,
   `visitor.note` et `ip_label.label` (avec son `at`). « Retirer » un nom ou une
-  étiquette écrit une chaîne vide, rien n'est supprimé.
+  étiquette écrit une chaîne vide, rien n'est supprimé. C'est l'**application**
+  qui n'efface rien : un droit à l'effacement s'exerce hors d'elle — sur
+  demande, Jérémie efface à la main les données liées à la visite concernée et
+  consigne cet effacement, ce que la page « Mentions légales & confidentialité »
+  déclare.
   `tests/unit/journal.test.ts` relit les sources de `src/journal/` et y refuse
   `DELETE`, `DROP`, `TRUNCATE` et `REPLACE` — même en commentaire — ainsi que
   tout `UPDATE` qui ne soit pas l'une de ces quatre formes exactes :
@@ -299,10 +305,78 @@ chemins de fichiers.
 langue que la page demande, et rend le corps de l'entrée **tel qu'écrit**, en
 Markdown, rendu côté client par un sous-ensemble maîtrisé
 ([`markdown.tsx`](./src/app/(site)/[locale]/_components/markdown.tsx) : paragraphes,
-listes, gras, italique — tout le reste en texte, jamais de HTML injecté). Une
+listes, gras, italique, titres `##`/`###` et liens vers une adresse sûre —
+`http(s)://` absolue ou chemin `/…` du site, avec `rel="nofollow noopener
+noreferrer"` ; tout le reste — `mailto:`, `javascript:`, images, code, HTML —
+en texte, jamais de HTML injecté). Une
 entrée `PRIVÉ`, `PASSE` ou vide vaut `404`. Sans JavaScript, les six puces et
 le champ libre restent désactivés ; la sixième (l'annonce à coller) ouvre,
 une fois hydratée, la zone de l'évaluation d'adéquation (voir plus bas).
+
+## Les deux pages de prose, et le pied de page
+
+`/fr/comment` et `/en/comment` (« Comment ce site est construit ») et
+`/fr/mentions` et `/en/mentions` (« Mentions légales & confidentialité »)
+sont les deux pages que CAP-9 promet : la méthode, l'ancrage, les garde-fous et
+le traitement des données lisibles sans interroger l'assistant ; et la page
+vers laquelle l'assistant renvoie (règle 6 du prompt, AD-4) quand on l'interroge
+sur les données. Un **pied de page** commun aux trois pages porte les deux liens
+— des ancres ordinaires, pas des `Link` : une navigation complète, pour que
+chaque page soit une visite journalisée (AD-14).
+
+**Toute navigation du site est complète**, pour la même raison : la bascule de
+langue est elle aussi une ancre depuis la story 9 (`language-switch.tsx`,
+`localeHref`). Un `Link` ne rejouait pas la racine du site — `<html lang>`
+gardait la langue d'origine sous un texte dans l'autre, et la visite n'était pas
+journalisée ; le report de la story 4 sur la « navigation douce » est clos par
+là. Il n'y a plus aucune navigation côté client dans le site.
+
+Leurs textes ne sont ni des messages d'interface ni du contenu privé : un
+**fichier Markdown par page et par langue**, à côté de la page
+(`comment/comment.fr.md`, `comment.en.md`, `mentions/mentions.fr.md`,
+`mentions.en.md`), qui se relit comme un document. Il arrive par un import
+statique de texte : `next.config.ts` passe `*.md` par
+[`raw-text-loader.cjs`](./raw-text-loader.cjs) — **deux règles jumelles**, une
+pour Turbopack (le défaut), une pour webpack (`next build --webpack`), à faire
+évoluer ensemble — et le texte est inliné dans le bundle : il survit au build
+autonome, rien n'est lu sur le disque à la requête.
+
+Le rendu est celui du panneau (`renderMarkdown`), avec **deux extensions
+demandées explicitement** et pour ces deux pages seulement : les titres
+`##`/`###` et les liens vers une adresse sûre. Partout ailleurs — le panneau de
+l'assistant, l'admin — titres et liens restent du texte : un lien ou un titre
+émis par le modèle, une annonce collée pouvant en contenir, n'y devient ni
+cliquable ni un titre de la page. Le `h1`, le titre de l'onglet et la
+description viennent de `messages/` (`pages.comment.*`, `pages.mentions.*`,
+`footer.*`).
+
+Ces textes ne portent **aucune donnée personnelle** (AD-2) : le nom y est une
+marque, `{name}`, remplie à la requête depuis la projection d'affichage — la
+même source que la barre —, et l'hébergeur `{hebergeur}`, rempli depuis
+`HOSTING_PROVIDER` dans `mentions/page.tsx` ; tant qu'elle est vide, la phrase
+se passe du nom (`prose-template.ts`). Ils ne disent rien d'autre que ce que la
+page CV montre déjà : `tests/unit/page-projection.test.ts` y cherche aussi les
+valeurs de la fixture, et `tests/unit/prose-pages.test.ts` vérifie qu'ils se
+rendent entièrement, que le français et l'anglais ont la même structure, que
+les mentions déclarent chaque rubrique exigée, que leurs chiffres sont ceux des
+constantes du code (durée des cookies, entrées récupérées, plafond, modèle),
+et qu'aucun nom ni aucune coordonnée n'y figure.
+
+Le courriel des mentions ne fait pas exception à AD-8 : c'est le même bouton
+`ContactReveal` que la section Contact, inséré après le Markdown, sous la
+rubrique « Contact » — absent du HTML servi, absent sans JavaScript, où le texte
+renvoie aux profils LinkedIn et GitHub de la page CV. La barre et le pied de
+page viennent de `PageFrame`, la coquille partagée par les trois pages ; les
+deux pages de prose sortent de la fabrique `prosePage`, qui porte tout ce
+qu'elles ont en commun — langue, métadonnées, coquille, remplissage des
+marques — et les réduit à leurs textes. Un lien discret vers les mentions
+figure aussi **au point de collecte**, sous le champ libre et sous la zone de
+l'annonce.
+`tests/e2e/pages.spec.ts` prouve tout cela contre l'artefact de production :
+rubriques en `h2` lues dans les fichiers Markdown, `noindex`, `lang`, le
+sélecteur de langue qui vise `/en/comment` depuis `/fr/comment`, le bouton du
+courriel et son absence sans JavaScript, la visite journalisée, la 404 du site
+sous un chemin inconnu ; `no-leak.spec.ts` relit les quatre URL.
 
 ## L'assistant : ancrage, passerelle, plafond
 
@@ -466,7 +540,9 @@ ci-dessus.
 - Aucun secret, aucune donnée personnelle réelle dans le dépôt.
 - Aucune valeur de configuration en dur : tout passe par `src/env.ts`.
 - Les décisions d'architecture (AD-1 à AD-17) se suivent ; une divergence se
-  remonte, elle ne se décide pas localement.
+  remonte, elle ne se décide pas localement. Leur lecture publique est dans
+  [`docs/decisions.md`](./docs/decisions.md) — c'est ce que les commentaires
+  `AD-n` du code désignent.
 
 ## Dépendance native : `sharp`
 

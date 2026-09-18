@@ -63,7 +63,9 @@ langues:
   - langue: {fr: Français, en: French}
     niveau: {fr: langue maternelle, en: native}
   - langue: {fr: Anglais, en: English}
-    niveau: {fr: professionnel, en: professional}
+    # Une valeur distinctive : « professional » seul est un mot que toute prose
+    # anglaise peut employer, et `page-projection.test.ts` cherche chaque valeur.
+    niveau: {fr: usage professionnel, en: working proficiency}
 
 competences:
   # `items` sous ses deux formes : liste simple, et paire {fr, en}.

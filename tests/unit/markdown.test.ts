@@ -6,16 +6,25 @@
  * qu'écrit ; et rien de ce qu'un corps contient ne peut devenir du HTML — il
  * n'y a pas de HTML brut dans le corpus, mais le rendu ne doit pas en dépendre.
  *
+ * Depuis la story 9, deux extensions **sur demande** — titres et liens sûrs —
+ * pour les pages de prose : `prose()` les active, `html()` est le rendu par
+ * défaut, celui du panneau et de l'admin, où tout cela reste du texte.
+ *
  * Le rendu est comparé sous sa forme HTML statique : c'est ce que le navigateur
  * reçoit, échappement compris.
  */
 import {createElement, Fragment} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe, expect, it} from 'vitest';
-import {renderMarkdown} from '@/app/(site)/[locale]/_components/markdown';
+import {isSafeHref, renderMarkdown, type MarkdownOptions} from '@/app/(site)/[locale]/_components/markdown';
 
-function html(text: string): string {
-  return renderToStaticMarkup(createElement(Fragment, null, renderMarkdown(text)));
+function html(text: string, options?: MarkdownOptions): string {
+  return renderToStaticMarkup(createElement(Fragment, null, renderMarkdown(text, options)));
+}
+
+/** Le rendu des pages de prose : titres et liens reconnus. */
+function prose(text: string): string {
+  return html(text, {headings: true, links: true});
 }
 
 describe('paragraphes', () => {
@@ -118,12 +127,159 @@ describe('gras et italique', () => {
   });
 });
 
+describe('titres (story 9)', () => {
+  it('rend `##` en h2 et `###` en h3, chacun un bloc à lui seul', () => {
+    expect(prose('## Une section')).toBe('<h2>Une section</h2>');
+    expect(prose('### Un sous-titre')).toBe('<h3>Un sous-titre</h3>');
+    expect(prose('Intro.\n## Section\nSuite.')).toBe('<p>Intro.</p><h2>Section</h2><p>Suite.</p>');
+  });
+
+  it('ferme une liste, et tolère les dièses de fermeture', () => {
+    expect(prose('- a\n## Titre\n- b')).toBe('<ul><li>a</li></ul><h2>Titre</h2><ul><li>b</li></ul>');
+    expect(prose('## Titre ##')).toBe('<h2>Titre</h2>');
+    expect(prose('  ## Titre')).toBe('<h2>Titre</h2>');
+  });
+
+  it('connaît le gras et les liens dans un titre', () => {
+    expect(prose('## Des **garde-fous** en [dollars](/fr/mentions)')).toBe(
+      '<h2>Des <strong>garde-fous</strong> en <a href="/fr/mentions" rel="nofollow noopener noreferrer">dollars</a></h2>'
+    );
+  });
+
+  it('laisse en texte un dièse seul, quatre dièses, un dièse collé, sans texte ou fait de dièses', () => {
+    expect(prose('# Titre')).toBe('<p># Titre</p>');
+    expect(prose('#### Titre')).toBe('<p>#### Titre</p>');
+    expect(prose('##Titre')).toBe('<p>##Titre</p>');
+    expect(prose('##')).toBe('<p>##</p>');
+    expect(prose('## ')).toBe('<p>##</p>');
+    // Un titre qui ne serait fait que de dièses : un paragraphe, pas un `h2` vide.
+    expect(prose('## ##')).toBe('<p>## ##</p>');
+    expect(prose('## #')).toBe('<p>## #</p>');
+    expect(prose('### ###')).toBe('<p>### ###</p>');
+  });
+
+  it('ne reconnaît aucun titre sans lʼoption : le panneau et lʼadmin rendent `##` en texte', () => {
+    expect(html('## Une section')).toBe('<p>## Une section</p>');
+    expect(html('Intro.\n## Section\nSuite.')).toBe('<p>Intro.\n## Section\nSuite.</p>');
+    expect(html('## Une section', {links: true})).toBe('<p>## Une section</p>');
+    expect(html('## Une section', {headings: false})).toBe('<p>## Une section</p>');
+  });
+});
+
+describe('liens sûrs (story 9)', () => {
+  const rel = 'rel="nofollow noopener noreferrer"';
+
+  it('rend un lien `https://` et `http://` absolu, avec `rel` et sans `target`', () => {
+    expect(prose('voir [le code](https://exemple.invalid/depot) ici')).toBe(
+      `<p>voir <a href="https://exemple.invalid/depot" ${rel}>le code</a> ici</p>`
+    );
+    expect(prose('[x](http://exemple.invalid)')).toBe(`<p><a href="http://exemple.invalid" ${rel}>x</a></p>`);
+    expect(prose('[x](HTTPS://exemple.invalid)')).toBe(`<p><a href="HTTPS://exemple.invalid" ${rel}>x</a></p>`);
+    expect(prose('[x](https://exemple.invalid)')).not.toContain('target=');
+  });
+
+  it('rend un chemin du site, ancre et requête comprises', () => {
+    expect(prose('les [mentions légales](/fr/mentions).')).toBe(
+      `<p>les <a href="/fr/mentions" ${rel}>mentions légales</a>.</p>`
+    );
+    expect(prose('[contact](/fr#contact)')).toBe(`<p><a href="/fr#contact" ${rel}>contact</a></p>`);
+    expect(prose('[x](/en/comment?y=1)')).toBe(`<p><a href="/en/comment?y=1" ${rel}>x</a></p>`);
+    expect(prose('[x](/)')).toBe(`<p><a href="/" ${rel}>x</a></p>`);
+  });
+
+  it('rend un lien dans un item de liste, et le gras dans un texte de lien', () => {
+    expect(prose('- [**a** b](/fr)')).toBe(`<ul><li><a href="/fr" ${rel}><strong>a</strong> b</a></li></ul>`);
+    expect(prose('**[gras](/fr)**')).toBe(`<p><strong><a href="/fr" ${rel}>gras</a></strong></p>`);
+  });
+
+  it.each([
+    ['mailto:', '[x](mailto:a@exemple.invalid)'],
+    ['javascript:', '[x](javascript:alert(1))'],
+    ['JavaScript: en capitales', '[x](JAVASCRIPT:alert(1))'],
+    ['data:', '[x](data:text/html;base64,PHNjcmlwdD4=)'],
+    ['ftp://', '[x](ftp://exemple.invalid)'],
+    ['tel:', '[x](tel:+41000000000)'],
+    ['une adresse relative au protocole', '[x](//exemple.invalid)'],
+    // Le navigateur normalise `\\` en `/` : `/\\evil.com` mènerait à `//evil.com`.
+    ['une barre oblique inverse après la barre', '[x](/\\evil.com)'],
+    ['une barre oblique inverse au milieu', '[x](/fr\\mentions)'],
+    ['une barre oblique inverse dans une adresse absolue', '[x](https://exemple.invalid/a\\b)'],
+    // Un caractère de contrôle se laisse ignorer par l'analyseur d'URL.
+    ['une tabulation', '[x](/fr\tmentions)'],
+    ['un caractère nul', `[x](/fr${String.fromCharCode(0)}mentions)`],
+    ['un retour chariot', `[x](https://exemple.invalid/${String.fromCharCode(13)}x)`],
+    ['DEL', `[x](/fr${String.fromCharCode(127)})`],
+    ['un chemin relatif', '[x](page.html)'],
+    ['un chemin avec une espace', '[x](/fr/une page)'],
+    ['une adresse vide', '[x]()'],
+    ['un texte vide', '[](/fr)'],
+    ['une parenthèse jamais fermée', '[x](/fr'],
+    ['un crochet jamais fermé', '[x(/fr)'],
+    ['une espace entre crochet et parenthèse', '[x] (/fr)']
+  ])('laisse en texte %s', (_label, source) => {
+    const rendu = prose(source);
+    expect(rendu).not.toContain('<a ');
+    expect(rendu).not.toContain('href');
+    expect(rendu.startsWith('<p>')).toBe(true);
+  });
+
+  it('refuse une adresse portant une barre oblique inverse ou un caractère de contrôle, où que ce soit', () => {
+    expect(isSafeHref('/fr/mentions')).toBe(true);
+    expect(isSafeHref('https://exemple.invalid/x')).toBe(true);
+    expect(isSafeHref('/\\evil.com')).toBe(false);
+    expect(isSafeHref('\\evil.com')).toBe(false);
+    expect(isSafeHref('/fr\\x')).toBe(false);
+    expect(isSafeHref('https://exemple.invalid\\@evil.com')).toBe(false);
+    for (const code of [0, 1, 9, 10, 13, 27, 31, 127]) {
+      expect(isSafeHref(`/fr${String.fromCharCode(code)}x`), `code ${code}`).toBe(false);
+      expect(isSafeHref(`https://exemple.invalid/${String.fromCharCode(code)}`), `code ${code}`).toBe(false);
+    }
+  });
+
+  it('ne rend aucun lien sans lʼoption : le panneau et lʼadmin gardent `[texte](adresse)` en texte', () => {
+    expect(html('voir [le code](https://exemple.invalid) ici')).toBe('<p>voir [le code](https://exemple.invalid) ici</p>');
+    expect(html('[x](/fr/mentions)')).toBe('<p>[x](/fr/mentions)</p>');
+    expect(html('[x](/fr/mentions)', {headings: true})).toBe('<p>[x](/fr/mentions)</p>');
+    expect(html('[x](/fr/mentions)', {links: false})).toBe('<p>[x](/fr/mentions)</p>');
+    // Une annonce collée peut en porter : rien n'y devient cliquable.
+    expect(html('- Postuler : [ici](https://exemple.invalid/postuler)')).not.toContain('<a ');
+  });
+
+  it('ne ferme pas une emphase à lʼintérieur dʼun lien : le lien reste entier dans lʼitalique', () => {
+    expect(prose('_a [b](/x_) c_')).toBe(`<p><em>a <a href="/x_" ${rel}>b</a> c</em></p>`);
+    expect(prose('*a [b](https://exemple.invalid/x*y) c*')).toBe(
+      `<p><em>a <a href="https://exemple.invalid/x*y" ${rel}>b</a> c</em></p>`
+    );
+    expect(prose('**a [b](/x**) c**')).toBe(`<p><strong>a <a href="/x**" ${rel}>b</a> c</strong></p>`);
+    // Sans fermeture après le lien, rien ne s'ouvre : tout reste en texte, le lien compris.
+    expect(prose('_a [b](/x_) c')).toBe(`<p>_a <a href="/x_" ${rel}>b</a> c</p>`);
+    // Sans l'option, le lien est du texte et l'emphase se ferme comme avant.
+    expect(html('_a [b](/x_) c_')).toBe('<p><em>a [b](/x</em>) c_</p>');
+  });
+
+  it('nʼimbrique jamais un lien dans un lien', () => {
+    expect(prose('[a [b](/x) c](/y)')).toBe(`<p>[a <a href="/x" ${rel}>b</a> c](/y)</p>`);
+  });
+
+  it('échappe une adresse qui tente de sortir de lʼattribut, et refuse une parenthèse', () => {
+    const rendu = prose('[x](/fr"onmouseover="alert)');
+    expect(rendu).toBe(`<p><a href="/fr&quot;onmouseover=&quot;alert" ${rel}>x</a></p>`);
+    expect(rendu).not.toContain('"onmouseover=');
+    // Une parenthèse ferme le lien : ce qui la porte n'est pas une adresse.
+    expect(prose('[x](/fr"onmouseover="alert(1))')).toBe('<p>[x](/fr&quot;onmouseover=&quot;alert(1))</p>');
+  });
+
+  it('nʼest jamais une image', () => {
+    expect(prose('![photo](https://exemple.invalid/x.jpg)')).toBe('<p>![photo](https://exemple.invalid/x.jpg)</p>');
+  });
+});
+
 describe('tout le reste est du texte', () => {
   it.each([
-    ['un titre', '# Titre', '<p># Titre</p>'],
+    ['un titre de premier niveau', '# Titre', '<p># Titre</p>'],
     ['une citation', '> citée', '<p>&gt; citée</p>'],
     ['du code', 'appeler `f()`', '<p>appeler `f()`</p>'],
-    ['un lien', '[site](https://exemple.invalid)', '<p>[site](https://exemple.invalid)</p>'],
+    ['un lien mailto', '[site](mailto:x@exemple.invalid)', '<p>[site](mailto:x@exemple.invalid)</p>'],
     ['une image', '![photo](x.jpg)', '<p>![photo](x.jpg)</p>'],
     ['un filet', 'avant\n\n---\n\naprès', '<p>avant</p><p>---</p><p>après</p>']
   ])('affiche %s tel quʼécrit', (_label, source, attendu) => {

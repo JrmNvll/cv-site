@@ -40,14 +40,18 @@ const display = Object.fromEntries(
   LANGS.map((lang) => [lang, buildProjections(cv, lang, {hasPhoto: true, now: NOW}).display])
 );
 
-/** Toutes les sources de la page, y compris ses composants. */
+/**
+ * Toutes les sources de la page, y compris ses composants — et les textes
+ * Markdown des deux pages de prose (story 9), qui ne doivent rien dire que
+ * la page CV ne montre déjà.
+ */
 function pageSources(): {path: string; source: string}[] {
   const found: {path: string; source: string}[] = [];
   const walk = (directory: string) => {
     for (const entry of readdirSync(directory)) {
       const path = join(directory, entry);
       if (statSync(path).isDirectory()) walk(path);
-      else if (/\.tsx?$/.test(entry)) {
+      else if (/\.(tsx?|md)$/.test(entry)) {
         found.push({
           // Séparateurs normalisés : le test doit dire la même chose sous
           // Windows et sous Linux.
@@ -123,14 +127,19 @@ describe('aucun texte de CV nʼest écrit dans un composant', () => {
       }))
     );
 
-    // Seule `page.tsx` atteint la couche `content` à l'exécution ; les autres
-    // n'en tirent qu'un type. Et elle n'en tire que `displayProjection` : ni
-    // `agentProjection`, ni `corpus`, ni `contactPhone`, ni `photo()` n'ont
-    // quoi que ce soit à faire dans un rendu de page (AD-8).
+    // Deux fichiers atteignent la couche `content` à l'exécution : `page.tsx`
+    // pour le corps du CV, et la fabrique `_components/prose-page.tsx` pour
+    // le nom — dans la barre et dans les textes (story 9) ; les autres n'en
+    // tirent qu'un type, et les deux pages de prose n'en tirent rien — leurs
+    // textes ne viennent pas du contenu. Ni l'un ni l'autre ne tire autre
+    // chose que `displayProjection` : ni `agentProjection`, ni `corpus`, ni
+    // `contactPhone`, ni `photo()` n'ont quoi que ce soit à faire dans un
+    // rendu de page (AD-8).
+    const LECTEURS = ['page.tsx', '_components/prose-page.tsx'];
     const versContent = imports.filter((entry) => entry.specifier.includes('@/content'));
     expect(versContent.map((entry) => entry.path).sort()).toEqual(
       [
-        'page.tsx',
+        ...LECTEURS,
         '_components/career-section.tsx',
         '_components/education-section.tsx',
         '_components/identity-heading.tsx',
@@ -140,30 +149,41 @@ describe('aucun texte de CV nʼest écrit dans un composant', () => {
         '_components/skills-section.tsx'
       ].sort()
     );
+    for (const path of ['comment/page.tsx', 'mentions/page.tsx']) {
+      expect(sources.map((file) => file.path)).toContain(path);
+      expect(versContent.map((entry) => entry.path)).not.toContain(path);
+    }
 
-    const page = sources.find((file) => file.path === 'page.tsx')!.source;
-    // Import différé, et non statique : `@/content` entraîne `@/env`, dont le
-    // parsage a lieu au chargement du module — un import statique ferait
-    // réclamer une clé API au `next build` (voir le commentaire de `page.tsx`).
-    expect(page).toContain("await import('@/content')");
-    expect(page).not.toMatch(/from\s+['"]@\/content['"]/);
+    for (const lecteur of LECTEURS) {
+      const page = sources.find((file) => file.path === lecteur)!.source;
+      // Import différé, et non statique : `@/content` entraîne `@/env`, dont le
+      // parsage a lieu au chargement du module — un import statique ferait
+      // réclamer une clé API au `next build` (voir le commentaire de `page.tsx`).
+      expect(page, lecteur).toContain("await import('@/content')");
+      expect(page, lecteur).not.toMatch(/from\s+['"]@\/content['"]/);
+      for (const interdit of [
+        'agentProjection',
+        'corpus',
+        'qaEntry',
+        'contactPhone',
+        'referenceContact',
+        'photo('
+      ]) {
+        expect(page.includes(interdit), `${lecteur} ne doit pas appeler ${interdit}`).toBe(false);
+      }
+    }
     // Et le rendu reste à la requête (AD-2) : sans cet export, Next pré-rendrait
-    // `/fr` et `/en` au build, contenu figé dans l'artefact.
-    expect(page).toMatch(/export const dynamic = 'force-dynamic'/);
-    for (const interdit of [
-      'agentProjection',
-      'corpus',
-      'qaEntry',
-      'contactPhone',
-      'referenceContact',
-      'photo('
-    ]) {
-      expect(page.includes(interdit), `page.tsx ne doit pas appeler ${interdit}`).toBe(false);
+    // les pages au build, contenu figé dans l'artefact — pour la page CV comme
+    // pour les deux pages de prose, dont la barre porte le nom.
+    for (const path of ['page.tsx', 'comment/page.tsx', 'mentions/page.tsx']) {
+      expect(sources.find((file) => file.path === path)!.source, path).toMatch(
+        /export const dynamic = 'force-dynamic'/
+      );
     }
 
     // Les autres composants ne reçoivent que des **types** : un `import type`
     // disparaît à la compilation, donc rien n'y lit le contenu.
-    for (const entry of versContent.filter((item) => !item.path.endsWith('page.tsx'))) {
+    for (const entry of versContent.filter((item) => !LECTEURS.includes(item.path))) {
       const source = sources.find((file) => file.path === entry.path)!.source;
       expect(source, `${entry.path} nʼimporte que des types de @/content`).toContain(
         "import type {DisplayProjection} from '@/content'"

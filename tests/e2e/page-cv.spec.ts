@@ -653,24 +653,34 @@ test.describe('le thème sombre', () => {
   });
 });
 
-test('le sélecteur de langue pointe vers la même page dans lʼautre langue — à la racine, faute dʼautre page', async ({
+test('le sélecteur de langue pointe vers la même page dans lʼautre langue — à la racine, par une ancre ordinaire', async ({
   page
 }) => {
-  // Constat reporté de la story 1 : `href="/"` renvoyait à la racine. Tant que
-  // le site n'a qu'une page, `href={pathname}` et `href="/"` produisent le même
-  // attribut : ce test ne distingue pas les deux. La preuve viendra avec la
-  // première page secondaire (story 9), consignée dans `deferred-work.md`.
+  // Constat reporté de la story 1 : `href="/"` renvoyait à la racine. Sur la
+  // page CV, le chemin sans préfixe vaut `/` : `/en` et `/fr`, sans barre
+  // finale. La preuve depuis une page secondaire est apportée par
+  // `pages.spec.ts` (story 9) : sur `/fr/comment`, le lien EN vise
+  // `/en/comment` — report de la story 3 clos. Et c'est une ancre ordinaire,
+  // pas un `Link` (report de la story 4 clos) : la bascule est un chargement
+  // complet, `<html lang>` suit, la visite est journalisée.
   await page.goto('/fr/chemin-inexistant');
   const lien = page.getByRole('link', {name: messages.en.languages.en});
   await expect(lien).toHaveCount(0);
 
   await page.goto('/fr');
-  await expect(page.getByRole('link', {name: messages.en.languages.en})).toHaveAttribute(
-    'href',
-    '/en'
-  );
+  const versEn = page.getByRole('link', {name: messages.en.languages.en});
+  await expect(versEn).toHaveAttribute('href', '/en');
   await expect(page.getByRole('link', {name: messages.fr.languages.fr})).toHaveAttribute(
     'href',
     '/fr'
   );
+
+  const document = page.waitForResponse(
+    (response) => response.url().endsWith('/en') && response.request().resourceType() === 'document'
+  );
+  await versEn.click();
+  expect((await document).status()).toBe(200);
+  await expect(page).toHaveURL(/\/en$/);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('heading', {level: 1})).toHaveText(display.en.identite.titre);
 });

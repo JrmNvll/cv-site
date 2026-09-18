@@ -120,12 +120,36 @@ describe('catalogues de messages', () => {
           'assistant.matchPlaceholder',
           'assistant.matchSend',
           'assistant.matchCount',
-          'assistant.matchBack'
+          'assistant.matchBack',
+          // Les deux pages de prose et le pied de page (story 9) : le lien, le
+          // titre et la description de chacune.
+          'footer.label',
+          'footer.comment',
+          'footer.mentions',
+          'pages.comment.title',
+          'pages.comment.description',
+          'pages.mentions.title',
+          'pages.mentions.description'
         ])
       );
       // Tout répond une fois hydraté : la ligne d'état « pas encore » n'a plus d'objet.
       expect(keys).not.toContain('assistant.inactive');
     }
+  });
+
+  /**
+   * Le lien du pied de page et le titre de la page qu'il ouvre disent la même
+   * chose ; et la règle 6 du prompt nomme la page des mentions par ce titre
+   * (AD-4) : `tests/unit/context.test.ts` vérifie le prompt, ceci le catalogue.
+   */
+  it('nomme les pages de prose du même nom dans le pied de page et dans leur titre', () => {
+    for (const locale of Object.keys(catalogs)) {
+      for (const page of ['comment', 'mentions']) {
+        expect(valueAt(catalogs[locale]!, `footer.${page}`)).toBe(valueAt(catalogs[locale]!, `pages.${page}.title`));
+      }
+    }
+    expect(valueAt(catalogs.fr!, 'pages.mentions.title')).toBe('Mentions légales & confidentialité');
+    expect(valueAt(catalogs.en!, 'pages.mentions.title')).toBe('Legal notice & privacy');
   });
 
   it('compte les caractères de lʼannonce par deux paramètres ICU, sans chiffre écrit', () => {

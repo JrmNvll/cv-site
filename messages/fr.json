@@ -99,5 +99,20 @@
   "notFound": {
     "heading": "Page introuvable",
     "body": "Cette adresse ne correspond à rien sur ce site."
+  },
+  "footer": {
+    "label": "À propos du site",
+    "comment": "Comment ce site est construit",
+    "mentions": "Mentions légales & confidentialité"
+  },
+  "pages": {
+    "comment": {
+      "title": "Comment ce site est construit",
+      "description": "La source unique, l'ancrage de l'assistant, les garde-fous, ce que le site conserve, la technique et la méthode derrière ce CV."
+    },
+    "mentions": {
+      "title": "Mentions légales & confidentialité",
+      "description": "Qui publie ce site, les cookies, ce qui est conservé de votre visite et pourquoi, ce qui est transmis, vos droits."
+    }
   }
 }

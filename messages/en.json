@@ -99,5 +99,20 @@
   "notFound": {
     "heading": "Page not found",
     "body": "This address matches nothing on this site."
+  },
+  "footer": {
+    "label": "About this site",
+    "comment": "How this site is built",
+    "mentions": "Legal notice & privacy"
+  },
+  "pages": {
+    "comment": {
+      "title": "How this site is built",
+      "description": "The single source of truth, the assistant's grounding, the guardrails, what the site keeps, the technology and the method behind this CV."
+    },
+    "mentions": {
+      "title": "Legal notice & privacy",
+      "description": "Who publishes this site, the cookies, what is kept of your visit and why, what is passed on, your rights."
+    }
   }
 }

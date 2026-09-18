@@ -117,34 +117,45 @@ test('couvre chaque chemin hors HTML : aucun ne doit être muet', () => {
   expect(muets).toEqual([]);
 });
 
+/**
+ * La page CV et, depuis la story 9, les deux pages de prose — qui portent la
+ * même barre (le nom) et, sur les mentions, le bouton du courriel : le
+ * courriel y reste hors du HTML comme partout ailleurs (AD-8).
+ */
+const DOCUMENTS = ['', '/comment', '/mentions'] as const;
+
 for (const locale of LANGS) {
-  test(`/${locale} ne sert ni téléphone, ni adresse, ni tiers, ni chemin de fichier`, async ({
-    request
-  }) => {
-    const reponse = await request.get(`/${locale}`);
-    expect(reponse.status()).toBe(200);
-    const html = deseschappe(await reponse.text());
+  for (const chemin of DOCUMENTS) {
+    test(`/${locale}${chemin} ne sert ni téléphone, ni courriel, ni adresse, ni tiers, ni chemin de fichier`, async ({
+      request
+    }) => {
+      const reponse = await request.get(`/${locale}${chemin}`);
+      expect(reponse.status()).toBe(200);
+      const html = deseschappe(await reponse.text());
 
-    expect(sentinelles.filter((value) => html.includes(value))).toEqual([]);
-  });
+      expect(sentinelles.filter((value) => html.includes(value))).toEqual([]);
+    });
 
-  test(`/${locale} ne divulgue pas lʼarborescence du contenu privé`, async ({request}) => {
-    const html = await (await request.get(`/${locale}`)).text();
+    test(`/${locale}${chemin} ne divulgue pas lʼarborescence du contenu privé`, async ({request}) => {
+      const html = await (await request.get(`/${locale}${chemin}`)).text();
 
-    // Ni le répertoire de contenu, ni le chemin de la photo, ni la moindre
-    // arborescence de fichier : la photo passe par `/api/photo`, et rien d'autre.
-    // Le chemin Windows sous ses deux formes : brut, et échappé dans du JSON.
-    for (const trace of [
-      'CONTENT_DIR',
-      'fixtures/content',
-      'fixtures\\content',
-      'fixtures\\\\content',
-      'assets/'
-    ]) {
-      expect(html, `« ${trace} » ne doit pas figurer dans le document`).not.toContain(trace);
-    }
-    expect(html).toContain('/api/photo');
-  });
+      // Ni le répertoire de contenu, ni le chemin de la photo, ni la moindre
+      // arborescence de fichier : la photo passe par `/api/photo`, et rien d'autre.
+      // Le chemin Windows sous ses deux formes : brut, et échappé dans du JSON.
+      for (const trace of [
+        'CONTENT_DIR',
+        'fixtures/content',
+        'fixtures\\content',
+        'fixtures\\\\content',
+        'assets/'
+      ]) {
+        expect(html, `« ${trace} » ne doit pas figurer dans le document`).not.toContain(trace);
+      }
+      // La photo n'est que sur la page CV ; les pages de prose n'en montrent pas.
+      if (chemin === '') expect(html).toContain('/api/photo');
+      else expect(html).not.toContain('/api/photo');
+    });
+  }
 }
 
 test('les en-têtes des routes ne portent rien non plus', async ({request}) => {

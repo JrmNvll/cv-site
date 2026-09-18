@@ -29,7 +29,10 @@ export async function generateMetadata({
   });
 
   return {
-    title: t('title'),
+    // La page CV garde le titre du site ; une page secondaire (story 9) y
+    // ajoute le sien devant : « Mentions légales & confidentialité — CV
+    // interrogeable ».
+    title: {default: t('title'), template: `%s — ${t('title')}`},
     description: t('description'),
     // AD-11 : la balise est répétée par l'application, en plus de l'en-tête
     // `X-Robots-Tag` posé par Caddy. Redondance voulue.

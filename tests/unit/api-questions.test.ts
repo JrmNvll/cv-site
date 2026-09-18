@@ -8,7 +8,7 @@
  * le contenu fictif réel et la base réelle est celle de
  * `tests/e2e/questions.spec.ts`, contre l'artefact de production.
  */
-import {readdirSync, readFileSync, statSync} from 'node:fs';
+import {existsSync, readdirSync, readFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {NextRequest} from 'next/server';
@@ -349,20 +349,31 @@ describe('le journal observe, il ne conditionne pas', () => {
 describe('aucun appel au modèle', () => {
   const ROOT = fileURLToPath(new URL('../../src', import.meta.url));
 
+  // Les `.md` aussi : les textes des pages de prose sont inlinés dans `app`
+  // au build (story 9). Ils nomment le fournisseur du modèle — c'est leur
+  // objet — et sont la seule exception, en liste fermée.
   function sources(directory: string, found: string[] = []): string[] {
     for (const entry of readdirSync(directory)) {
       const path = join(directory, entry);
       if (statSync(path).isDirectory()) sources(path, found);
-      else if (/\.tsx?$/.test(entry)) found.push(path);
+      else if (/\.(tsx?|md)$/.test(entry)) found.push(path);
     }
     return found;
   }
 
-  it('ni `app` ni `journal` ne nomment lʼAPI du modèle — la route lit le contenu, et rien dʼautre', () => {
-    const fautes = [...sources(join(ROOT, 'app')), ...sources(join(ROOT, 'journal'))].filter((path) =>
-      /anthropic/i.test(readFileSync(path, 'utf8'))
+  const PROSE = [
+    'app/(site)/[locale]/comment/comment.fr.md',
+    'app/(site)/[locale]/comment/comment.en.md',
+    'app/(site)/[locale]/mentions/mentions.fr.md',
+    'app/(site)/[locale]/mentions/mentions.en.md'
+  ].map((file) => join(ROOT, ...file.split('/')));
+
+  it('ni `app` ni `journal` ne nomment lʼAPI du modèle — la route lit le contenu, et rien dʼautre ; seuls les textes de prose le nomment', () => {
+    const fautes = [...sources(join(ROOT, 'app')), ...sources(join(ROOT, 'journal'))].filter(
+      (path) => !PROSE.includes(path) && /anthropic/i.test(readFileSync(path, 'utf8'))
     );
     expect(fautes.map((path) => path.slice(ROOT.length))).toEqual([]);
+    for (const path of PROSE) expect(existsSync(path), path).toBe(true);
   });
 
   it('la route nʼimporte que le contenu et le journal, à lʼappel', () => {

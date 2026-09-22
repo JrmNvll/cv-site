@@ -193,6 +193,30 @@ test('/api/contact/phone prolonge la session avec les cookies — le geste réel
   expect(apres.started_at).toBe(avant.started_at);
 });
 
+test('le test de fumée ne se journalise pas : ni visiteur, ni session, ni échange', async ({
+  playwright
+}, testInfo) => {
+  // L'agent utilisateur que pose `playwright.smoke.config.ts` : le propriétaire
+  // vérifie son site après chaque déploiement, ce n'est pas une visite.
+  const fumee = 'cv-site-smoke/0.0.0-test';
+  const contexte = await playwright.request.newContext({baseURL: testInfo.project.use.baseURL});
+
+  // Un document, puis une puce du premier écran : les deux chemins qui journalisent.
+  const document = await visiter(contexte, '/fr', {'user-agent': fumee});
+  expect(document.status()).toBe(200);
+  const puce = await visiter(contexte, '/api/questions/lic-01?lang=fr', {'user-agent': fumee});
+  expect(puce.status()).toBe(200);
+
+  // Les cookies sont posés — le proxy ne change pas — mais rien n'est écrit.
+  expect(document.headersArray().some(({name}) => name.toLowerCase() === 'set-cookie')).toBe(true);
+  expect(sessionsSignees(fumee)).toBe(0);
+  // Les identifiants posés par le proxy n'existent dans aucune table.
+  const {visitorId, sessionId} = idsRecus(document);
+  expect(visitor(visitorId)).toBeUndefined();
+  expect(session(sessionId)).toBeUndefined();
+  await contexte.dispose();
+});
+
 test('/api/contact/phone répond sans cookies, et nʼécrit rien', async ({playwright}, testInfo) => {
   // Un contexte neuf : aucun cookie, comme `curl`.
   const anonyme = await playwright.request.newContext({baseURL: testInfo.project.use.baseURL});

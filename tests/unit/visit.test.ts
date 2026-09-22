@@ -110,6 +110,24 @@ describe('recordVisit', () => {
     referer: 'https://exemple.invalid/offre'
   });
 
+  it('ignore le test de fumée : son agent utilisateur ne crée ni visiteur, ni session, ni échange', async () => {
+    const cookies = jar({[VISITOR_COOKIE]: VISITOR_ID, [SESSION_COOKIE]: `${SESSION_ID}.1757930400000`});
+    for (const ua of ['cv-site-smoke/0.1.0', 'cv-site-smoke/9.9.9']) {
+      const result = await recordVisit({cookies, headers: new Headers({'user-agent': ua}), lang: 'fr'});
+      expect(result, ua).toBeNull();
+    }
+    expect(journal.touchSession).not.toHaveBeenCalled();
+
+    // Un agent qui contient la marque ailleurs qu'en tête reste un visiteur.
+    const autre = await recordVisit({
+      cookies,
+      headers: new Headers({'user-agent': 'Navigateur/1.0 (cv-site-smoke/0.1.0)'}),
+      lang: 'fr'
+    });
+    expect(autre).not.toBeNull();
+    expect(journal.touchSession).toHaveBeenCalledTimes(1);
+  });
+
   it('passe au journal les identifiants, lʼadresse, le navigateur, la provenance et la langue', async () => {
     const result = await recordVisit({
       cookies: jar({[VISITOR_COOKIE]: VISITOR_ID, [SESSION_COOKIE]: `${SESSION_ID}.1757930400000`}),

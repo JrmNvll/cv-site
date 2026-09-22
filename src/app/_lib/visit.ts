@@ -122,7 +122,22 @@ export type VisitRequest = {
  */
 export type RecordedVisit = TouchSessionResult & VisitIds & {readonly ip: string};
 
+/**
+ * Le test de fumée ne se journalise pas (décision de Jérémie, 2026-09-22) : il
+ * tourne contre l'URL réelle après chaque déploiement, une vingtaine de
+ * requêtes à chaque fois, et ses visites fausseraient le journal, ses
+ * compteurs et la mesure du bruit des robots. Son agent utilisateur est posé
+ * par `playwright.smoke.config.ts` et n'appartient à aucun navigateur.
+ *
+ * Conséquence assumée : une requête qui se présente ainsi n'a ni session ni
+ * échange — et l'assistant lui répond `no_visitor`, puisque `recordVisit`
+ * rend `null`. Usurper cet agent utilisateur ne donne donc rien de plus que
+ * de refuser les cookies : on n'est pas journalisé, on n'a pas l'assistant.
+ */
+const SMOKE_USER_AGENT = /^cv-site-smoke\//;
+
 export async function recordVisit(request: VisitRequest): Promise<RecordedVisit | null> {
+  if (SMOKE_USER_AGENT.test(request.headers.get('user-agent') ?? '')) return null;
   const ids = visitIds(request.cookies);
   if (ids === null) return null;
   const ip = clientIp(request.headers);

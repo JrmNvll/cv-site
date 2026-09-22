@@ -22,6 +22,11 @@ import {HERO_QUESTIONS, YEARS_QUESTION} from '../../src/app/(site)/[locale]/_com
  * lanceur (`scripts/smoke.mjs`) les compte, et les tient pour un échec en
  * mode proxy.
  *
+ * Aucune de ces requêtes n'est journalisée : `recordVisit` ignore l'agent
+ * utilisateur `cv-site-smoke/…` que pose `playwright.smoke.config.ts`
+ * (décision du 2026-09-22) — le journal du site garde les visites, pas les
+ * vérifications de son propriétaire.
+ *
  * Le modèle n'est **jamais** appelé : la seule question posée est une puce du
  * premier écran, servie depuis le corpus à coût nul ; les routes du modèle ne
  * reçoivent qu'un corps invalide, refusé avant toute visite. Chaque requête

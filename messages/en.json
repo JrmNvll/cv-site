@@ -34,6 +34,7 @@
     "intro": "It answers with my own words — nothing invented.",
     "placeholder": "…or write your own question",
     "send": "Send the question",
+    "sendHint": "Send (Ctrl+Enter) — Enter adds a line",
     "questionLabel": "Your question",
     "loading": "One moment…",
     "answerSource": "An answer I wrote myself — no call to the model.",

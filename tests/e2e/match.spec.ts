@@ -441,7 +441,7 @@ test.describe('la zone', () => {
     const champ = panneau.getByRole('textbox', {name: messages.fr.assistant.questionLabel});
     await expect(champ).toBeDisabled();
     await expect(panneau.getByRole('button', {name: heroLabel('fr', 'lic-01'), exact: true})).toHaveCount(0);
-    await champ.press('Enter');
+    await champ.press('Control+Enter');
 
     await expect(panneau.locator('[data-answer="answered"]')).toBeVisible();
     await expect(champ).toBeEnabled();

@@ -39,7 +39,7 @@
  * Deux copies vivent dans le document (premier écran, tiroir mobile) : chacune
  * porte son état, un geste dans le tiroir répond dans le tiroir.
  */
-import {useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent} from 'react';
+import {useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent} from 'react';
 import {useTranslations} from 'next-intl';
 import {
   AD_MAX_CHARS,
@@ -109,10 +109,11 @@ export type HeroQuestionsClientProps = {
     readonly back: string;
     /** La ligne d'état rendue par le serveur — celle que lit un visiteur sans JavaScript. */
     readonly withoutScript: string;
-    /** Le champ libre : son texte d'invite, son nom pour un lecteur d'écran, son bouton. */
+    /** Le champ libre : son texte d'invite, son nom pour un lecteur d'écran, son bouton et son raccourci. */
     readonly placeholder: string;
     readonly questionLabel: string;
     readonly send: string;
+    readonly sendHint: string;
     /** La zone de l'annonce : le titre de la réponse, son nom court, l'invite qui la décrit, le texte d'attente, l'envoi, le retour. */
     readonly matchTitle: string;
     readonly matchZoneLabel: string;
@@ -191,7 +192,7 @@ export function HeroQuestionsClient({
   const [question, setQuestion] = useState('');
   const [ad, setAd] = useState('');
   const titreReponse = useRef<HTMLHeadingElement>(null);
-  const champ = useRef<HTMLInputElement>(null);
+  const champ = useRef<HTMLTextAreaElement>(null);
   const zone = useRef<HTMLTextAreaElement>(null);
   const puceAnnonce = useRef<HTMLButtonElement>(null);
   const puces = useRef(new Map<string, HTMLButtonElement>());
@@ -383,6 +384,24 @@ export function HeroQuestionsClient({
     }
   }
 
+  // Le champ libre est multiligne (décision de Jérémie, 2026-09-22) : Entrée va
+  // à la ligne — un recruteur qui aère sa question n'envoie rien par
+  // accident — et c'est le bouton, ou Ctrl/Cmd+Entrée, qui envoie. Il
+  // grandit avec le texte, d'une ligne à six, puis défile.
+  useEffect(() => {
+    const element = champ.current;
+    if (element === null) return;
+    element.style.height = 'auto';
+    element.style.height = `${element.scrollHeight}px`;
+  }, [question]);
+
+  function keyInField(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
+
   async function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const asked = question.trim();
@@ -457,25 +476,27 @@ export function HeroQuestionsClient({
     <>
       <form
         onSubmit={send}
-        className="mt-3.5 flex items-center gap-3 rounded-md border border-panel-rule bg-panel-sunken px-3 py-2"
+        className="mt-3.5 flex items-end gap-3 rounded-md border border-panel-rule bg-panel-sunken px-3 py-2"
       >
-        <input
+        <textarea
           ref={champ}
-          type="text"
           name="question"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={keyInField}
+          rows={1}
           maxLength={QUESTION_MAX_CHARS}
           disabled={inactif}
           autoComplete="off"
           placeholder={labels.placeholder}
           aria-label={labels.questionLabel}
-          className="min-w-0 grow bg-transparent text-[14px] text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
+          className="max-h-[9.5rem] min-w-0 grow resize-none overflow-y-auto bg-transparent text-[14px] leading-relaxed text-panel-ink placeholder:text-panel-ink-muted disabled:cursor-not-allowed"
         />
         <button
           type="submit"
           disabled={inactif || question.trim() === ''}
           aria-label={labels.send}
+          title={labels.sendHint}
           className="shrink-0 cursor-pointer text-panel-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
           <svg
@@ -562,7 +583,7 @@ export function HeroQuestionsClient({
     const streaming = state.step === 'streaming';
     return (
       <div className="mt-3.5 flex flex-col gap-3" aria-busy={streaming ? true : undefined}>
-        <h3 ref={titreReponse} tabIndex={-1} className="text-[14px] font-semibold text-panel-ink outline-none">
+        <h3 ref={titreReponse} tabIndex={-1} className="whitespace-pre-line text-[14px] font-semibold text-panel-ink outline-none">
           {/* Une annonce ne se répète pas en titre : huit mille caractères, et c'est le recruteur qui l'a écrite. */}
           {state.kind === 'match' ? labels.matchTitle : state.question}
         </h3>

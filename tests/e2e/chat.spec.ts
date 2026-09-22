@@ -242,17 +242,63 @@ for (const {name, viewport} of VIEWPORTS) {
 
       const champ = await champLibre(panneau, 'fr');
       await champ.fill('Question pendant le flux');
-      await champ.press('Enter');
+      await champ.press('Control+Enter');
 
       await expect(champ).toBeDisabled();
       await expect(panneau.getByRole('button', {name: messages.fr.assistant.send})).toBeDisabled();
-      await champ.press('Enter');
+      await champ.press('Control+Enter');
       await expect(panneau.locator('[data-answer="answered"]')).toBeVisible();
       await expect(champ).toBeEnabled();
       expect(appels).toBe(1);
     });
   });
 }
+
+test.describe('le champ libre est multiligne (décision du 2026-09-22)', () => {
+  test.use({viewport: {width: 1440, height: 900}});
+
+  test('Entrée va à la ligne sans rien envoyer ; Ctrl+Entrée envoie la question entière, retour à la ligne compris', async ({
+    page,
+    context
+  }, testInfo) => {
+    await adressePropre(context, testInfo);
+    await page.goto('/fr');
+    const panneau = await ouvrirPanneau(page, 'fr', 1440);
+    let appels = 0;
+    page.on('request', (request) => {
+      if (request.url().endsWith('/api/chat')) appels += 1;
+    });
+    const champ = await champLibre(panneau, 'fr');
+    // Un textarea d'une ligne au repos, qui grandit avec le texte.
+    expect(await champ.evaluate((el) => el.tagName)).toBe('TEXTAREA');
+    const hauteurUneLigne = await champ.evaluate((el) => el.getBoundingClientRect().height);
+    await champ.fill('Première ligne');
+    await champ.press('Enter');
+    await champ.pressSequentially('seconde ligne, et une question ?');
+    await expect(champ).toHaveValue('Première ligne\nseconde ligne, et une question ?');
+    expect(appels).toBe(0);
+    expect(await champ.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(hauteurUneLigne);
+    // Le bouton dit le raccourci.
+    await expect(panneau.getByRole('button', {name: messages.fr.assistant.send})).toHaveAttribute(
+      'title',
+      messages.fr.assistant.sendHint
+    );
+
+    const appel = page.waitForResponse((response) => response.url().endsWith('/api/chat'));
+    await champ.press('Control+Enter');
+    expect((await appel).status()).toBe(200);
+    await expect(panneau.locator('[data-answer="answered"]')).toBeVisible();
+    expect(appels).toBe(1);
+    // La question, retour à la ligne compris, est partie telle quelle et se relit en titre sur deux lignes.
+    const [requete] = await requetesPour('Première ligne\nseconde ligne, et une question ?');
+    expect(requete).toBeDefined();
+    const titre = panneau.getByRole('heading', {level: 3});
+    await expect(titre).toHaveText(/Première ligne\s+seconde ligne, et une question \?/);
+    expect(await titre.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe('pre-line');
+    // Le champ est vidé et rendu à une ligne.
+    await expect(champ).toHaveValue('');
+  });
+});
 
 test.describe('les refus, chacun avec son message', () => {
   test.use({viewport: {width: 1440, height: 900}});
@@ -278,7 +324,7 @@ test.describe('les refus, chacun avec son message', () => {
       );
       const champ = await champLibre(panneau, 'fr');
       await champ.fill(`Question refusée ${reason}`);
-      await champ.press('Enter');
+      await champ.press('Control+Enter');
 
       const alerte = panneau.getByRole('alert');
       await expect(alerte).toContainText(attendu);
@@ -378,7 +424,7 @@ test.describe('un flux qui se ferme sans done ni error', () => {
     const panneau = await ouvrirPanneau(page, 'fr', 1440);
     const champ = await champLibre(panneau, 'fr');
     await champ.fill('Question coupée');
-    await champ.press('Enter');
+    await champ.press('Control+Enter');
 
     await expect(panneau.locator('[data-answer="interrupted"]')).toHaveText('Un seul morceau.');
     await expect(panneau.getByRole('alert')).toHaveText(messages.fr.errors.unavailable);
@@ -394,7 +440,7 @@ test.describe('un flux qui se ferme sans done ni error', () => {
     const panneau = await ouvrirPanneau(page, 'fr', 1440);
     const champ = await champLibre(panneau, 'fr');
     await champ.fill('Question sans réponse');
-    await champ.press('Enter');
+    await champ.press('Control+Enter');
 
     await expect(panneau.getByRole('alert')).toHaveText(messages.fr.errors.unavailable);
     await expect(panneau.locator('[data-answer]')).toHaveCount(0);
@@ -416,7 +462,7 @@ test.describe('depuis le tiroir mobile, le lien du contact', () => {
     const panneau = await ouvrirPanneau(page, 'fr', 390);
     const champ = await champLibre(panneau, 'fr');
     await champ.fill('Question refusée au plafond');
-    await champ.press('Enter');
+    await champ.press('Control+Enter');
     const lien = panneau.getByRole('alert').getByRole('link', {name: messages.fr.sections.contact});
     await expect(lien).toHaveAttribute('href', '#contact');
 
@@ -439,7 +485,7 @@ test.describe('une route muette', () => {
     const champ = await champLibre(panneau, 'fr');
 
     await champ.fill('Question sans réponse');
-    await champ.press('Enter');
+    await champ.press('Control+Enter');
     await expect(panneau.getByRole('status')).toHaveText(messages.fr.assistant.loading);
 
     await expect(panneau.getByRole('alert')).toHaveText(messages.fr.errors.unavailable, {timeout: 35_000});

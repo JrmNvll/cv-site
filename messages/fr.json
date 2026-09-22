@@ -34,6 +34,7 @@
     "intro": "Il répond avec mes propres réponses — rien d'inventé.",
     "placeholder": "…ou écrivez votre propre question",
     "send": "Envoyer la question",
+    "sendHint": "Envoyer (Ctrl+Entrée) — Entrée va à la ligne",
     "questionLabel": "Votre question",
     "loading": "Un instant…",
     "answerSource": "Réponse écrite par mes soins, sans appel au modèle.",

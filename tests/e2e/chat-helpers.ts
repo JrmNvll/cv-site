@@ -180,12 +180,12 @@ export async function champLibre(panneau: Locator, locale: Lang): Promise<Locato
   return champ;
 }
 
-/** Pose une question dans le champ et valide par Entrée ; rend la réponse HTTP de `/api/chat`. */
+/** Pose une question dans le champ et l'envoie par Ctrl+Entrée (Entrée seule va à la ligne) ; rend la réponse HTTP de `/api/chat`. */
 export async function poser(page: Page, panneau: Locator, locale: Lang, question: string) {
   const champ = await champLibre(panneau, locale);
   await champ.fill(question);
   const appel = page.waitForResponse((response) => response.url().endsWith('/api/chat'));
-  await champ.press('Enter');
+  await champ.press('Control+Enter');
   return appel;
 }
 

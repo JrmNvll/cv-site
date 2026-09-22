@@ -94,6 +94,7 @@ export async function AssistantPanel({titleId, experiences}: AssistantPanelProps
           placeholder: t('assistant.placeholder'),
           questionLabel: t('assistant.questionLabel'),
           send: t('assistant.send'),
+          sendHint: t('assistant.sendHint'),
           matchTitle: t('assistant.matchTitle'),
           matchZoneLabel: t('assistant.matchLabel'),
           matchIntro: t('assistant.matchIntro'),

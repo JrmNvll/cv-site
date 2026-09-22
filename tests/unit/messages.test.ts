@@ -103,6 +103,7 @@ describe('catalogues de messages', () => {
           // Le champ libre (story 6) : ses libellés, la mention sous une
           // réponse du modèle, et chaque raison de refus d'AD-16.
           'assistant.send',
+          'assistant.sendHint',
           'assistant.questionLabel',
           'assistant.answerModel',
           'assistant.answerSources',

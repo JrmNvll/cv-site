@@ -1,13 +1,18 @@
 @import "tailwindcss";
 
 /**
- * Jeu de couleurs et échelle typographique de la **direction A**.
+ * Jeu de couleurs et échelle typographique — **palette du CV** (POC du
+ * 2026-09-22, à la demande de Jérémie).
  *
- * Les valeurs claires viennent de la maquette validée (`direction-A.html`) :
- * un fond chaud très clair, une encre presque noire légèrement chaude, un
- * accent terre cuite, et un panneau sombre pour l'assistant — le seul bloc qui
- * reste sombre dans les deux thèmes, parce que c'est lui qui appelle le regard
- * au premier écran.
+ * Les couleurs sont celles de son CV PDF, qui précède ce site : un bleu marine
+ * profond pour la colonne de gauche et les titres, un bleu franc pour les
+ * accents (intitulés de poste, dates, puces, liens), un fond blanc très
+ * légèrement bleuté. La direction A — fond chaud, accent terre cuite — est
+ * remplacée ici ; tout le reste du site est inchangé, parce qu'aucun composant
+ * n'écrit de couleur.
+ *
+ * Le panneau de l'assistant reprend le marine de la colonne du CV : c'est le
+ * même geste — un bloc sombre à gauche, le contenu clair à droite.
  *
  * Deux règles tiennent l'ensemble :
  *
@@ -28,65 +33,65 @@
 :root {
   color-scheme: light dark;
 
-  /* Fonds */
-  --cv-surface: oklch(0.985 0.008 85);
-  --cv-surface-raised: oklch(0.96 0.01 80);
+  /* Fonds — blanc à peine bleuté, comme le papier du CV */
+  --cv-surface: oklch(0.99 0.004 255);
+  --cv-surface-raised: oklch(0.965 0.008 255);
 
-  /* Encre — `ink-muted` reste au-dessus de 4.5:1 sur `surface`, y compris en 13 px */
-  --cv-ink: oklch(0.22 0.012 60);
-  --cv-ink-soft: oklch(0.38 0.012 60);
-  --cv-ink-muted: oklch(0.46 0.012 60);
+  /* Encre — le marine du CV ; `ink-muted` reste au-dessus de 4.5:1 sur `surface`, y compris en 13 px */
+  --cv-ink: oklch(0.28 0.038 258);
+  --cv-ink-soft: oklch(0.43 0.03 258);
+  --cv-ink-muted: oklch(0.52 0.026 258);
 
   /* Filets */
-  --cv-rule: oklch(0.9 0.012 75);
-  --cv-rule-soft: oklch(0.93 0.012 75);
-  --cv-rule-strong: oklch(0.85 0.012 75);
+  --cv-rule: oklch(0.9 0.014 255);
+  --cv-rule-soft: oklch(0.94 0.012 255);
+  --cv-rule-strong: oklch(0.84 0.018 255);
 
   /* Étiquettes d'environnement technique */
-  --cv-tag: oklch(0.94 0.014 75);
+  --cv-tag: oklch(0.945 0.016 255);
 
-  /* Accent terre cuite */
-  --cv-accent: oklch(0.48 0.14 42);
-  --cv-accent-strong: oklch(0.38 0.13 42);
+  /* Accent — le bleu exact du CV (#2563EB) : intitulés, dates, puces, liens */
+  --cv-accent: oklch(0.545 0.215 263);
+  --cv-accent-strong: oklch(0.43 0.18 263);
 
-  /* Panneau de l'assistant — sombre dans les deux thèmes */
-  --cv-panel: oklch(0.22 0.012 60);
-  --cv-panel-raised: oklch(0.26 0.012 60);
-  --cv-panel-sunken: oklch(0.19 0.012 60);
-  --cv-panel-rule: oklch(0.38 0.012 60);
-  --cv-panel-ink: oklch(0.96 0.008 85);
-  --cv-panel-ink-soft: oklch(0.82 0.008 85);
-  --cv-panel-ink-muted: oklch(0.68 0.012 60);
-  --cv-panel-accent: oklch(0.74 0.13 45);
+  /* Panneau de l'assistant — le marine de la colonne du CV, sombre dans les deux thèmes */
+  --cv-panel: oklch(0.325 0.045 258);
+  --cv-panel-raised: oklch(0.375 0.042 258);
+  --cv-panel-sunken: oklch(0.275 0.045 258);
+  --cv-panel-rule: oklch(0.47 0.035 258);
+  --cv-panel-ink: oklch(0.97 0.006 255);
+  --cv-panel-ink-soft: oklch(0.86 0.014 255);
+  --cv-panel-ink-muted: oklch(0.74 0.022 258);
+  --cv-panel-accent: oklch(0.78 0.1 258);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --cv-surface: oklch(0.18 0.01 65);
-    --cv-surface-raised: oklch(0.22 0.01 65);
+    --cv-surface: oklch(0.19 0.024 258);
+    --cv-surface-raised: oklch(0.23 0.026 258);
 
-    --cv-ink: oklch(0.93 0.008 85);
-    --cv-ink-soft: oklch(0.78 0.008 85);
-    --cv-ink-muted: oklch(0.7 0.008 85);
+    --cv-ink: oklch(0.94 0.006 255);
+    --cv-ink-soft: oklch(0.8 0.012 255);
+    --cv-ink-muted: oklch(0.72 0.018 258);
 
-    --cv-rule: oklch(0.32 0.012 65);
-    --cv-rule-soft: oklch(0.26 0.012 65);
-    --cv-rule-strong: oklch(0.4 0.012 65);
+    --cv-rule: oklch(0.33 0.026 258);
+    --cv-rule-soft: oklch(0.27 0.024 258);
+    --cv-rule-strong: oklch(0.41 0.03 258);
 
-    --cv-tag: oklch(0.27 0.012 65);
+    --cv-tag: oklch(0.28 0.026 258);
 
-    --cv-accent: oklch(0.78 0.12 45);
-    --cv-accent-strong: oklch(0.87 0.09 45);
+    --cv-accent: oklch(0.76 0.11 258);
+    --cv-accent-strong: oklch(0.86 0.07 258);
 
     /* Le panneau reste sombre, mais se détache du fond en s'éclaircissant. */
-    --cv-panel: oklch(0.25 0.012 60);
-    --cv-panel-raised: oklch(0.3 0.012 60);
-    --cv-panel-sunken: oklch(0.21 0.012 60);
-    --cv-panel-rule: oklch(0.4 0.012 60);
-    --cv-panel-ink: oklch(0.96 0.008 85);
-    --cv-panel-ink-soft: oklch(0.84 0.008 85);
-    --cv-panel-ink-muted: oklch(0.72 0.012 60);
-    --cv-panel-accent: oklch(0.78 0.12 45);
+    --cv-panel: oklch(0.26 0.038 258);
+    --cv-panel-raised: oklch(0.31 0.038 258);
+    --cv-panel-sunken: oklch(0.22 0.038 258);
+    --cv-panel-rule: oklch(0.42 0.035 258);
+    --cv-panel-ink: oklch(0.97 0.006 255);
+    --cv-panel-ink-soft: oklch(0.86 0.014 255);
+    --cv-panel-ink-muted: oklch(0.75 0.022 258);
+    --cv-panel-accent: oklch(0.79 0.1 258);
   }
 }
 

@@ -101,10 +101,8 @@ export async function AssistantPanel({titleId, experiences}: AssistantPanelProps
           matchPlaceholder: t('assistant.matchPlaceholder'),
           matchSend: t('assistant.matchSend'),
           matchBack: t('assistant.matchBack'),
-          contact: t('sections.contact'),
-          privacy: t('footer.mentions')
+          contact: t('sections.contact')
         }}
-        privacyHref={`/${locale}/mentions`}
         errors={{
           unavailable: t('errors.unavailable'),
           invalid_input: t('errors.invalid_input'),

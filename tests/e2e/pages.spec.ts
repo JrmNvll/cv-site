@@ -207,26 +207,21 @@ for (const locale of LANGS) {
     }
   });
 
-  test(`/${locale} porte le pied de page, sous le CV — et un lien vers les mentions sous le champ libre et sous la zone de lʼannonce`, async ({
+  test(`/${locale} porte le pied de page, sous le CV — et le panneau de lʼassistant ne porte aucun lien vers les mentions`, async ({
     page
   }) => {
     await page.goto(`/${locale}`);
     await coquilleCommune(page, locale);
 
-    // Au point de collecte (story 9) : dans le panneau visible, sous le champ
-    // libre ; puis sous la zone de l'annonce, une fois ouverte. Une ancre
-    // ordinaire, vers les mentions de la langue courante.
+    // Retiré du panneau le 2026-09-22 (décision de Jérémie) : ni sous le champ
+    // libre, ni sous la zone de l'annonce. Il reste au pied de chaque page,
+    // vérifié par `coquilleCommune`.
     const panneau = page.getByRole('region', {name: messages[locale].assistant.eyebrow});
-    const lien = panneau.getByRole('link', {name: messages[locale].footer.mentions});
-    await expect(lien).toHaveAttribute('href', `/${locale}/mentions`);
-    const champ = panneau.getByRole('textbox', {name: messages[locale].assistant.questionLabel});
-    expect((await lien.boundingBox())!.y).toBeGreaterThan((await champ.boundingBox())!.y);
+    await expect(panneau.getByRole('link', {name: messages[locale].footer.mentions})).toHaveCount(0);
     await panneau.getByRole('button', {name: heroLabel(locale, MATCH_QUESTION), exact: true}).click();
     const zone = panneau.getByRole('textbox', {name: messages[locale].assistant.matchLabel, exact: true});
     await expect(zone).toBeVisible();
-    const lienZone = panneau.getByRole('link', {name: messages[locale].footer.mentions});
-    await expect(lienZone).toHaveAttribute('href', `/${locale}/mentions`);
-    expect((await lienZone.boundingBox())!.y).toBeGreaterThan((await zone.boundingBox())!.y);
+    await expect(panneau.getByRole('link', {name: messages[locale].footer.mentions})).toHaveCount(0);
     // Après la dernière section, dans l'ordre du document.
     const positions = await page.evaluate(() => {
       const rang = (element: Element | null) =>

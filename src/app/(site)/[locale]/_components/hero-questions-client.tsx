@@ -123,11 +123,7 @@ export type HeroQuestionsClientProps = {
     readonly matchBack: string;
     /** Le lien vers les coordonnées, quand l'assistant renvoie au contact direct. */
     readonly contact: string;
-    /** Le lien vers les mentions, au point de collecte : sous le champ, sous la zone de l'annonce. */
-    readonly privacy: string;
   };
-  /** L'adresse des mentions de la langue courante — une ancre ordinaire, jamais un `Link`. */
-  readonly privacyHref: string;
   /** Les messages d'échec, par `reason` ; `unavailable` pour tout le reste. */
   readonly errors: {
     readonly unavailable: string;
@@ -177,8 +173,7 @@ export function HeroQuestionsClient({
   rows,
   matchLabel,
   labels,
-  errors,
-  privacyHref
+  errors
 }: HeroQuestionsClientProps) {
   const hydrate = useSyncExternalStore(sansAbonnement, surLeNavigateur, surLeServeur);
   // Les seuls libellés formatés au moment de l'affichage : le nombre de
@@ -461,16 +456,8 @@ export function HeroQuestionsClient({
     </p>
   );
 
-  // Au point de collecte — sous le champ libre, sous la zone de l'annonce —,
-  // un lien discret vers la page qui dit ce que le site conserve (story 9).
-  // Une ancre ordinaire : la navigation complète journalise la visite (AD-14).
-  const privacy = (
-    <p className="text-[11.5px] text-panel-ink-muted">
-      <a href={privacyHref} className="underline-offset-4 hover:text-panel-ink-soft hover:underline focus-visible:underline">
-        {labels.privacy}
-      </a>
-    </p>
-  );
+  // Le lien vers les mentions a été retiré du panneau le 2026-09-22 (décision
+  // de Jérémie) : il reste dans le pied de page, sur chaque page du site.
 
   const field = (
     <>
@@ -515,7 +502,6 @@ export function HeroQuestionsClient({
           </svg>
         </button>
       </form>
-      {privacy}
     </>
   );
 
@@ -560,7 +546,6 @@ export function HeroQuestionsClient({
             </button>
           </div>
         </div>
-        {privacy}
       </form>
     );
   }

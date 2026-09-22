@@ -92,13 +92,14 @@ describe('les textes des pages de prose', () => {
       expect(rendu).not.toMatch(/\{[a-z]+\}/);
       // Au moins six rubriques, chacune un `h2`.
       expect(titres(rendu).length).toBeGreaterThanOrEqual(6);
-      // Chaque lien porte `rel`, jamais `target`, et une adresse sûre : `https://`
-      // absolue ou un chemin du site — jamais `//`, jamais `/\`, aucune barre inverse.
+      // Chaque lien porte `rel` et une adresse sûre : `https://` absolue — alors
+      // dans un nouvel onglet — ou un chemin du site, dans l'onglet ; jamais `//`,
+      // jamais `/\`, aucune barre inverse.
       const liens = [...rendu.matchAll(/<a [^>]*>/g)].map((match) => match[0]);
       expect(liens.length).toBeGreaterThan(0);
       for (const lien of liens) {
         expect(lien).toContain('rel="nofollow noopener noreferrer"');
-        expect(lien).not.toContain('target=');
+        expect(lien.includes('target="_blank"'), lien).toBe(/href="https?:\/\//i.test(lien));
       }
       for (const href of hrefs(rendu)) {
         expect(href).toMatch(/^(https:\/\/[^\s\\]+|\/(?![/\\])[^\s\\]*)$/);
@@ -120,17 +121,14 @@ describe('les textes des pages de prose', () => {
     }
   });
 
-  it('« Comment » renvoie aux mentions, au dépôt public, au journal des décisions et à la méthode', () => {
+  it('« Comment » renvoie aux mentions et au dépôt public — la méthode est nommée, sans lien, et le journal des décisions nʼest plus cité (retirés le 2026-09-22)', () => {
     for (const lang of LANGS) {
-      expect(hrefs(rendus.comment[lang])).toEqual(
-        expect.arrayContaining([
-          `/${lang}/mentions`,
-          'https://github.com/JrmNvll/cv-site',
-          'https://github.com/JrmNvll/cv-site/blob/main/docs/decisions.md',
-          'https://docs.bmad-method.org/'
-        ])
-      );
-      expect(textes.comment[lang]).toMatch(/BMAD( method)? — Breakthrough Method for Agile AI-Driven Development/);
+      const liens = hrefs(rendus.comment[lang]);
+      expect(liens).toEqual(expect.arrayContaining([`/${lang}/mentions`, 'https://github.com/JrmNvll/cv-site']));
+      expect(liens.some((href) => href.includes('bmad'))).toBe(false);
+      expect(liens).not.toContain('https://github.com/JrmNvll/cv-site/blob/main/docs/decisions.md');
+      expect(textes.comment[lang]).toMatch(/BMAD( method)? \(Breakthrough Method for Agile AI-Driven Development\)/);
+      expect(textes.comment[lang]).not.toMatch(/journal des décisions|decision log/i);
     }
   });
 

@@ -21,15 +21,17 @@ import {SiteHeader, type SiteHeaderProps} from './site-header';
 export type PageFrameProps = {
   readonly locale: Locale;
   readonly identite: SiteHeaderProps['identite'];
+  /** Hors de la page principale : le nom de la barre y ramène. */
+  readonly homeHref?: SiteHeaderProps['homeHref'];
   readonly className?: string;
   readonly children: ReactNode;
   readonly after?: ReactNode;
 };
 
-export function PageFrame({locale, identite, className, children, after}: PageFrameProps) {
+export function PageFrame({locale, identite, homeHref, className, children, after}: PageFrameProps) {
   return (
     <div className={joinParts(['mx-auto w-full max-w-[1280px] px-5 sm:px-8 lg:px-[72px]', className], ' ')}>
-      <SiteHeader identite={identite} locale={locale} />
+      <SiteHeader identite={identite} locale={locale} homeHref={homeHref} />
       <main>{children}</main>
       <SiteFooter locale={locale} />
       {after}

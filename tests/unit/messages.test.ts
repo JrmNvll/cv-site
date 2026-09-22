@@ -94,8 +94,6 @@ describe('catalogues de messages', () => {
           'assistant.yearsUnknown',
           'assistant.withoutScript',
           'errors.content_unavailable',
-          'education.proof',
-          'career.certificate',
           'sections.references',
           'references.reveal',
           'references.pending',

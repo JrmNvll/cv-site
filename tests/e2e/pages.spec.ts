@@ -105,8 +105,35 @@ async function debordeHorizontalement(page: Page): Promise<boolean> {
 async function coquilleCommune(page: Page, locale: Lang): Promise<void> {
   const cv = display[locale];
   const barre = page.locator('header');
-  await expect(barre.getByText(`${cv.identite.prenom} ${cv.identite.nom}`, {exact: true})).toBeVisible();
+  const nom = barre.getByText(`${cv.identite.prenom} ${cv.identite.nom}`, {exact: true});
+  await expect(nom).toBeVisible();
   await expect(barre.getByRole('navigation', {name: messages[locale].languages.label})).toBeVisible();
+  // Hors de la page principale, le nom y ramène — sans se voir : un lien, même
+  // police et même couleur que le titre du premier écran, aucun soulignement
+  // (décision du 2026-09-22). Sur la page principale, un texte : pas de lien vers soi.
+  const lien = barre.getByRole('link', {name: `${cv.identite.prenom} ${cv.identite.nom}`, exact: true});
+  if (new URL(page.url()).pathname === `/${locale}`) {
+    await expect(lien).toHaveCount(0);
+  } else {
+    await expect(lien).toHaveAttribute('href', `/${locale}`);
+    const style = await lien.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {decoration: s.textDecorationLine, family: s.fontFamily, size: s.fontSize, color: s.color};
+    });
+    expect(style.decoration).toBe('none');
+    await lien.hover();
+    expect(await lien.evaluate((el) => getComputedStyle(el).textDecorationLine)).toBe('none');
+    const titre = page.getByRole('heading', {level: 1});
+    const reference = await titre.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {family: s.fontFamily, color: s.color};
+    });
+    expect(style.family).toBe(reference.family);
+    expect(style.color).toBe(reference.color);
+    await lien.click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}$`));
+    await page.goBack();
+  }
 
   const pied = page.locator('footer').getByRole('navigation', {name: messages[locale].footer.label});
   await expect(pied).toBeVisible();
@@ -140,13 +167,15 @@ for (const locale of LANGS) {
       expect(attendues.length).toBeGreaterThanOrEqual(6);
       await expect(page.locator('main h2')).toHaveText(attendues);
 
-      // Chaque lien du corps porte `rel`, jamais `target`, et une adresse sûre.
+      // Chaque lien du corps porte `rel` et une adresse sûre ; vers l'extérieur,
+      // un nouvel onglet (`target="_blank"`) ; un chemin du site, jamais.
       const liens = page.locator('main a');
       expect(await liens.count()).toBeGreaterThan(0);
       for (const lien of await liens.all()) {
         await expect(lien).toHaveAttribute('rel', 'nofollow noopener noreferrer');
-        expect(await lien.getAttribute('target')).toBeNull();
-        expect(await lien.getAttribute('href')).toMatch(/^(https:\/\/|\/(?!\/))/);
+        const href = await lien.getAttribute('href');
+        expect(href).toMatch(/^(https:\/\/|\/(?!\/))/);
+        expect(await lien.getAttribute('target'), href ?? '').toBe(href!.startsWith('https://') ? '_blank' : null);
       }
 
       await coquilleCommune(page, locale);

@@ -7,7 +7,6 @@ import {
   careerYears,
   employerCount,
   joinParts,
-  monthYearLabel,
   periodLabel,
   yearOf
 } from '../../src/app/(site)/[locale]/_components/format';
@@ -64,6 +63,8 @@ for (const {name, viewport} of VIEWPORTS) {
         const nom = barre.getByText(`${cv.identite.prenom} ${cv.identite.nom}`, {exact: true});
         const titre = page.getByRole('heading', {level: 1});
         await expect(nom).toBeVisible();
+        // Sur la page principale, le nom est un texte, pas un lien vers soi.
+        await expect(barre.getByRole('link', {name: `${cv.identite.prenom} ${cv.identite.nom}`})).toHaveCount(0);
         expect(await nom.evaluate((el) => getComputedStyle(el).fontSize)).toBe(
           await titre.evaluate((el) => getComputedStyle(el).fontSize)
         );
@@ -114,14 +115,9 @@ for (const {name, viewport} of VIEWPORTS) {
           if (experience.activite !== undefined) {
             await expect(bloc.getByText(experience.activite, {exact: true})).toBeVisible();
           }
-          // Le certificat de travail : dit, daté, sur demande — jamais servi.
-          if (experience.certificat !== undefined) {
-            const attendu = messages[locale].career.certificate.replace(
-              '{date}',
-              monthYearLabel(experience.certificat.date, locale)!
-            );
-            await expect(bloc.getByText(attendu, {exact: true})).toBeVisible();
-          }
+          // Le certificat de travail n'est ni servi ni annoncé (ligne « sur
+          // demande » retirée le 2026-09-22).
+          await expect(bloc.getByText(/sur demande|on request/i)).toHaveCount(0);
           for (const realisation of experience.realisations ?? []) {
             await expect(page.getByText(realisation, {exact: true})).toBeVisible();
           }
@@ -167,9 +163,8 @@ for (const {name, viewport} of VIEWPORTS) {
           if (diplome.etablissement !== undefined) {
             await expect(bloc.getByText(diplome.etablissement, {exact: true})).toBeVisible();
           }
-          if (diplome.justificatif) {
-            await expect(bloc.getByText(messages[locale].education.proof, {exact: true})).toBeVisible();
-          }
+          // Aucune ligne « justificatif sur demande » (retirée le 2026-09-22).
+          await expect(bloc.getByText(/sur demande|on request/i)).toHaveCount(0);
         }
 
         // Informations pratiques : l'âge calculé et la localité — jamais l'adresse.

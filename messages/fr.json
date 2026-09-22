@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "CV interrogeable",
+    "title": "CV — Jérémie Nouvelle",
     "description": "Curriculum vitæ consultable et interrogeable. Site privé, non indexé."
   },
   "languages": {
@@ -79,16 +79,14 @@
   },
   "career": {
     "present": "aujourd'hui",
-    "environment": "Environnement technique",
-    "certificate": "Certificat de travail · {date} — sur demande"
+    "environment": "Environnement technique"
   },
   "practical": {
     "age": "{age} ans"
   },
   "education": {
     "equivalence": "Équivalence suisse : {value}",
-    "option": "Option : {value}",
-    "proof": "Diplôme — justificatif sur demande"
+    "option": "Option : {value}"
   },
   "references": {
     "reveal": "Afficher les coordonnées",

@@ -69,7 +69,7 @@ export function prosePage({namespace, body, hostingProvider = '', after}: ProseP
     const name = joinParts([identite.prenom, identite.nom], ' ') ?? '';
 
     return (
-      <PageFrame locale={locale} identite={identite}>
+      <PageFrame locale={locale} identite={identite} homeHref={`/${locale}`}>
         <ProseArticle title={t(`${namespace}.title`)} body={fillTemplate(body[locale], {name, hebergeur: hostingProvider})}>
           {after?.(t)}
         </ProseArticle>

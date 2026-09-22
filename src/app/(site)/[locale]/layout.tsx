@@ -29,9 +29,9 @@ export async function generateMetadata({
   });
 
   return {
-    // La page CV garde le titre du site ; une page secondaire (story 9) y
-    // ajoute le sien devant : « Mentions légales & confidentialité — CV
-    // interrogeable ».
+    // La page CV garde le titre du site — « CV — Jérémie Nouvelle », décision
+    // du 2026-09-22 ; une page secondaire (story 9) y ajoute le sien devant :
+    // « Mentions légales & confidentialité — CV — Jérémie Nouvelle ».
     title: {default: t('title'), template: `%s — ${t('title')}`},
     description: t('description'),
     // AD-11 : la balise est répétée par l'application, en plus de l'en-tête

@@ -169,13 +169,12 @@ describe('titres (story 9)', () => {
 describe('liens sûrs (story 9)', () => {
   const rel = 'rel="nofollow noopener noreferrer"';
 
-  it('rend un lien `https://` et `http://` absolu, avec `rel` et sans `target`', () => {
+  it('rend un lien `https://` et `http://` absolu, avec `rel` et `target="_blank"` : vers lʼextérieur, un nouvel onglet', () => {
     expect(prose('voir [le code](https://exemple.invalid/depot) ici')).toBe(
-      `<p>voir <a href="https://exemple.invalid/depot" ${rel}>le code</a> ici</p>`
+      `<p>voir <a href="https://exemple.invalid/depot" ${rel} target="_blank">le code</a> ici</p>`
     );
-    expect(prose('[x](http://exemple.invalid)')).toBe(`<p><a href="http://exemple.invalid" ${rel}>x</a></p>`);
-    expect(prose('[x](HTTPS://exemple.invalid)')).toBe(`<p><a href="HTTPS://exemple.invalid" ${rel}>x</a></p>`);
-    expect(prose('[x](https://exemple.invalid)')).not.toContain('target=');
+    expect(prose('[x](http://exemple.invalid)')).toBe(`<p><a href="http://exemple.invalid" ${rel} target="_blank">x</a></p>`);
+    expect(prose('[x](HTTPS://exemple.invalid)')).toBe(`<p><a href="HTTPS://exemple.invalid" ${rel} target="_blank">x</a></p>`);
   });
 
   it('rend un chemin du site, ancre et requête comprises', () => {
@@ -248,7 +247,7 @@ describe('liens sûrs (story 9)', () => {
   it('ne ferme pas une emphase à lʼintérieur dʼun lien : le lien reste entier dans lʼitalique', () => {
     expect(prose('_a [b](/x_) c_')).toBe(`<p><em>a <a href="/x_" ${rel}>b</a> c</em></p>`);
     expect(prose('*a [b](https://exemple.invalid/x*y) c*')).toBe(
-      `<p><em>a <a href="https://exemple.invalid/x*y" ${rel}>b</a> c</em></p>`
+      `<p><em>a <a href="https://exemple.invalid/x*y" ${rel} target="_blank">b</a> c</em></p>`
     );
     expect(prose('**a [b](/x**) c**')).toBe(`<p><strong>a <a href="/x**" ${rel}>b</a> c</strong></p>`);
     // Sans fermeture après le lien, rien ne s'ouvre : tout reste en texte, le lien compris.

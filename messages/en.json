@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Queryable CV",
+    "title": "CV — Jérémie Nouvelle",
     "description": "A CV you can read and question. Private site, not indexed."
   },
   "languages": {
@@ -79,16 +79,14 @@
   },
   "career": {
     "present": "today",
-    "environment": "Technical environment",
-    "certificate": "Work certificate · {date} — on request"
+    "environment": "Technical environment"
   },
   "practical": {
     "age": "{age} years old"
   },
   "education": {
     "equivalence": "Swiss equivalence: {value}",
-    "option": "Option: {value}",
-    "proof": "Diploma — supporting document on request"
+    "option": "Option: {value}"
   },
   "references": {
     "reveal": "Show contact details",

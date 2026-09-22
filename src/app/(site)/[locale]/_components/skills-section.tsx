@@ -56,8 +56,8 @@ export async function SkillsSection({
     identite.permis
   ].filter((line): line is string => line !== undefined);
   // LinkedIn et GitHub, en clair, dans cet ordre ; un profil absent de
-  // `cv.yaml` n'a pas de ligne. Pas de `target="_blank"` : un CV n'a pas à
-  // retenir le visiteur, et un nouvel onglet non annoncé surprend.
+  // `cv.yaml` n'a pas de ligne. Tout lien vers l'extérieur s'ouvre dans un
+  // nouvel onglet (décision de Jérémie, 2026-09-22), `noopener` avec.
   const profils = (
     [
       ['linkedin', contact.linkedin],
@@ -173,7 +173,7 @@ export async function SkillsSection({
             </li>
             {profils.map(([key, href]) => (
               <li key={key}>
-                <a href={href} rel="noopener noreferrer me" className={LINK}>
+                <a href={href} rel="noopener noreferrer me" target="_blank" className={LINK}>
                   {t(`contact.${key}`)}
                 </a>
               </li>

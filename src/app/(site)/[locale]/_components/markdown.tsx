@@ -164,8 +164,16 @@ function hasControlChar(href: string): boolean {
   return false;
 }
 
-/** Ce que porte chaque lien rendu ; jamais de `target`. */
+/** Ce que porte chaque lien rendu. */
 export const LINK_REL = 'nofollow noopener noreferrer';
+/**
+ * Un lien vers l'extérieur (`http(s)://`) s'ouvre dans un nouvel onglet
+ * (décision de Jérémie, 2026-09-22) ; un chemin du site reste dans l'onglet.
+ * `noopener` dans `LINK_REL` : la page ouverte ne tient jamais celle-ci.
+ */
+export function isExternalHref(href: string): boolean {
+  return /^https?:\/\//i.test(href);
+}
 
 type FoundLink = {readonly label: string; readonly href: string; readonly end: number};
 
@@ -251,7 +259,7 @@ function inline(text: string, keyPrefix: string, allowLinks: boolean): ReactNode
     const childKey = `${keyPrefix}-${key++}`;
     // Le texte du lien connaît le gras et l'italique, jamais un second lien.
     nodes.push(
-      <a key={childKey} href={found.href} rel={LINK_REL}>
+      <a key={childKey} href={found.href} rel={LINK_REL} target={isExternalHref(found.href) ? '_blank' : undefined}>
         {inline(found.label, childKey, false)}
       </a>
     );

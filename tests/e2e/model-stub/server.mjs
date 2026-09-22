@@ -95,7 +95,8 @@ function validate(headers, body) {
   if (!headers['x-api-key']) return 'x-api-key manquant';
   if (!headers['anthropic-version']) return 'anthropic-version manquant';
   if (body.model !== 'claude-opus-5') return `model: ${String(body.model)}`;
-  if (body.max_tokens !== 1200) return `max_tokens: ${String(body.max_tokens)}`;
+  // 1 500 pour une question, 2 500 pour une annonce (AD-6, amendée le 2026-09-22).
+  if (body.max_tokens !== 1500 && body.max_tokens !== 2500) return `max_tokens: ${String(body.max_tokens)}`;
   if (body.stream !== true) return 'stream: attendu true';
   if (!body.output_config || body.output_config.effort !== 'low') return 'output_config.effort: attendu low';
   if ('temperature' in body || 'top_p' in body || 'top_k' in body) return 'échantillonnage: refusé sur ce modèle';

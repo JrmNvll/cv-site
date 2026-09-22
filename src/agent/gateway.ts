@@ -180,7 +180,7 @@ function checkAnswer(input: CallModelInput, filter: SourcesFilter, exchangeId: s
  */
 export function callModel(input: CallModelInput): CallModelResult {
   const now = input.now ?? new Date();
-  const reservation = reservationMicroUsd(contextChars(input.context));
+  const reservation = reservationMicroUsd(contextChars(input.context), input.kind);
 
   // 1 à 3. Cumul du mois, plafond, réservation — **une seule transaction du
   // journal** : la somme et l'insertion `pending` se font sous le même verrou,
@@ -266,7 +266,7 @@ async function run(
     const stream = client().messages.stream(
       {
         model: MODEL,
-        max_tokens: MAX_TOKENS,
+        max_tokens: MAX_TOKENS[input.kind],
         // Un seul bloc système, règles puis noyau, marqué pour le cache ; les
         // types du contexte sont structurellement ceux du SDK.
         system: [...input.context.system],
@@ -293,7 +293,7 @@ async function run(
     // parties : dite pour elle-même, avant le contrôle de structure qui suivra
     // — deux lignes, deux causes, et Jérémie saura laquelle regarder.
     if (input.kind === 'match' && message.stop_reason === 'max_tokens') {
-      log('warn', 'agent.match_truncated', {exchangeId, kind: input.kind, maxTokens: MAX_TOKENS});
+      log('warn', 'agent.match_truncated', {exchangeId, kind: input.kind, maxTokens: MAX_TOKENS[input.kind]});
     }
     const citations = checkAnswer(input, filter, exchangeId);
     const cost = costMicroUsd(message.usage);

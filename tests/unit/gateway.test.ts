@@ -186,7 +186,8 @@ describe('une question couverte', () => {
   it('réserve, appelle, filtre le bloc <sources> fragmenté, finalise avec les compteurs et le coût réel', async () => {
     const {result, stream, context} = engage();
     const reservation = reservationMicroUsd(
-      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0)
+      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0),
+      'chat'
     );
 
     // Avant tout : la réservation, avec ce que la passerelle a estimé, et le plafond que le journal applique.
@@ -233,12 +234,12 @@ describe('une question couverte', () => {
     expect(order(sdk.state.stream)).toBeLessThan(order(journal.finalizeExchange));
   });
 
-  it('envoie ce quʼAD-6 impose : claude-opus-5, max_tokens 1 200, effort bas, un bloc système en cache, la clé et lʼadresse explicites', () => {
+  it('envoie ce quʼAD-6 impose : claude-opus-5, max_tokens 1 500 pour une question, effort bas, un bloc système en cache, la clé et lʼadresse explicites', () => {
     const {params, options, context} = engage();
 
     expect(params).toEqual({
       model: 'claude-opus-5',
-      max_tokens: 1200,
+      max_tokens: 1500,
       system: [{type: 'text', text: context.system[0].text, cache_control: {type: 'ephemeral'}}],
       messages: context.messages.map((message) => ({role: message.role, content: message.content})),
       output_config: {effort: 'low'}
@@ -356,7 +357,8 @@ describe('lʼéchéance du flux', () => {
     vi.useFakeTimers();
     const {result, stream, context} = engage();
     const reservation = reservationMicroUsd(
-      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0)
+      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0),
+      'chat'
     );
     stream.emitText('Un début');
 
@@ -415,7 +417,8 @@ describe('lʼAPI en erreur', () => {
   it('avant tout texte : error seul, model_error sans réponse, coût = réservation', async () => {
     const {result, stream, context} = engage();
     const reservation = reservationMicroUsd(
-      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0)
+      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0),
+      'chat'
     );
     stream.fail(new sdk.RateLimitError());
 
@@ -441,7 +444,8 @@ describe('lʼAPI en erreur', () => {
   it('en cours de flux, compteurs inconnus : les deltas puis error ; le texte partiel journalisé, coût = réservation', async () => {
     const {result, stream, context} = engage();
     const reservation = reservationMicroUsd(
-      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0)
+      context.system[0].text.length + context.messages.reduce((n, m) => n + m.content.length, 0),
+      'chat'
     );
     stream.emitText('Début de ');
     stream.emitText('réponse <sour');
@@ -703,7 +707,7 @@ describe('une évaluation dʼannonce (kind match, AD-17)', () => {
   it('coupée par max_tokens : une ligne agent.match_truncated dédiée, puis agent.match_structure — done quand même', async () => {
     const {result, stream} = engageMatch();
     stream.emitText('**Points forts**\n- Dix ans [cv:profil]\n\n**Compétences transférables**\n- Un outil');
-    stream.emitUsage({input_tokens: 10, output_tokens: 1200});
+    stream.emitUsage({input_tokens: 10, output_tokens: 2500});
     stream.finish('max_tokens');
 
     expect((await collect(result.events)).at(-1)).toMatchObject({type: 'done', sources: ['cv:profil']});
@@ -713,14 +717,14 @@ describe('une évaluation dʼannonce (kind match, AD-17)', () => {
       .mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>);
     const tronquee = lignes.findIndex((entry) => entry.event === 'agent.match_truncated');
     const structure = lignes.findIndex((entry) => entry.event === 'agent.match_structure');
-    expect(lignes[tronquee]).toMatchObject({exchangeId: EXCHANGE_ID, kind: 'match', maxTokens: 1200});
+    expect(lignes[tronquee]).toMatchObject({exchangeId: EXCHANGE_ID, kind: 'match', maxTokens: 2500});
     expect(lignes[structure]).toMatchObject({reasons: ['missing_title']});
     expect(tronquee).toBeLessThan(structure);
     // Une question libre coupée par max_tokens ne dit rien de tel.
     vi.mocked(console.warn).mockClear();
     const libre = engage();
     libre.stream.emitText('Réponse coupée');
-    libre.stream.emitUsage({input_tokens: 1, output_tokens: 1200});
+    libre.stream.emitUsage({input_tokens: 1, output_tokens: 1500});
     libre.stream.finish('max_tokens');
     await collect(libre.result.events);
     expect(vi.mocked(console.warn).mock.calls.some((call) => String(call[0]).includes('agent.match_truncated'))).toBe(false);

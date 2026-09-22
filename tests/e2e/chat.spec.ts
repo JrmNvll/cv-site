@@ -141,7 +141,7 @@ for (const {name, viewport} of VIEWPORTS) {
         expect(requete).toMatchObject({
           scenario: 'ordinary',
           model: 'claude-opus-5',
-          max_tokens: 1200,
+          max_tokens: 1500,
           effort: 'low',
           cacheControl: {type: 'ephemeral'},
           messages: 3
@@ -224,8 +224,8 @@ for (const {name, viewport} of VIEWPORTS) {
         output_tokens: null
       });
       expect(JSON.parse(ligne!.sources!)).toEqual([]);
-      // La réservation : l'entrée estimée au prix plein plus 1 200 jetons de sortie — au moins ça.
-      expect(ligne!.cost_micro_usd).toBeGreaterThanOrEqual(reservationMicroUsd(0));
+      // La réservation : l'entrée estimée au prix plein plus 1 500 jetons de sortie — au moins ça.
+      expect(ligne!.cost_micro_usd).toBeGreaterThanOrEqual(reservationMicroUsd(0, 'chat'));
     });
 
     test('pendant le flux, puces et champ sont désactivés ; un second envoi ne part pas', async ({

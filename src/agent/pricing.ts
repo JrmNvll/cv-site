@@ -39,8 +39,18 @@ export const MICRO_USD_PER_TOKEN = {
 /** Le plafond mensuel : 5,00 USD (AD-6, étape 2). */
 export const MONTHLY_CAP_MICRO_USD = 5_000_000;
 
-/** `max_tokens` de chaque appel (AD-6, étape 4) — la réflexion s'y compte. */
-export const MAX_TOKENS = 1200;
+/** Les deux sortes d'appel : une question libre, une annonce à évaluer. */
+export type CallKind = 'chat' | 'match';
+
+/**
+ * `max_tokens` par sorte d'appel (AD-6, étape 4, amendée le 2026-09-22) — la
+ * réflexion s'y compte. Une évaluation d'annonce a quatre parties à écrire,
+ * points par points : à 1 200, une annonce proche du profil était coupée en
+ * pleine section « Écarts », bloc de sources compris (tour adverse du
+ * 2026-09-22). Décision de Jérémie : 2 500 pour une annonce, 1 500 pour une
+ * question. La réservation suit (`reservationMicroUsd`).
+ */
+export const MAX_TOKENS: Readonly<Record<CallKind, number>> = {chat: 1500, match: 2500};
 
 /** Une question tient en mille caractères (AD-6, étape 4). */
 export const MAX_QUESTION_CHARS = 1000;
@@ -95,13 +105,14 @@ export function costMicroUsd(usage: Usage | null | undefined): number {
 /**
  * Ce qu'un appel peut coûter au plus, réservé **avant** de l'engager (AD-6,
  * étape 2) : l'entrée estimée au prix de l'**écriture** du cache — le pire cas,
- * celui du premier appel, qui paie le noyau à 1,25 × — plus `MAX_TOKENS` de
- * sortie, comme si le modèle allait au bout. Le premier appel réel (0,128 USD
- * pour une réservation à 0,099) a montré que le prix plein ne suffisait pas.
+ * celui du premier appel, qui paie le noyau à 1,25 × — plus le `max_tokens` de la
+ * sorte d'appel en sortie, comme si le modèle allait au bout. Le premier appel
+ * réel (0,128 USD pour une réservation à 0,099) a montré que le prix plein ne
+ * suffisait pas.
  */
-export function reservationMicroUsd(inputChars: number): number {
+export function reservationMicroUsd(inputChars: number, kind: CallKind): number {
   const inputTokens = Math.ceil(Math.max(0, inputChars) / CHARS_PER_TOKEN);
   return Math.round(
-    inputTokens * MICRO_USD_PER_TOKEN.cacheWrite + MAX_TOKENS * MICRO_USD_PER_TOKEN.output
+    inputTokens * MICRO_USD_PER_TOKEN.cacheWrite + MAX_TOKENS[kind] * MICRO_USD_PER_TOKEN.output
   );
 }

@@ -35,7 +35,8 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
   par `agent/gateway` : cumul du mois calculé sur `exchange.cost_micro_usd` (réservations
   comprises), refus `cap_reached` si cumul + réservation dépasse 5 USD, insertion `pending` avant
   l'appel dans la même transaction, finalisation avec les compteurs réels et une table de prix
-  datée ; modèle et `max_tokens` imposés, entrée bornée ; trois fenêtres de débit en mémoire
+  datée ; modèle et `max_tokens` imposés (1 500 pour une question, 2 500 pour une annonce — amendé le
+  2026-09-22, une annonce proche du profil était coupée à 1 200), entrée bornée ; trois fenêtres de débit en mémoire
   (visiteur, adresse, site) ; clé d'API en variable d'environnement, jamais au navigateur.
 - **AD-7 — Le journal n'a qu'un propriétaire, n'efface rien, ne dénormalise rien.** Seul
   `journal` ouvre `usage.db` (`node:sqlite`, dans `DATA_DIR`) : entités `visitor`, `session`,

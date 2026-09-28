@@ -225,7 +225,7 @@ describe('une question couverte', () => {
       sources: ['qa:lic-01'],
       citationOk: false,
       usage: {inputTokens: 3000, outputTokens: 40, cacheReadTokens: 8000, cacheCreationTokens: 0},
-      costMicroUsd: 3000 * 5 + 40 * 25 + 8000 * 0.5,
+      costMicroUsd: 3000 * 4 + 40 * 20 + 8000 * 0.2,
       latencyMs: expect.any(Number)
     });
     // L'ordre, prouvé : réservation → appel → finalisation.
@@ -234,11 +234,11 @@ describe('une question couverte', () => {
     expect(order(sdk.state.stream)).toBeLessThan(order(journal.finalizeExchange));
   });
 
-  it('envoie ce quʼAD-6 impose : claude-opus-5, max_tokens 1 500 pour une question, effort bas, un bloc système en cache, la clé et lʼadresse explicites', () => {
+  it('envoie ce quʼAD-6 impose : claude-opus-5-5, max_tokens 1 500 pour une question, effort bas, un bloc système en cache, la clé et lʼadresse explicites', () => {
     const {params, options, context} = engage();
 
     expect(params).toEqual({
-      model: 'claude-opus-5',
+      model: 'claude-opus-5-5',
       max_tokens: 1500,
       system: [{type: 'text', text: context.system[0].text, cache_control: {type: 'ephemeral'}}],
       messages: context.messages.map((message) => ({role: message.role, content: message.content})),
@@ -270,7 +270,7 @@ describe('une question couverte', () => {
       {type: 'done', sources: [], exchangeId: EXCHANGE_ID}
     ]);
     expect(journal.finalizeExchange).toHaveBeenCalledWith(
-      expect.objectContaining({status: 'done', sources: [], citationOk: true, costMicroUsd: 250})
+      expect.objectContaining({status: 'done', sources: [], citationOk: true, costMicroUsd: 200})
     );
   });
 
@@ -481,7 +481,7 @@ describe('lʼAPI en erreur', () => {
         status: 'model_error',
         answer: 'Début',
         usage: {inputTokens: 2000, outputTokens: 5, cacheReadTokens: 4000, cacheCreationTokens: 0},
-        costMicroUsd: 2000 * 5 + 5 * 25 + 4000 * 0.5
+        costMicroUsd: 2000 * 4 + 5 * 20 + 4000 * 0.2
       })
     );
   });
@@ -518,7 +518,7 @@ describe('le consommateur parti', () => {
         answer: 'Premier second.',
         sources: ['qa:lic-01'],
         citationOk: true,
-        costMicroUsd: 100 * 5 + 10 * 25
+        costMicroUsd: 100 * 4 + 10 * 20
       })
     );
   });

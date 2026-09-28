@@ -12,16 +12,32 @@
  * un réglage local : la date ci-dessous dit de quand la table est.
  */
 
-/** Le modèle imposé (AD-6, étape 4). Nulle part ailleurs. */
-export const MODEL = 'claude-opus-5';
+/**
+ * Le modèle imposé (AD-6, étape 4). Nulle part ailleurs.
+ *
+ * Claude Opus 5.5 depuis le 2026-09-28 (demande de Jérémie), successeur de
+ * Claude Opus 5 dans la même ligne : même fenêtre de contexte, même
+ * tokeniseur, prix plus bas. Ce que le site en emploie ne change pas — pas
+ * d'outils, pas de `thinking` explicite (la réflexion adaptative est toujours
+ * active sur ce modèle et se compte dans `max_tokens`), l'effort reste posé
+ * explicitement à `low` : son défaut passe de `high` à `medium`, mais nous ne
+ * l'avons jamais laissé implicite.
+ */
+export const MODEL = 'claude-opus-5-5';
 
 /** La date de la table de prix : ce qu'elle vaut, elle le vaut à ce jour. */
-export const PRICING_DATE = '2026-09-16';
+export const PRICING_DATE = '2026-09-28';
 
-/** Prix publics, en USD par million de jetons. */
-const USD_PER_MTOK = {input: 5, output: 25} as const;
+/**
+ * Prix publics de Claude Opus 5.5, en USD par million de jetons.
+ *
+ * La lecture du cache y est à **0,05 ×** l'entrée (0,20 USD par MTok), et non
+ * 0,1 × comme sur Claude Opus 5 : une conversation qui relit le noyau coûte
+ * deux fois moins qu'avant, et un cache manqué coûte relativement plus.
+ */
+const USD_PER_MTOK = {input: 4, output: 20} as const;
 const CACHE_WRITE_FACTOR = 1.25;
-const CACHE_READ_FACTOR = 0.1;
+const CACHE_READ_FACTOR = 0.05;
 
 /**
  * Prix par jeton, en micro-USD (1 USD = 1 000 000 micro-USD ; 1 MTok = 1 000 000

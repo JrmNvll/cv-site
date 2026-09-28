@@ -259,7 +259,7 @@ describe('le mini-jeu sur la fixture, contre le simulateur', () => {
     expect(provenance.codeSha).toMatch(/^([0-9a-f]{40}|inconnu)$/);
     expect(provenance.contentSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(provenance.suiteSha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(provenance.model).toBe('claude-opus-5');
+    expect(provenance.model).toBe('claude-opus-5-5');
     expect(provenance.systemSha256.fr).toMatch(/^[0-9a-f]{64}$/);
     expect(provenance.systemSha256.en).toMatch(/^[0-9a-f]{64}$/);
     expect(provenance.systemSha256.fr).not.toBe(provenance.systemSha256.en);
@@ -367,6 +367,8 @@ describe('le budget et le plafond', () => {
       ].join('\n')
     );
     const result = await runSuite({file, dataDir: dataDir(), budgetMicroUsd: 100_000_000});
+    // Le plafond mensuel, en micro-USD (5 USD) — écrit ici plutôt qu'importé :
+    // importer `@/agent` chargerait `@/env` avant que le simulateur ne soit branché.
     expect(byId(result, 'couteuse').costMicroUsd).toBeGreaterThan(5_000_000);
     expect(byId(result, 'apres')).toMatchObject({
       verdict: 'fail',

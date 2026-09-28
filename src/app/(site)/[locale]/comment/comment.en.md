@@ -6,7 +6,7 @@ Everything the site displays and everything the assistant states comes from two 
 
 ## An assistant that cannot invent
 
-The assistant "knows" nothing about me beyond these two files. For each question, the server — ordinary code, no AI — selects the twelve closest entries by lexical search (BM25+), adds an always-present core (the CV, the behaviour rules, the list of topics I do not discuss) and the conversation history, then sends all of it to the model (Claude Opus 5) with a strict instruction: answer only from these sources, and **cite**, for every statement, the identifier of the entry used.
+The assistant "knows" nothing about me beyond these two files. For each question, the server — ordinary code, no AI — selects the twelve closest entries by lexical search (BM25+), adds an always-present core (the CV, the behaviour rules, the list of topics I do not discuss) and the conversation history, then sends all of it to the model (Claude Opus 5.5) with a strict instruction: answer only from these sources, and **cite**, for every statement, the identifier of the entry used.
 
 These citations are invisible to you, but they are checked and logged. A statement without a source is a failed test. When a question is out of scope — unrelated to my career, or an attempt to steer the assistant — the assistant declines with a fixed wording rather than improvising. An adversarial test suite (trick questions, private topics, manipulation attempts, job ads to evaluate) is replayed against the real API before every release.
 

@@ -207,7 +207,7 @@ for (const {name, viewport} of VIEWPORTS) {
 
         // Ce que le simulateur a reçu : l'annonce dans `<annonce>`, dans la langue de la page.
         const [requete] = (await requetesDuSimulateur()).filter((candidate) => candidate.ad === ad);
-        expect(requete).toMatchObject({scenario: 'match', lang: locale, model: 'claude-opus-5', cacheControl: {type: 'ephemeral'}, messages: 1});
+        expect(requete).toMatchObject({scenario: 'match', lang: locale, model: 'claude-opus-5-5', cacheControl: {type: 'ephemeral'}, messages: 1});
         expect(requete!.question).toBeNull();
 
         // Retour aux questions : les puces reviennent, le focus sur la sixième ;

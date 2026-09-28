@@ -94,7 +94,7 @@ function textOf(content) {
 function validate(headers, body) {
   if (!headers['x-api-key']) return 'x-api-key manquant';
   if (!headers['anthropic-version']) return 'anthropic-version manquant';
-  if (body.model !== 'claude-opus-5') return `model: ${String(body.model)}`;
+  if (body.model !== 'claude-opus-5-5') return `model: ${String(body.model)}`;
   // 1 500 pour une question, 2 500 pour une annonce (AD-6, amendée le 2026-09-22).
   if (body.max_tokens !== 1500 && body.max_tokens !== 2500) return `max_tokens: ${String(body.max_tokens)}`;
   if (body.stream !== true) return 'stream: attendu true';
@@ -144,7 +144,7 @@ async function stream(response, scenario, history) {
       id: `msg_stub_${requests.length}`,
       type: 'message',
       role: 'assistant',
-      model: 'claude-opus-5',
+      model: 'claude-opus-5-5',
       content: [],
       stop_reason: null,
       stop_sequence: null,

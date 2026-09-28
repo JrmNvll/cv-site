@@ -6,7 +6,7 @@ Tout ce que le site affiche et tout ce que l'assistant affirme provient de deux 
 
 ## Un assistant qui ne peut pas inventer
 
-L'assistant ne « connaît » rien de moi en dehors de ces deux fichiers. À chaque question, le serveur — du code ordinaire, sans IA — sélectionne les douze entrées les plus proches par recherche lexicale (BM25+), y ajoute un noyau toujours présent (le CV, les règles de comportement, la liste des sujets que je ne traite pas), l'historique de la conversation, puis envoie le tout au modèle (Claude Opus 5) avec une consigne stricte : répondre uniquement à partir de ces sources, et **citer** pour chaque affirmation l'identifiant de l'entrée utilisée.
+L'assistant ne « connaît » rien de moi en dehors de ces deux fichiers. À chaque question, le serveur — du code ordinaire, sans IA — sélectionne les douze entrées les plus proches par recherche lexicale (BM25+), y ajoute un noyau toujours présent (le CV, les règles de comportement, la liste des sujets que je ne traite pas), l'historique de la conversation, puis envoie le tout au modèle (Claude Opus 5.5) avec une consigne stricte : répondre uniquement à partir de ces sources, et **citer** pour chaque affirmation l'identifiant de l'entrée utilisée.
 
 Ces citations sont invisibles pour vous, mais elles sont contrôlées et journalisées. Une affirmation sans source est un échec de test. Hors périmètre — une question qui ne concerne pas mon parcours, une tentative de faire dévier l'assistant — il refuse avec une formulation fixe plutôt que d'improviser. Une suite de tests adverses (questions pièges, sujets privés, tentatives de manipulation, annonces à évaluer) est rejouée contre l'API réelle avant chaque mise en production.
 

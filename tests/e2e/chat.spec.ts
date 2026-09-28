@@ -140,7 +140,7 @@ for (const {name, viewport} of VIEWPORTS) {
         const [requete] = await requetesPour(question);
         expect(requete).toMatchObject({
           scenario: 'ordinary',
-          model: 'claude-opus-5',
+          model: 'claude-opus-5-5',
           max_tokens: 1500,
           effort: 'low',
           cacheControl: {type: 'ephemeral'},

@@ -292,10 +292,11 @@ describe('les textes des pages de prose', () => {
     const minutes = SESSION_IDLE_MS / (60 * 1000);
     const dollars = MONTHLY_CAP_MICRO_USD / 1_000_000;
     expect(Number.isInteger(jours) && Number.isInteger(minutes) && Number.isInteger(dollars)).toBe(true);
-    // « claude-opus-5 » s'écrit « Claude Opus 5 » dans les textes.
-    const modele = MODEL.split('-')
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
+    // « claude-opus-5-5 » s'écrit « Claude Opus 5.5 » dans les textes : la marque,
+    // la ligne, puis la version en chiffres séparés par un point.
+    const [marque, ligne, ...version] = MODEL.split('-');
+    const capitale = (mot: string) => mot.charAt(0).toUpperCase() + mot.slice(1);
+    const modele = `${capitale(marque!)} ${capitale(ligne!)} ${version.join('.')}`;
     const attendu: Record<Lang, RegExp[]> = {
       fr: [
         new RegExp(`conservé ${jours} jours`),

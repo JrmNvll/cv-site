@@ -73,7 +73,7 @@
     ],
     "text": "Réponse coûteuse.",
     "usage": {
-      "input_tokens": 1000000,
+      "input_tokens": 1300000,
       "output_tokens": 2000,
       "cache_read_input_tokens": 0,
       "cache_creation_input_tokens": 0

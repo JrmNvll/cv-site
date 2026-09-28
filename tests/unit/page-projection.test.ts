@@ -233,15 +233,25 @@ describe('un champ optionnel absent ne laisse ni vide ni ponctuation orpheline',
     expect(yearOf('janvier 2022')).toBe('janvier 2022');
   });
 
-  it('écrit une période sans tiret orphelin', () => {
-    expect(periodLabel('2018-09', '2023-06', 'aujourd’hui')).toBe('2018 — 2023');
-    expect(periodLabel('2024-06', undefined, 'aujourd’hui')).toBe('2024 — aujourd’hui');
-    expect(periodLabel(undefined, '2023-06', 'aujourd’hui')).toBe('2023');
-    expect(periodLabel(undefined, undefined, 'aujourd’hui')).toBeUndefined();
+  it('écrit une période avec le mois abrégé, sans tiret orphelin', () => {
+    expect(periodLabel('2018-09', '2023-06', 'aujourd’hui', 'fr')).toBe('sept. 2018 — juin 2023');
+    expect(periodLabel('2024-06', undefined, 'aujourd’hui', 'fr')).toBe('juin 2024 — aujourd’hui');
+    expect(periodLabel(undefined, '2023-06', 'aujourd’hui', 'fr')).toBe('juin 2023');
+    expect(periodLabel(undefined, undefined, 'aujourd’hui', 'fr')).toBeUndefined();
+    // La langue de la page donne le mois.
+    expect(periodLabel('2018-09', '2023-06', 'today', 'en')).toBe('Sep 2018 — Jun 2023');
   });
 
-  it('écrit une seule année quand la période tient dedans', () => {
-    expect(periodLabel('2021-03', '2021-12', 'aujourd’hui')).toBe('2021');
+  it('nʼécrit quʼune date quand le début et la fin sont le même mois', () => {
+    expect(periodLabel('2021-03', '2021-03', 'aujourd’hui', 'fr')).toBe('mars 2021');
+    // Deux mois de la même année restent deux dates : la durée se lit.
+    expect(periodLabel('2021-03', '2021-12', 'aujourd’hui', 'fr')).toBe('mars 2021 — déc. 2021');
+  });
+
+  it('rend lʼannée seule sans mois, et telle quelle une date qui nʼen est pas une', () => {
+    expect(periodLabel('2006', '2018', 'aujourd’hui', 'fr')).toBe('2006 — 2018');
+    expect(periodLabel('2006-10-15', undefined, 'aujourd’hui', 'fr')).toBe('oct. 2006 — aujourd’hui');
+    expect(periodLabel('janvier 2022', undefined, 'aujourd’hui', 'fr')).toBe('janvier 2022 — aujourd’hui');
   });
 });
 

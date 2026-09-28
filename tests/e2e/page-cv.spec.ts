@@ -108,7 +108,12 @@ for (const {name, viewport} of VIEWPORTS) {
             .filter({has: page.getByRole('heading', {name: experience.poste, exact: true})})
             .first();
           await expect(page.getByRole('heading', {name: experience.poste, exact: true})).toBeVisible();
-          const periode = periodLabel(experience.debut, experience.fin, messages[locale].career.present);
+          const periode = periodLabel(
+            experience.debut,
+            experience.fin,
+            messages[locale].career.present,
+            locale
+          );
           if (periode !== undefined) await expect(bloc.getByText(periode, {exact: true})).toBeVisible();
           const lieu = joinParts([experience.entreprise, experience.lieu]);
           if (lieu !== undefined) await expect(bloc.getByText(lieu, {exact: true})).toBeVisible();

@@ -67,19 +67,43 @@ export function monthYearLabel(value: string | undefined, locale: string): strin
 }
 
 /**
- * La période d'une expérience : « 2018 — 2023 », « 2024 — aujourd'hui »,
- * « 2021 » si elle tient dans une seule année.
+ * Le mois abrégé et l'année, dans la langue de la page : « sept. 2018 »,
+ * « Sep 2018 » — la forme du CV PDF (demande de Jérémie, 2026-09-28). Une
+ * date sans mois (`2006`) rend l'année seule, et une valeur qui n'est pas une
+ * date ISO est rendue telle quelle, comme `yearOf` : mieux vaut montrer ce que
+ * le contenu dit que de le déformer. Formatée en UTC, comme `monthYearLabel` :
+ * un mois de début est un mois, il ne doit pas glisser selon le fuseau.
+ */
+export function shortMonthYear(value: string | undefined, locale: string): string | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const trimmed = value.trim();
+  const parsed = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(trimmed);
+  if (!parsed) return yearOf(trimmed);
+  const date = new Date(Date.UTC(Number(parsed[1]), Number(parsed[2]) - 1, 1));
+  if (Number.isNaN(date.getTime())) return yearOf(trimmed);
+  return new Intl.DateTimeFormat(locale, {month: 'short', year: 'numeric', timeZone: 'UTC'}).format(
+    date
+  );
+}
+
+/**
+ * La période d'une expérience, mois compris : « sept. 2018 — juin 2023 »,
+ * « juin 2024 — aujourd'hui » — comme le CV PDF (demande de Jérémie,
+ * 2026-09-28 ; l'année seule auparavant). Deux dates identiques n'en écrivent
+ * qu'une : une mission d'un mois se lit « mars 2021 », pas « mars 2021 — mars
+ * 2021 ».
  *
- * `present` est le libellé d'interface de la langue courante : cette fonction
- * ne le connaît pas, elle le reçoit.
+ * `present` est le libellé d'interface de la langue courante, `locale` la langue
+ * des mois : cette fonction ne les connaît pas, elle les reçoit.
  */
 export function periodLabel(
   debut: string | undefined,
   fin: string | undefined,
-  present: string
+  present: string,
+  locale: string
 ): string | undefined {
-  const from = yearOf(debut);
-  const to = yearOf(fin);
+  const from = shortMonthYear(debut, locale);
+  const to = shortMonthYear(fin, locale);
   if (from === undefined && to === undefined) return undefined;
   if (from === undefined) return to;
   if (to === undefined) return `${from} — ${present}`;

@@ -10,7 +10,7 @@
  * `realisations` peuvent manquer. Chaque bloc est donc rendu **ou absent**,
  * jamais rendu vide : `joinParts` retire les séparateurs avec leur valeur.
  */
-import {getTranslations} from 'next-intl/server';
+import {getLocale, getTranslations} from 'next-intl/server';
 import type {DisplayProjection} from '@/content';
 import {joinParts, periodLabel} from './format';
 
@@ -20,6 +20,7 @@ export type CareerSectionProps = {
 
 export async function CareerSection({experiences}: CareerSectionProps) {
   const t = await getTranslations();
+  const locale = await getLocale();
   if (experiences.length === 0) return null;
 
   return (
@@ -33,7 +34,7 @@ export async function CareerSection({experiences}: CareerSectionProps) {
 
       <ol className="flex flex-col">
         {experiences.map((experience) => {
-          const periode = periodLabel(experience.debut, experience.fin, t('career.present'));
+          const periode = periodLabel(experience.debut, experience.fin, t('career.present'), locale);
           const lieu = joinParts([experience.entreprise, experience.lieu]);
 
           return (

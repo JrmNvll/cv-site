@@ -55,8 +55,11 @@ export async function CareerSection({experiences}: CareerSectionProps) {
                 {lieu === undefined ? null : (
                   <p className="mt-0.5 text-[15px] text-ink-soft">{lieu}</p>
                 )}
+                {/* L'activité de la société se lit avec son nom, pas comme un
+                    paragraphe à part : collée dessous et en italique, comme sur
+                    le CV PDF (demande de Jérémie, 2026-09-28). */}
                 {experience.activite === undefined ? null : (
-                  <p className="mt-2.5 max-w-[34em] text-[15px] text-ink-soft">
+                  <p className="mt-0.5 max-w-[34em] text-[14px] text-ink-muted italic">
                     {experience.activite}
                   </p>
                 )}

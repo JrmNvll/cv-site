@@ -181,9 +181,27 @@ describe('la récupération', () => {
     expect(knowledge.retrieve('fr', 'REMUNERATION disponible').map((entry) => entry.id)).toContain('sit-02');
   });
 
-  it('garde un terme dʼun seul caractère : une question sur « C » ou « R » récupère quelque chose', () => {
-    // « à » (par-01 : « de 2014 à 2021 ») s'indexe en « a », un caractère.
-    expect(knowledge.retrieve('fr', 'à').map((entry) => entry.id)).toContain('par-01');
+  it('garde un terme dʼun seul caractère — « C », « R » — et écarte les mots vides', async () => {
+    const {processTerm} = await import('@/knowledge');
+    // Un langage tient en une lettre : le terme survit au traitement.
+    expect(processTerm('C')).toBe('c');
+    expect(processTerm('R')).toBe('r');
+    // Les mots vides des deux langues sont écartés de l'index comme de la
+    // requête (amendement du 2026-09-28) : « à » s'y range avec « a ».
+    for (const vide of ['à', 'A', 'est', 'il', 'the', 'is', 'Vous']) {
+      expect(processTerm(vide), vide).toBeNull();
+    }
+    // Une requête qui n'a que des mots vides ne récupère rien plutôt que
+    // douze entrées au hasard.
+    expect(knowledge.retrieve('fr', 'est-il ?')).toEqual([]);
+  });
+
+  it('rejoint une variante courte dʼun même mot : « sportif » trouve « sport »', () => {
+    // La recherche est lexicale, sans racinisation : c'est le repêchage
+    // approximatif (0,35) qui rapproche « fictive » de « fictif ».
+    // Bogue du 2026-09-28 : « Est-il sportif ? » ne remontait rien du sport.
+    const ids = knowledge.retrieve('fr', 'personne fictif').map((entry) => entry.id);
+    expect(ids).toContain('par-01');
   });
 
   it('borne à k = 12 par défaut, et à ce quʼon lui demande', () => {

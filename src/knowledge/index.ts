@@ -86,17 +86,44 @@ export function isSystemEntry(id: string): boolean {
 }
 
 /**
+ * Les mots vides des deux langues — écartés de l'index **et** de la requête
+ * (amendement du 2026-09-28).
+ *
+ * Ils sont dans presque toutes les entrées : BM25 leur donne un poids faible,
+ * mais pas nul, et une question courte n'a qu'eux à offrir. « Est-il sportif ? »
+ * remontait douze entrées sur « est » et « il », aucune sur le sport.
+ *
+ * La liste est volontairement courte : articles, pronoms, auxiliaires,
+ * prépositions. Rien qui puisse être la réponse à une question — ni un
+ * langage, ni un outil, ni un métier. Un terme d'un seul caractère reste
+ * gardé par ailleurs (« C », « R »).
+ */
+const STOP_WORDS = new Set([
+  // Français
+  'a', 'ai', 'au', 'aux', 'avec', 'ce', 'ces', 'cet', 'cette', 'dans', 'de', 'des', 'du', 'elle',
+  'elles', 'en', 'est', 'et', 'eu', 'il', 'ils', 'je', 'la', 'le', 'les', 'leur', 'lui', 'ma',
+  'mais', 'me', 'mes', 'moi', 'mon', 'ne', 'nos', 'notre', 'nous', 'on', 'ont', 'ou', 'par',
+  'pas', 'pour', 'qu', 'que', 'qui', 'sa', 'se', 'ses', 'son', 'sur', 'ta', 'te', 'tes', 'toi',
+  'ton', 'tu', 'un', 'une', 'vos', 'votre', 'vous', 'y',
+  // Anglais
+  'an', 'and', 'are', 'as', 'at', 'be', 'by', 'do', 'does', 'for', 'he', 'her', 'him', 'his',
+  'i', 'in', 'is', 'it', 'its', 'of', 'or', 'she', 'that', 'the', 'their', 'them', 'they',
+  'this', 'to', 'was', 'we', 'what', 'when', 'where', 'which', 'who', 'with', 'you', 'your'
+]);
+
+/**
  * Un terme de l'index : minuscules, sans accents. « Développeur » et
  * « developpeur » doivent se retrouver. Un terme d'un seul caractère est
  * gardé : « C », « R », « C# » (dont le tokeniseur ne garde que « c ») sont
  * des langages qu'une question peut viser, et BM25 pèse déjà peu un terme
  * présent partout (« l » de « l'agent »).
  */
-function processTerm(term: string): string | null {
+export function processTerm(term: string): string | null {
   const plain = term
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
+  if (STOP_WORDS.has(plain)) return null;
   return plain.length >= 1 ? plain : null;
 }
 
@@ -188,7 +215,12 @@ function buildLang(lang: Lang, corpusLang: Lang): LangKnowledge {
       // d'un visiteur : elle pèse deux fois le corps.
       boost: {question: 2},
       prefix: true,
-      fuzzy: 0.2
+      // 0,35 et non 0,2 (amendement du 2026-09-28) : à 0,2, un mot de sept
+      // lettres ne tolérait qu'une faute, et « sportif » ne rejoignait pas
+      // « sport » (deux lettres d'écart). La recherche est lexicale, sans
+      // racinisation ; ce réglage en tient lieu pour les variantes courtes
+      // d'un même mot. Au-delà, le bruit l'emporte.
+      fuzzy: 0.35
     }
   });
   index.addAll(docs);

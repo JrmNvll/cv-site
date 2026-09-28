@@ -118,7 +118,16 @@ for (const {name, viewport} of VIEWPORTS) {
           const lieu = joinParts([experience.entreprise, experience.lieu]);
           if (lieu !== undefined) await expect(bloc.getByText(lieu, {exact: true})).toBeVisible();
           if (experience.activite !== undefined) {
-            await expect(bloc.getByText(experience.activite, {exact: true})).toBeVisible();
+            // L'activité se lit avec le nom de la société : juste dessous, en
+            // italique et plus discrète (décision du 2026-09-28).
+            const activite = bloc.getByText(experience.activite, {exact: true});
+            await expect(activite).toBeVisible();
+            const style = await activite.evaluate((el) => {
+              const s = getComputedStyle(el);
+              return {italique: s.fontStyle, haut: Number.parseFloat(s.marginTop)};
+            });
+            expect(style.italique).toBe('italic');
+            expect(style.haut).toBeLessThanOrEqual(4);
           }
           // Le certificat de travail n'est ni servi ni annoncé (ligne « sur
           // demande » retirée le 2026-09-22).

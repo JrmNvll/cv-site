@@ -14,6 +14,8 @@
  *       ├─────▶ knowledge
  *       └─────▶ journal
  *
+ *   migration ──▶ journal     (hors graphe : voir `LAYER_PATHS.migration`)
+ *
  * Ce module est consommé par `eslint.config.mjs` (qui fait échouer le lint) et
  * par `tests/unit/layers.test.ts` (qui attrape en plus les `import()`
  * dynamiques). Ne décrire le graphe nulle part ailleurs : le README renvoie ici.
@@ -37,6 +39,15 @@ export const LAYER_PATHS = {
    * troisième.
    */
   bootstrap: ['src/instrumentation.ts', 'src/lib/startup.ts'],
+  /**
+   * `npm run migrate` — **un seul fichier nommé**, et c'est tout l'intérêt de
+   * cette entrée. Mettre le schéma à jour avant la bascule d'un déploiement
+   * suppose d'ouvrir `usage.db`, donc d'atteindre `journal` : ce que
+   * l'outillage ordinaire ne doit jamais pouvoir faire. Plutôt que d'ouvrir
+   * `scripts` tout entier à la couche `journal`, on nomme le seul script qui en
+   * a le droit. Déclaré **avant** `scripts`, qui le contiendrait sinon.
+   */
+  migration: ['scripts/migrate.mjs'],
   /**
    * Outillage hors application (`npm run check:content`). Il tourne hors de
    * Next, sans configuration d'application, et n'atteint que la couche la plus
@@ -72,6 +83,11 @@ export const FORBIDDEN_LAYERS = {
   bootstrap: ['agent', 'app'],
   // L'outillage lit le contenu, et rien d'autre.
   scripts: ['knowledge', 'agent', 'journal', 'app'],
+  // `npm run migrate` ouvre la base, et ne fait que ça : `journal` lui est
+  // ouvert, le reste non — surtout pas `app` ni `agent`. Déclaré **après**
+  // `scripts` : ESLint applique les configurations dans cet ordre, et c'est la
+  // dernière qui vaut pour `scripts/migrate.mjs`.
+  migration: ['content', 'knowledge', 'agent', 'app'],
   // Fermé par défaut : le code partagé ne dépend d'aucune couche.
   [SHARED]: ['content', 'knowledge', 'agent', 'journal', 'app']
 };
@@ -85,6 +101,7 @@ export const FORBIDDEN_MODULES = {
   bootstrap: ['next/headers'],
   // L'outillage tourne hors de Next : il n'y a pas de requête du tout.
   scripts: ['next/headers'],
+  migration: ['next/headers'],
   // Le code partagé ne lit pas la requête non plus : seul `app` la connaît.
   [SHARED]: ['next/headers']
 };

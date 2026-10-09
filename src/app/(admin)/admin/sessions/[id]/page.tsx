@@ -1,7 +1,8 @@
 /**
  * Le détail d'une session — `GET /admin/sessions/<ulid>` (CAP-7).
  *
- * La session et son visiteur, l'adresse et son étiquette, puis **tous** ses
+ * La session et son visiteur, l'adresse et son étiquette, l'étiquette du lien
+ * par lequel la session est arrivée (story 12), puis **tous** ses
  * échanges dans l'ordre, toute sorte et tout statut : ce que le visiteur a
  * tapé s'affiche en **texte** ; la réponse — celle du modèle ou du corpus —
  * passe par `renderMarkdown`, le même sous-ensemble que le panneau du site,
@@ -18,6 +19,7 @@ import {isUlid} from '@/lib/ulid';
 import {Breadcrumb} from '../../_components/breadcrumb';
 import {AddressForm, VisitorForm} from '../../_components/forms';
 import {
+  ABSENT,
   addressLabel,
   formatInstant,
   formatInteger,
@@ -26,6 +28,7 @@ import {
   KIND_LABELS,
   labelOrNull,
   langLabel,
+  linkLabel,
   STATUS_LABELS,
   visitorLabel
 } from '../../_lib/format';
@@ -84,12 +87,12 @@ function ExchangeCard({exchange, rank}: {exchange: Exchange; rank: number}) {
         <div>
           <dt className={DT}>Sources</dt>
           <dd className={DD} data-sources>
-            {exchange.sources === null || exchange.sources.length === 0 ? '—' : exchange.sources.join(', ')}
+            {exchange.sources === null || exchange.sources.length === 0 ? ABSENT : exchange.sources.join(', ')}
           </dd>
         </div>
         <div>
           <dt className={DT}>Citations</dt>
-          <dd className={DD}>{exchange.citationOk === null ? '—' : exchange.citationOk ? 'en ordre' : 'à revoir'}</dd>
+          <dd className={DD}>{exchange.citationOk === null ? ABSENT : exchange.citationOk ? 'en ordre' : 'à revoir'}</dd>
         </div>
         <div>
           <dt className={DT}>Coût</dt>
@@ -155,7 +158,7 @@ export default async function AdminSession({params}: {params: Params}) {
         </div>
         <div>
           <dt className={DT}>Note</dt>
-          <dd className={`${DD} whitespace-pre-wrap`}>{labelOrNull(visitor?.note) ?? '—'}</dd>
+          <dd className={`${DD} whitespace-pre-wrap`}>{labelOrNull(visitor?.note) ?? ABSENT}</dd>
         </div>
         <div>
           <dt className={DT}>Adresse</dt>
@@ -165,12 +168,20 @@ export default async function AdminSession({params}: {params: Params}) {
           </dd>
         </div>
         <div>
+          <dt className={DT}>Lien</dt>
+          {/* Du texte, jamais un lien : le libellé vient de l'adresse par
+              laquelle la session est arrivée (story 12). */}
+          <dd className={`${DD} break-all`} data-link-label>
+            {linkLabel(session.label)}
+          </dd>
+        </div>
+        <div>
           <dt className={DT}>Navigateur</dt>
-          <dd className={`${DD} text-ink-soft`}>{session.userAgent ?? '—'}</dd>
+          <dd className={`${DD} text-ink-soft`}>{session.userAgent ?? ABSENT}</dd>
         </div>
         <div>
           <dt className={DT}>Provenance</dt>
-          <dd className={`${DD} break-all text-ink-soft`}>{session.referer ?? '—'}</dd>
+          <dd className={`${DD} break-all text-ink-soft`}>{session.referer ?? ABSENT}</dd>
         </div>
         <div>
           <dt className={DT}>Langue</dt>

@@ -19,13 +19,19 @@
  * et `exchange(session_id, at)`. `tests/unit/journal.test.ts` relit ce fichier
  * et refuse toute instruction destructive.
  */
+import {LABEL_MAX} from '@/lib/visit-cookies';
 
 /**
  * Version du schéma, portée par `PRAGMA user_version`. Le code refuse d'ouvrir
- * une base plus récente que ce qu'il connaît — et, tant qu'aucune base de
- * production n'existe, une base plus ancienne aussi : il n'y a pas encore de
- * mécanisme de migration (`deferred-work.md`), le DDL idempotent ne retouche
- * pas une contrainte déjà posée, et une base d'avant la mise en ligne se recrée.
+ * une base plus récente que ce qu'il connaît ; une base plus **ancienne** est
+ * migrée à l'ouverture (`./migrations.ts`), précédée d'une copie de la base
+ * telle qu'elle était. Il n'en a pas toujours été ainsi : jusqu'à la story 11,
+ * une base d'avant la mise en ligne se recréait, faute de données à garder.
+ *
+ * Une version de plus, c'est donc trois choses à tenir ensemble : la ligne
+ * d'historique ci-dessous, le DDL — ce qu'une base **neuve** reçoit — et le pas
+ * de migration — ce qu'une base **existante** reçoit. Les deux doivent mener au
+ * même schéma.
  *
  * Historique :
  *  - 1 : les trois tables, `exchange.kind` limité à `chat` et `match` ;
@@ -36,8 +42,26 @@
  *  - 4 : l'étiquette d'une adresse quitte `session.ip_label` pour une table
  *    `ip_label(ip, label, at)` — une étiquette suit l'adresse, sessions passées
  *    et futures comprises, au lieu d'être recopiée sur N lignes (story 8).
+ *  - 5 : `session.label` — l'étiquette d'un lien envoyé, posée à la création de
+ *    la session d'après le paramètre `?l=` relayé par un cookie (story 12) ;
+ *    première migration du projet, sur une base qui porte de vraies données.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
+
+/**
+ * La contrainte qui borne `session.label` — **une seule vérité**, posée par le
+ * DDL d'une base neuve et par l'`ALTER TABLE` du pas de migration d'une base
+ * existante, au mot près : les deux chemins doivent mener au même schéma, et
+ * c'est la seule garde qui protège la colonne d'un appelant futur qui ne
+ * validerait rien. Les bornes sont celles du proxy
+ * (`src/lib/visit-cookies.ts`), pas une seconde liste à tenir à la main.
+ *
+ * `NOT GLOB` plutôt que `LIKE` : `GLOB` distingue les casses et accepte une
+ * classe de caractères, donc elle dit exactement le jeu autorisé. `NULL` passe
+ * — c'est ce que vaut une session arrivée par une adresse nue, et ce que les
+ * lignes d'avant la version 5 ont reçu.
+ */
+export const SESSION_LABEL_CHECK = `label IS NULL OR (length(label) BETWEEN 1 AND ${LABEL_MAX} AND label NOT GLOB '*[^A-Za-z0-9_-]*')`;
 
 /**
  * Les sortes d'échange, liste close. `hero` : une des questions du premier
@@ -113,7 +137,16 @@ CREATE TABLE IF NOT EXISTS session (
   referer       TEXT,
   lang          TEXT NOT NULL,
   started_at    TEXT NOT NULL,
-  last_seen_at  TEXT NOT NULL
+  last_seen_at  TEXT NOT NULL,
+  -- L'étiquette du lien par lequel la session est arrivée (story 12) : le
+  -- paramètre « ?l= » d'une adresse envoyée à une personne nommée, borné et
+  -- restreint par src/lib/visit-cookies.ts avant d'arriver ici. NULL pour une
+  -- arrivée par une adresse nue. Posée à la création de la session, jamais
+  -- écrasée ensuite, jamais recopiée sur le visiteur : elle dit par où cette
+  -- visite-là est entrée, pas qui elle est. Déclarée en dernier, et avec le
+  -- même CHECK, que l'ALTER TABLE du pas de migration pose sur une base
+  -- existante : les deux chemins mènent au même schéma.
+  label         TEXT CHECK (${SESSION_LABEL_CHECK})
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS session_visitor_id ON session(visitor_id);

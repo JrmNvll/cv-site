@@ -158,6 +158,24 @@ describe('frontières de couches', () => {
     );
   });
 
+  it('« migration » ouvre la base et rien dʼautre ; lʼoutillage ordinaire nʼy touche pas', () => {
+    // `npm run migrate` (story 12) doit atteindre `journal` : c'est son travail.
+    // Un seul fichier nommé l'y autorise, plutôt que tout `scripts/`.
+    expect(layerPaths.migration).toEqual(['scripts/migrate.mjs']);
+    expect(forbiddenLayers.migration).not.toContain('journal');
+    expect(forbiddenLayers.migration).toEqual(
+      expect.arrayContaining(['content', 'knowledge', 'agent', 'app'])
+    );
+    // L'outillage ordinaire, lui, reste tenu à l'écart de la base.
+    expect(forbiddenLayers.scripts).toContain('journal');
+    expect(layerOf(join(SCRIPTS, 'migrate.mjs'))).toBe('migration');
+    expect(layerOf(join(SCRIPTS, 'check-content.mjs'))).toBe('scripts');
+    // Et la règle ESLint qui vaut pour ce fichier est celle de « migration » :
+    // les deux configurations portent sur lui, la dernière déclarée gagne.
+    const scopes = Object.keys(forbiddenLayers);
+    expect(scopes.indexOf('migration')).toBeGreaterThan(scopes.indexOf('scripts'));
+  });
+
   it('le code partagé est bien soumis à une règle, et il en existe', () => {
     const sharedFiles = files.filter((file) => layerOf(file) === shared);
     expect(sharedFiles.length).toBeGreaterThan(0);

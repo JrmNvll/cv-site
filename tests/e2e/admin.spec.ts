@@ -49,6 +49,9 @@ const visiteursSignes = (userAgent: string) =>
     userAgent
   )[0]!.n;
 const ipLabel = (ip: string) => lire<{label: string}>('SELECT label FROM ip_label WHERE ip = ?', ip)[0]?.label;
+/** L'étiquette du lien par lequel une session est arrivée (story 12). */
+const sessionLabel = (id: string) =>
+  lire<{label: string | null}>('SELECT label FROM session WHERE id = ?', id)[0]?.label;
 
 /** Les identifiants des `Set-Cookie` d'une réponse — ce que le navigateur reçoit. */
 function idsRecus(response: APIResponse): {visitorId: string; sessionId: string} {
@@ -155,12 +158,15 @@ test('une question posée sur le site se lit dans /admin : compteurs, session, v
     'page'
   );
   const cellules = ligne!.locator('td');
-  // Visiteur : l'identifiant abrégé, faute de nom ; adresse : celle de X-Client-IP ; deux échanges ; le coût du simulateur.
+  // Visiteur : l'identifiant abrégé, faute de nom ; adresse : celle de
+  // X-Client-IP ; lien : rien, la visite est arrivée par une adresse nue
+  // (story 12) ; deux échanges ; le coût du simulateur.
   await expect(cellules.nth(1)).toHaveText(`${visitorId.slice(0, 4)}…${visitorId.slice(-4)}`);
   await expect(cellules.nth(2)).toHaveText(ip);
   await expect(cellules.nth(3)).toHaveText('français');
-  await expect(cellules.nth(5)).toHaveText('2');
-  await expect(cellules.nth(6)).toHaveText(formatMicroUsd(cout));
+  await expect(cellules.nth(5)).toHaveText('—');
+  await expect(cellules.nth(6)).toHaveText('2');
+  await expect(cellules.nth(7)).toHaveText(formatMicroUsd(cout));
 
   // Le détail, par le lien de la ligne.
   await cellules.nth(0).getByRole('link').click();
@@ -259,6 +265,67 @@ test('nommer le visiteur par le formulaire : le nom apparaît dans le détail, l
   await expect(page).toHaveURL(new RegExp(`/admin/visiteurs/${visitorId}$`));
   await expect(page.locator('[data-visitor-name]')).toHaveText(`${visitorId.slice(0, 4)}…${visitorId.slice(-4)}`);
   expect(visitor(visitorId)).toEqual({id: visitorId, name: '', note: 'Vue en entretien fictif.'});
+});
+
+test('lʼétiquette dʼun lien se lit dans lʼadmin : la fiche de session et la colonne « Lien »', async ({
+  page,
+  context
+}, testInfo) => {
+  // Une valeur du jeu autorisé, sans référent : elle ne nomme personne.
+  const etiquette = `lien-${testInfo.testId.replace(/[^A-Za-z0-9_-]/g, '').slice(-8)}`;
+
+  // L'arrivée par le lien, dans le navigateur : la redirection retire `?l=`,
+  // la requête suivante crée la session avec l'étiquette.
+  await page.goto(`/fr?l=${etiquette}`);
+  await expect(page).toHaveURL(/\/fr$/);
+  const sessionId = sessionDuContexte(await context.cookies());
+  await expect.poll(() => sessionLabel(sessionId)).toBe(etiquette);
+
+  // La fiche : du texte, jamais un lien. Le crochet est nommé — `data-label`
+  // se confondrait avec l'étiquette d'adresse (`ip_label`).
+  await page.goto(`/admin/sessions/${sessionId}`);
+  const cellule = page.locator('[data-link-label]');
+  await expect(cellule).toHaveText(etiquette);
+  expect(await cellule.locator('a').count()).toBe(0);
+  // L'étiquette du lien et celle de l'adresse sont deux choses : l'adresse n'en
+  // a pas, elle affiche donc l'adresse elle-même.
+  await expect(page.locator('[data-address]')).not.toHaveText(etiquette);
+
+  // La liste du tableau de bord : la colonne « Lien », à sa place.
+  const ligne = await ligneDeSession(page, sessionId, true);
+  expect(ligne, 'la session doit être dans la liste').not.toBeNull();
+  // `allTextContents` et non `allInnerTexts` : la classe des en-têtes les
+  // met en capitales par CSS, ce que le texte rendu refléterait.
+  const entetes = (await page.locator('table thead th').allTextContents()).map((texte) => texte.trim());
+  expect(entetes).toEqual([
+    'Dernière activité',
+    'Visiteur',
+    'Adresse',
+    'Langue',
+    'Provenance',
+    'Lien',
+    'Échanges',
+    'Coût'
+  ]);
+  await expect(ligne!.locator('td').nth(entetes.indexOf('Lien'))).toHaveText(etiquette);
+
+  // La fiche du visiteur sert le **même** tableau sans la colonne « Visiteur »
+  // (`hideVisitor`) : les indices y glissent d'un cran, et une régression
+  // d'ordre passerait inaperçue si on ne regardait que le tableau de bord.
+  const visitorId = session(sessionId)!.visitor_id;
+  await page.goto(`/admin/visiteurs/${visitorId}`);
+  const entetesVisiteur = (await page.locator('table thead th').allTextContents()).map((texte) => texte.trim());
+  expect(entetesVisiteur).toEqual([
+    'Dernière activité',
+    'Adresse',
+    'Langue',
+    'Provenance',
+    'Lien',
+    'Échanges',
+    'Coût'
+  ]);
+  const ligneVisiteur = page.locator(`tr[data-session="${sessionId}"]`);
+  await expect(ligneVisiteur.locator('td').nth(entetesVisiteur.indexOf('Lien'))).toHaveText(etiquette);
 });
 
 test('étiqueter lʼadresse : lʼétiquette suit lʼadresse sur une autre session passée, et sur une session future', async ({

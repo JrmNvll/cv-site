@@ -37,6 +37,7 @@ voir « La suite adverse » plus bas.
 | `npm run dev` | Développement sur `http://127.0.0.1:3000` |
 | `npm run build` | Build autonome, puis `postbuild` : `.next/static` et `public/` recopiés dans `.next/standalone` — l'artefact complet |
 | `npm run start` | Sert l'artefact : `node start.mjs` — charge `.env.local` (l'environnement prime), force `127.0.0.1`, importe `server.js` |
+| `npm run migrate` | Met `usage.db` au schéma de ce code, copie de sauvegarde comprise, et dit ce qu'il a fait — sort `0` sans rien faire s'il n'y a rien à jouer ; `deploy.ps1` l'appelle après le build, avant la bascule |
 | `npm run lint` | ESLint, frontières de couches comprises |
 | `npm run typecheck` | `next typegen` puis `tsc --noEmit` |
 | `npm run test` | Tests unitaires (Vitest) |
@@ -155,13 +156,71 @@ Ce qu'il faut savoir :
   inscriptible.** Le site ne le crée pas : il refuse de démarrer, comme pour un
   contenu invalide. En mode WAL, SQLite pose `usage.db-wal` et `usage.db-shm` à
   côté ; les trois sont ignorés par Git.
-- **Le schéma est versionné** (`PRAGMA user_version`, version 4 depuis la story
-  8 : `exchange.kind` admet `hero`, `exchange.status` admet `cap_reached`, et
+- **Le schéma est versionné** (`PRAGMA user_version`, version 5 depuis la story
+  12 : `exchange.kind` admet `hero`, `exchange.status` admet `cap_reached`,
   l'étiquette d'une adresse vit dans sa table `ip_label(ip, label, at)` — plus
-  dans `session`). Une base plus récente que le code est refusée ; une base
-  plus ancienne aussi, tant qu'aucun mécanisme de migration n'existe — avant
-  la mise en ligne, une `usage.db` d'une version antérieure se recrée :
-  supprimer le fichier et ses compagnons `-wal` et `-shm`, redémarrer.
+  dans `session` —, et `session.label` porte l'étiquette du lien par lequel la
+  session est arrivée). Une base plus récente que le code est refusée.
+- **Une base plus ancienne est migrée à l'ouverture**
+  ([`src/journal/migrations.ts`](./src/journal/migrations.ts), story 12) : un
+  tableau de pas `n → n+1`, chacun dans **une** transaction avec le nouveau
+  `user_version`, précédés d'une copie de la base par `VACUUM INTO` dans
+  `DATA_DIR`, nommée d'après la version quittée (`usage-v4.db`). Un pas
+  n'ajoute que ce qui manque, ne supprime rien, et se rejoue sans effet ; une
+  base en lecture seule est refusée **avant** que la moindre copie soit écrite.
+  La migration a lieu **dans `applySchema()`** : un processus ne peut donc pas
+  démarrer sur une base en retard d'une colonne, et `npm run migrate` n'est
+  qu'une ouverture-fermeture ([`scripts/migrate.mjs`](./scripts/migrate.mjs))
+  pour que `deploy.ps1` la provoque au bon moment — après le build, avant la
+  bascule. **Le prix est explicite : une base migrée n'ouvre plus avec le code
+  précédent**, qui refuse une version plus récente que lui. Le retour arrière
+  d'un déploiement joué après une migration exige donc de **restaurer la
+  copie** (`usage.db` seul, sans ses compagnons `-wal` et `-shm`) avant de
+  redéployer le tag d'avant — c'est écrit aussi dans `dotfiles/vps/vps.md`.
+  Les versions 1 à 3 n'ont jamais atteint la production et n'ont pas de pas :
+  une telle base est refusée, avec le remède — la recréer.
+- **La fenêtre entre la migration et la bascule n'est sûre que pour des pas
+  additifs.** `deploy.ps1` migre avant de basculer : pendant ces quelques
+  secondes, c'est la **release précédente** qui sert, sur une base déjà en
+  avance d'une version. Elle continue de répondre parce qu'elle tient sa
+  connexion depuis son démarrage — elle ne rouvre pas, donc elle ne voit pas le
+  refus — et parce qu'un pas n'a **rien retiré** de ce qu'elle lit. C'est donc
+  une contrainte sur les pas, pas une propriété du mécanisme : un pas qui
+  retirerait ou renommerait une colonne, ou qui resserrerait une contrainte sur
+  ce que l'ancien code écrit, casserait la production dans cette fenêtre. Un tel
+  changement demanderait une autre chorégraphie (ajouter, déployer, migrer les
+  données, puis retirer au déploiement suivant) — et AD-7 interdit de toute
+  façon de retirer quoi que ce soit.
+- **Un lien traçable : `?l=<libellé>`** (story 12). Jérémie envoie l'adresse du
+  site à une personne nommée, avec un libellé au bout —
+  `https://cv.jnouvelle.com/fr?l=a7f3`. Le proxy, seul endroit qui pose un
+  cookie, valide le paramètre (1 à 32 caractères de `[A-Za-z0-9_-]` ; toute
+  autre valeur est **ignorée en silence**, la page est servie normalement), le
+  relaie par un cookie court `cv_label` et **redirige en `302` vers la même
+  adresse sans le paramètre**, les autres paramètres conservés, en passant par
+  le routage de langue (`/?l=…` mène à `/fr` en un seul saut) : le visiteur ne
+  le voit jamais dans sa barre d'adresse. La requête suivante crée la session
+  avec l'étiquette — `session.label`, posée à la **création**, jamais écrasée,
+  jamais recopiée sur le visiteur — et le proxy efface le cookie sur cette
+  même réponse, pour qu'une étiquette ne contamine pas la visite d'après. Un
+  retour par une adresse nue crée donc une session sans étiquette : c'est
+  voulu — et une arrivée étiquetée sur une session **déjà ouverte** garde
+  l'étiquette d'origine, ce que la ligne `visit.label_dropped` dit dans les
+  journaux. `/admin*` n'en consomme rien, mais y efface le relais : Jérémie est
+  précisément celui qui clique ses propres liens avant d'aller voir l'admin.
+  L'admin l'affiche (colonne « Lien », et une ligne sur la fiche de session),
+  comme du **texte** ; Jérémie promeut ensuite à la main, en nommant le
+  visiteur ou l'adresse. Les libellés restent **opaques** — ils ne nomment
+  personne : ils apparaissent aussi dans le journal d'accès de Caddy, gardé
+  quatorze jours.
+- **Deux choses à assumer à propos de cette étiquette**, qui ne sont pas des
+  oublis. La colonne « Lien » est **déclarative** : n'importe qui peut forger
+  un `?l=` du jeu autorisé et se présenter sous l'étiquette d'un autre ; elle
+  dit par quel lien une visite s'est annoncée, pas qui elle est — d'où son seul
+  usage, aider Jérémie à nommer un visiteur à la main. Et un `?l=` **refusé
+  reste dans la barre d'adresse** : le silence est voulu (rien n'apprend à
+  l'inconnu ce qui passe ou non), mais la contrepartie est qu'une valeur hors du
+  jeu n'est pas retirée de l'URL, contrairement à une valeur acceptée.
 - **Le journal n'efface rien** (AD-7) : insertions, plus une liste fermée de
   colonnes modifiables — `session.last_seen_at` ; la finalisation d'un
   échange réservé (`status`, `answer`, `sources`, `citation_ok`, les quatre
@@ -230,8 +289,8 @@ propre racine (`src/app/(admin)/`), sans next-intl et sans texte dans
 
 | Page | Montre |
 | --- | --- |
-| `GET /admin` | Dépense du mois face au plafond, nombre de sessions et d'échanges ; les 50 sessions les plus récemment actives **ayant au moins un échange** — dernière activité, visiteur (nom ou identifiant abrégé), adresse (étiquette ou adresse), langue, provenance, échanges, coût ; `?tout=1` montre aussi les sessions sans échange (les sondes de robots, filtrées à la lecture) ; `?page=` pagine |
-| `GET /admin/sessions/<ulid>` | Visiteur, adresse, navigateur, provenance, langue, début et dernière activité ; tous les échanges dans l'ordre, toute sorte et tout statut — la question **en texte**, la réponse rendue par le même `renderMarkdown` que le panneau, sources, citations, compteurs, coût, latence ; les deux formulaires |
+| `GET /admin` | Dépense du mois face au plafond, nombre de sessions et d'échanges ; les 50 sessions les plus récemment actives **ayant au moins un échange** — dernière activité, visiteur (nom ou identifiant abrégé), adresse (étiquette ou adresse), langue, provenance, **lien** (l'étiquette du `?l=` par lequel la session est arrivée, « — » sans), échanges, coût ; `?tout=1` montre aussi les sessions sans échange (les sondes de robots, filtrées à la lecture) ; `?page=` pagine |
+| `GET /admin/sessions/<ulid>` | Visiteur, adresse, **lien**, navigateur, provenance, langue, début et dernière activité ; tous les échanges dans l'ordre, toute sorte et tout statut — la question **en texte**, la réponse rendue par le même `renderMarkdown` que le panneau, sources, citations, compteurs, coût, latence ; les deux formulaires |
 | `GET /admin/visiteurs/<ulid>` | Nom, note, première visite, le formulaire nom + note, toutes les sessions du visiteur |
 | `GET /admin/questions` | Les puces du premier écran par identifiant (libellé du corpus français), les questions libres et annonces par texte normalisé (minuscules, blancs réduits, 200 premiers caractères) — 50 lignes chacun, sur toute la période |
 
@@ -788,6 +847,27 @@ ce qui est validé est durable, le point de contrôle se fait à l'ouverture
 suivante. Pour **restaurer** une sauvegarde : `usage.db` seul — ne pas
 recopier les `usage.db-wal` et `usage.db-shm` que la sauvegarde pose à côté,
 un WAL étranger rejoué sur une base restaurée la corromprait.
+
+**Les migrations, et le retour arrière.** `deploy.ps1` lance `npm run migrate
+--if-present` **après** `npm run build` et **avant** la bascule : une page qui
+interrogerait une colonne absente échouerait à la génération, et l'application
+doit démarrer sur un schéma à jour. Le script ouvre et referme le journal —
+c'est l'ouverture qui migre (voir « Le journal des visites ») —, dit sur la
+sortie standard ce qu'il a fait, et sort `0` sans rien faire s'il n'y a rien à
+jouer — et une base absente est un **refus**, pas une création : un `DATA_DIR`
+mal recopié ne doit pas donner un déploiement vert sur un journal neuf. Il copie
+la base avant d'y toucher, dans `DATA_DIR`, sous le nom de la version quittée :
+`C:\Data\cv-site\usage-v4.db` — ou, si ce nom est déjà pris (une base restaurée
+peut retrouver la copie d'une migration antérieure), un nom horodaté à côté,
+plutôt que pas de copie du tout. **Conséquence sur le retour
+arrière** : une base migrée n'ouvre plus avec le code précédent, qui refuse une
+version plus récente que lui — `deploy.ps1 -Rollback` seul laisserait donc le
+service relancé en boucle sur « écrite par une version plus récente ». Si le
+tag qu'on quitte a migré la base, il faut, dans cet ordre : arrêter le service,
+remettre `usage.db` depuis la copie (elle seule, sans `-wal` ni `-shm`), puis
+`deploy.ps1 -Rollback`. Les visites écrites depuis la migration sont alors
+perdues — c'est le prix du retour arrière, et c'est pourquoi la copie est faite
+par le code lui-même. La même procédure est écrite dans `dotfiles/vps/vps.md`.
 
 **Le premier déploiement, dans l'ordre** — ce que Claude fait sur la demande
 explicite de Jérémie, et jamais de lui-même :

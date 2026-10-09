@@ -11,14 +11,22 @@
  * visiteur, session, adresse, navigateur, provenance et langue en paramètres,
  * c'est précisément ce qui le rend testable sans monter Next.
  */
-import {chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync} from 'node:fs';
+import {chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {fileURLToPath} from 'node:url';
 import {afterAll, afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {closeJournal, JOURNAL_FILE, openJournal} from '@/journal/db';
-import {BUSY_TIMEOUT_MS, DDL, SCHEMA_VERSION} from '@/journal/schema';
+import {
+  assertMigrationChain,
+  backupFile,
+  FIRST_MIGRATABLE_VERSION,
+  MIGRATIONS,
+  runMigrations,
+  type Migration
+} from '@/journal/migrations';
+import {BUSY_TIMEOUT_MS, DDL, SCHEMA_VERSION, SESSION_LABEL_CHECK} from '@/journal/schema';
 import {
   addExchange,
   EXCHANGE_KINDS,
@@ -59,6 +67,8 @@ import {
   type TouchSessionInput
 } from '@/journal';
 import {isUlid, ulid, ulidTime} from '@/lib/ulid';
+import {DDL_V4, DDL_V4_EST_DERIVE} from './journal-v4';
+import {LABEL_MAX} from '@/lib/visit-cookies';
 
 const JOURNAL_SOURCES = fileURLToPath(new URL('../../src/journal', import.meta.url));
 const NOW = new Date('2026-09-15T10:00:00.000Z');
@@ -101,6 +111,125 @@ function count(table: 'visitor' | 'session' | 'exchange'): number {
   return (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as {n: number}).n;
 }
 
+
+/** Les noms de colonnes d'une table, dans l'ordre du schéma. */
+function colonnes(connexion: DatabaseSync, table: string): string[] {
+  return (connexion.prepare('SELECT name FROM pragma_table_info(?)').all(table) as {name: string}[]).map(
+    (row) => row.name
+  );
+}
+
+/**
+ * Le schéma complet d'une base, lu des pragmas : chaque table avec ses colonnes
+ * (nom, type, nullité, valeur par défaut, clé primaire) et ses index.
+ *
+ * Pas le texte de `sqlite_master` : un `ALTER TABLE ADD COLUMN` l'allonge à sa
+ * façon, alors qu'une base neuve porte le DDL d'origine — les deux décrivent le
+ * même schéma sans s'écrire pareil. Ceci compare ce qui compte, et attrape un
+ * pas qui se tromperait de type ou de nullité.
+ */
+function schemaDe(connexion: DatabaseSync): unknown {
+  const tables = (
+    connexion
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+      .all() as {name: string}[]
+  ).map((row) => row.name);
+  return tables.map((table) => ({
+    table,
+    colonnes: connexion.prepare('SELECT name, type, "notnull", dflt_value, pk FROM pragma_table_info(?)').all(table),
+    index: connexion
+      .prepare('SELECT name, "unique", origin, partial FROM pragma_index_list(?) ORDER BY name')
+      .all(table)
+  }));
+}
+
+/**
+ * Une base en version 4 — le schéma d'avant `session.label` — peuplée de `n`
+ * visiteurs, sessions et échanges. Rendue **ouverte** : l'appelant la referme.
+ */
+function baseV4Peuplee(chemin: string, n: number): DatabaseSync {
+  // Le garde de la découpe : sans lui, un DDL qui change de forme donnerait une
+  // « base v4 » déjà pourvue de la colonne, et les tests de migration ne
+  // prouveraient plus rien.
+  expect(DDL_V4_EST_DERIVE, 'le DDL v4 doit être dérivé du DDL courant').toBe(true);
+  const base = new DatabaseSync(chemin);
+  base.exec('PRAGMA journal_mode = WAL');
+  base.exec(DDL_V4);
+  for (let index = 0; index < n; index++) {
+    const visiteur = ulid(NOW.getTime() + index);
+    const session = ulid(NOW.getTime() + index);
+    base.prepare('INSERT INTO visitor (id, first_seen) VALUES (?, ?)').run(visiteur, NOW.toISOString());
+    base
+      .prepare(
+        `INSERT INTO session (id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(session, visiteur, '203.0.113.7', 'Navigateur/1.0 (test)', null, 'fr', NOW.toISOString(), NOW.toISOString());
+    base
+      .prepare(
+        `INSERT INTO exchange (id, session_id, kind, status, question, at)
+         VALUES (?, ?, 'hero', 'done', ?, ?)`
+      )
+      .run(ulid(NOW.getTime() + index), session, `Question ${index}`, NOW.toISOString());
+  }
+  base.exec('PRAGMA user_version = 4');
+  return base;
+}
+
+/**
+ * Pose une étiquette directement en base, sans passer par `touchSession` — la
+ * seule façon d'éprouver le `CHECK` de la colonne, qui est là pour l'appelant
+ * futur qui ne validerait rien.
+ */
+function insereEtiquette(connexion: DatabaseSync, label: string): void {
+  const visiteur = ulid(NOW.getTime());
+  const session = ulid(NOW.getTime() + 1);
+  connexion.prepare('INSERT INTO visitor (id, first_seen) VALUES (?, ?)').run(visiteur, NOW.toISOString());
+  connexion
+    .prepare(
+      `INSERT INTO session (id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at, label)
+       VALUES (?, ?, '203.0.113.7', NULL, NULL, 'fr', ?, ?, ?)`
+    )
+    .run(session, visiteur, NOW.toISOString(), NOW.toISOString(), label);
+}
+
+/**
+ * Tout ce que la base contient des trois entités, trié : de quoi prouver
+ * qu'une migration n'a touché à aucune ligne. Les colonnes sont nommées une à
+ * une — `SELECT *` rendrait la colonne ajoutée et ne comparerait plus rien.
+ */
+function inventaire(connexion: DatabaseSync): unknown {
+  const all = (sql: string) => connexion.prepare(sql).all();
+  return {
+    visitor: all('SELECT id, name, note, first_seen FROM visitor ORDER BY id'),
+    session: all(
+      `SELECT id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at
+       FROM session ORDER BY id`
+    ),
+    ip_label: all('SELECT ip, label, at FROM ip_label ORDER BY ip'),
+    exchange: all(`SELECT ${EXCHANGE_COLUMNS_TEST} FROM exchange ORDER BY id`)
+  };
+}
+
+/** Les colonnes d'un échange, nommées : voir `inventaire()`. */
+const EXCHANGE_COLUMNS_TEST = [
+  'id',
+  'session_id',
+  'kind',
+  'status',
+  'question',
+  'answer',
+  'sources',
+  'citation_ok',
+  'input_tokens',
+  'output_tokens',
+  'cache_read_tokens',
+  'cache_creation_tokens',
+  'cost_micro_usd',
+  'latency_ms',
+  'at'
+].join(', ');
+
 /** La valeur d'un pragma — la colonne rendue ne porte pas toujours son nom. */
 function pragma(name: string): unknown {
   const row = db.prepare(`PRAGMA ${name}`).get() as Record<string, unknown>;
@@ -142,7 +271,9 @@ describe('première visite', () => {
       referer: 'https://exemple.invalid/offre',
       lang: 'fr',
       startedAt: NOW.toISOString(),
-      lastSeenAt: NOW.toISOString()
+      lastSeenAt: NOW.toISOString(),
+      // Une visite par une adresse nue n'a pas d'étiquette de lien (story 12).
+      label: null
     });
     expect(count('visitor')).toBe(1);
     expect(count('session')).toBe(1);
@@ -171,6 +302,66 @@ describe('première visite', () => {
     expect(session.startedAt).toMatch(ISO_UTC);
     expect(session.startedAt).toBe(LATER.toISOString());
     expect(findVisitor(entree.visitorId)!.firstSeen).toBe(LATER.toISOString());
+  });
+});
+
+describe('lʼétiquette dʼun lien (story 12)', () => {
+  it('est posée à la création de la session, et nulle part ailleurs', () => {
+    const entree = visite({label: 'a7f3'});
+
+    touchSession(entree);
+
+    expect(findSession(entree.sessionId)!.label).toBe('a7f3');
+    // Jamais sur le visiteur : elle dit par où une visite est entrée, pas qui
+    // elle est. Deux liens, deux sessions, deux étiquettes.
+    expect(findVisitor(entree.visitorId)).toEqual({
+      id: entree.visitorId,
+      name: null,
+      note: null,
+      firstSeen: NOW.toISOString()
+    });
+    const autre = visite({visitorId: entree.visitorId, label: 'zz9'});
+    touchSession(autre);
+    expect(findSession(autre.sessionId)!.label).toBe('zz9');
+    expect(findSession(entree.sessionId)!.label).toBe('a7f3');
+  });
+
+  it('nʼest jamais écrasée sur une session existante : une prolongation ne la touche pas', () => {
+    const entree = visite({label: 'a7f3'});
+    touchSession(entree);
+
+    // Une seconde arrivée étiquetée autrement, puis une visite sans étiquette :
+    // ni l'une ni l'autre ne change ce que la session porte.
+    expect(touchSession({...entree, label: 'zz9', now: LATER}).outcome).toBe('prolonged');
+    expect(findSession(entree.sessionId)!.label).toBe('a7f3');
+    touchSession({...entree, label: null, now: LATER});
+    expect(findSession(entree.sessionId)!.label).toBe('a7f3');
+  });
+
+  it('vaut null sans étiquette, et une session nue reste nue', () => {
+    const nue = visite();
+    touchSession(nue);
+    expect(findSession(nue.sessionId)!.label).toBeNull();
+
+    // Même geste, avec `label` explicitement nul ou absent.
+    const explicite = visite({label: null});
+    touchSession(explicite);
+    expect(findSession(explicite.sessionId)!.label).toBeNull();
+  });
+
+  it('se lit dans les listes de lʼadmin, sur la ligne de sa session', () => {
+    const etiquetee = visite({label: 'a7f3', now: LATER});
+    const nue = visite({now: NOW});
+    touchSession(etiquetee);
+    touchSession(nue);
+
+    const page = listSessions({withExchanges: false, page: 1});
+
+    expect(page.sessions.map((session) => [session.id, session.label])).toEqual([
+      [etiquetee.sessionId, 'a7f3'],
+      [nue.sessionId, null]
+    ]);
+    expect(visitorSessions(etiquetee.visitorId).sessions[0]!.label).toBe('a7f3');
   });
 });
 
@@ -880,6 +1071,7 @@ describe('lʼadmin (story 8) — lectures agrégées', () => {
       lang: 'fr',
       startedAt: minute(1).toISOString(),
       lastSeenAt: minute(1).toISOString(),
+      label: null,
       exchanges: 4,
       costMicroUsd: 250
     });
@@ -1239,30 +1431,43 @@ describe('ouverture', () => {
         ''
       )
     ]
-  ])('refuse une base en version %i — schéma changé avant la mise en ligne, à recréer', (version, ddl) => {
-    // Rejouer le DDL courant n'y changerait rien (`IF NOT EXISTS`), et aucune
-    // migration n'existe : la base d'avant la mise en ligne se recrée, elle ne
-    // se convertit pas.
-    expect(ddl).not.toBe(DDL);
-    closeJournal();
-    const ancienne = join(dataDir(), JOURNAL_FILE);
-    const vieille = new DatabaseSync(ancienne);
-    vieille.exec(ddl);
-    vieille.exec(`PRAGMA user_version = ${version}`);
-    vieille.close();
+  ])(
+    'refuse une base en version %i — plus ancienne que le premier pas : à recréer, et rien nʼest écrit',
+    (version, ddl) => {
+      // Les versions 1 à 3 n'ont jamais atteint la production : elles se
+      // recréaient. Écrire des pas jamais éprouvés pour elles serait pire que
+      // de dire le remède — mais le refus doit **dire ce remède**, pas laisser
+      // l'exploitant devant une impasse. Rien n'est écrit : ni la base, ni une
+      // copie de sauvegarde.
+      expect(ddl).not.toBe(DDL);
+      closeJournal();
+      const dir = dataDir();
+      const ancienne = join(dir, JOURNAL_FILE);
+      const vieille = new DatabaseSync(ancienne);
+      vieille.exec(ddl);
+      vieille.exec(`PRAGMA user_version = ${version}`);
+      vieille.close();
 
-    expect(() => openJournal(ancienne)).toThrowError(new RegExp(`version ${version}`));
-    expect(() => openJournal(ancienne)).toThrowError(/recréer usage\.db/);
-    expect(() => openJournal(ancienne)).toThrowError(/DATA_DIR/);
-    // Rien n'a été tamponné ni modifié : la base reste à sa version.
-    const relue = new DatabaseSync(ancienne, {readOnly: true});
-    expect((relue.prepare('PRAGMA user_version').get() as {user_version: number}).user_version).toBe(version);
-    relue.close();
-    db = openJournal(path);
-  });
+      expect(() => openJournal(ancienne)).toThrowError(new RegExp(`version ${version}`));
+      // Un remède, pas seulement un constat.
+      expect(() => openJournal(ancienne)).toThrowError(/recréer usage\.db/);
+      expect(() => openJournal(ancienne)).toThrowError(/-wal/);
+      expect(() => openJournal(ancienne)).toThrowError(/DATA_DIR/);
+      // Rien n'a été tamponné ni modifié : la base reste à sa version.
+      const relue = new DatabaseSync(ancienne, {readOnly: true});
+      expect((relue.prepare('PRAGMA user_version').get() as {user_version: number}).user_version).toBe(version);
+      relue.close();
+      expect(readdirSync(dir).filter((name) => name.startsWith('usage-v'))).toEqual([]);
+      db = openJournal(path);
+    }
+  );
 
-  it('est en version 4 : hero, cap_reached, et lʼétiquette dʼadresse dans sa table', () => {
-    expect(SCHEMA_VERSION).toBe(4);
+  it('est en version 5 : hero, cap_reached, lʼétiquette dʼadresse dans sa table, et session.label', () => {
+    expect(SCHEMA_VERSION).toBe(5);
+    expect(DDL).toMatch(/label\s+TEXT CHECK \(.+\)\n\) STRICT;/);
+    // La borne de la colonne est celle du proxy, pas une seconde liste.
+    expect(SESSION_LABEL_CHECK).toContain(`BETWEEN 1 AND ${LABEL_MAX}`);
+    expect(DDL).toContain(SESSION_LABEL_CHECK);
     expect(DDL).toContain("CHECK (kind IN ('chat', 'match', 'hero'))");
     expect(DDL).toContain("CHECK (status IN ('pending', 'done', 'model_error', 'cap_reached'))");
     expect([...EXCHANGE_STATUSES].sort()).toEqual(['cap_reached', 'done', 'model_error', 'pending']);
@@ -1270,6 +1475,173 @@ describe('ouverture', () => {
       /CREATE TABLE IF NOT EXISTS ip_label \(\s*ip\s+TEXT PRIMARY KEY,\s*label\s+TEXT NOT NULL,\s*at\s+TEXT NOT NULL\s*\) STRICT;/
     );
     expect(DDL).not.toMatch(/ip_label\s+TEXT,/);
+  });
+
+  it('migre une base v4 peuplée : même schéma quʼune base neuve, lignes intactes, copie écrite, rejouée sans effet', () => {
+    // La première migration du projet (story 12), sur une base qui ressemble à
+    // celle de production : des visiteurs, des sessions, des échanges.
+    const neuve = schemaDe(db);
+    closeJournal();
+    const dir = dataDir();
+    const ancienne = join(dir, JOURNAL_FILE);
+    const avant = baseV4Peuplee(ancienne, 3);
+    const lignesAvant = inventaire(avant);
+    expect(colonnes(avant, 'session')).not.toContain('label');
+    avant.close();
+
+    // Première ouverture : la migration a lieu.
+    db = openJournal(ancienne);
+    expect(pragma('user_version')).toBe(SCHEMA_VERSION);
+    // **Le schéma entier**, pas la seule présence du nom de colonne : un pas
+    // qui écrirait `INTEGER` au lieu de `TEXT`, ou qui oublierait le `CHECK`,
+    // passerait tous les tests et casserait la première visite étiquetée sur
+    // la seule base qui porte de vraies données.
+    expect(schemaDe(db)).toEqual(neuve);
+    expect(inventaire(db)).toEqual(lignesAvant);
+    // Toutes les sessions d'avant sont sans étiquette, et rien n'a changé.
+    expect((db.prepare('SELECT count(*) AS n FROM session WHERE label IS NULL').get() as {n: number}).n).toBe(3);
+
+    // Et une visite étiquetée **sur la base migrée**, écrite puis relue : c'est
+    // le geste que la production fera en premier.
+    const entree = visite({label: 'a7f3'});
+    touchSession(entree);
+    expect(findSession(entree.sessionId)!.label).toBe('a7f3');
+    // La contrainte est bien là, et c'est la même que sur une base neuve.
+    expect(() => insereEtiquette(db, 'a b')).toThrowError(/CHECK|contrainte|constraint/i);
+
+    // La copie de la base **avant** migration, nommée d'après la version quittée.
+    const copie = join(dir, backupFile(4));
+    expect(existsSync(copie)).toBe(true);
+    const relue = new DatabaseSync(copie, {readOnly: true});
+    expect((relue.prepare('PRAGMA user_version').get() as {user_version: number}).user_version).toBe(4);
+    expect(colonnes(relue, 'session')).not.toContain('label');
+    expect(inventaire(relue)).toEqual(lignesAvant);
+    relue.close();
+
+    // Rejouée : plus rien à faire, et aucune seconde copie.
+    closeJournal();
+    const copieAge = statSync(copie).mtimeMs;
+    db = openJournal(ancienne);
+    expect(pragma('user_version')).toBe(SCHEMA_VERSION);
+    expect(statSync(copie).mtimeMs).toBe(copieAge);
+    expect(readdirSync(dir).filter((name) => name.startsWith('usage-v'))).toEqual([backupFile(4)]);
+    closeJournal();
+    db = openJournal(path);
+  });
+
+  it('une base déjà à jour nʼest pas migrée : aucune copie de sauvegarde', () => {
+    // `beforeEach` vient d'ouvrir une base neuve, donc à `SCHEMA_VERSION`.
+    expect(pragma('user_version')).toBe(SCHEMA_VERSION);
+    closeJournal();
+    db = openJournal(path);
+    expect(readdirSync(dirname(path)).filter((name) => name.startsWith('usage-v'))).toEqual([]);
+  });
+
+  it('reprend une migration interrompue : la copie canonique est gardée, une seconde est horodatée', () => {
+    // Une base restaurée depuis la sauvegarde nocturne peut très bien retrouver
+    // un `usage-v4.db` laissé par une migration antérieure : cette copie-là ne
+    // porte **pas** l'état de celle-ci. On en écrit donc une autre plutôt que
+    // de n'en écrire aucune — et c'est aussi ce qui règle la course entre le
+    // service et `npm run migrate` ouvrant la même base en retard.
+    closeJournal();
+    const dir = dataDir();
+    const ancienne = join(dir, JOURNAL_FILE);
+    baseV4Peuplee(ancienne, 2).close();
+    const canonique = join(dir, backupFile(4));
+    writeFileSync(canonique, 'une copie dʼavant, dont on ne sait rien');
+
+    db = openJournal(ancienne);
+
+    expect(pragma('user_version')).toBe(SCHEMA_VERSION);
+    // La copie déjà là n'a pas été touchée.
+    expect(readFileSync(canonique, 'utf8')).toBe('une copie dʼavant, dont on ne sait rien');
+    // Et une copie horodatée a été écrite à côté, qui porte bien la v4.
+    const copies = readdirSync(dir).filter((name) => name.startsWith('usage-v4-'));
+    expect(copies).toHaveLength(1);
+    const horodatee = new DatabaseSync(join(dir, copies[0]!), {readOnly: true});
+    expect((horodatee.prepare('PRAGMA user_version').get() as {user_version: number}).user_version).toBe(4);
+    expect(colonnes(horodatee, 'session')).not.toContain('label');
+    horodatee.close();
+    closeJournal();
+    db = openJournal(path);
+  });
+
+  it('refuse une base en retard et en lecture seule **avant** dʼécrire la moindre copie', () => {
+    // Sans la sonde d'écriture en tête, une base en lecture seule laisserait
+    // une copie orpheline derrière elle — et la tentative suivante la prendrait
+    // pour l'état d'avant une migration qui n'a jamais eu lieu.
+    closeJournal();
+    const dir = dataDir();
+    const ancienne = join(dir, JOURNAL_FILE);
+    baseV4Peuplee(ancienne, 1).close();
+    chmodSync(ancienne, 0o444);
+    try {
+      expect(() => openJournal(ancienne)).toThrowError(/inscriptible/);
+      expect(() => openJournal(ancienne)).toThrowError(/rien n'a été copié ni migré/);
+      expect(readdirSync(dir).filter((name) => name.startsWith('usage-v'))).toEqual([]);
+    } finally {
+      chmodSync(ancienne, 0o644);
+    }
+    // La base est intacte, et s'ouvre dès qu'elle redevient inscriptible.
+    db = openJournal(ancienne);
+    expect(pragma('user_version')).toBe(SCHEMA_VERSION);
+    closeJournal();
+    db = openJournal(path);
+  });
+
+  it('refuse de migrer quand la copie de sauvegarde est impossible : rien nʼest joué', () => {
+    // Le garde-fou central du mécanisme : pas de copie, pas de migration.
+    // `runMigrations` reçoit le chemin de celui qui a ouvert — ici un chemin
+    // dont le répertoire n'existe pas, ce qui fait échouer le `VACUUM INTO`.
+    closeJournal();
+    const dir = dataDir();
+    const ancienne = join(dir, JOURNAL_FILE);
+    baseV4Peuplee(ancienne, 2).close();
+    const brut = new DatabaseSync(ancienne);
+    try {
+      expect(() => runMigrations(brut, join(dir, 'absent', JOURNAL_FILE), 4)).toThrowError(
+        /copie de sauvegarde impossible/
+      );
+      expect(() => runMigrations(brut, join(dir, 'absent', JOURNAL_FILE), 4)).toThrowError(
+        /rien n'a été migré/
+      );
+      // La base n'a pas bougé : ni version, ni colonne.
+      expect((brut.prepare('PRAGMA user_version').get() as {user_version: number}).user_version).toBe(4);
+      expect(colonnes(brut, 'session')).not.toContain('label');
+    } finally {
+      brut.close();
+    }
+    expect(readdirSync(dir).filter((name) => name.startsWith('usage-v'))).toEqual([]);
+  });
+
+  it('les pas sʼenchaînent de 1 en 1 jusquʼà SCHEMA_VERSION, un par version', () => {
+    // Dérivé de `SCHEMA_VERSION`, pas une liste en dur : relever la version
+    // sans écrire son pas doit faire échouer **ce** test.
+    const premier = SCHEMA_VERSION - MIGRATIONS.length + 1;
+    expect(MIGRATIONS.map((migration) => migration.to)).toEqual(
+      Array.from({length: MIGRATIONS.length}, (_, index) => premier + index)
+    );
+    expect(FIRST_MIGRATABLE_VERSION).toBe(premier - 1);
+    expect(backupFile(4)).toBe('usage-v4.db');
+    // Le nom horodaté ne porte ni deux-points ni point hors extension : Windows
+    // n'en accepte pas dans un nom de fichier.
+    const horodate = backupFile(4, new Date('2026-10-09T08:30:01.002Z'));
+    expect(horodate).toBe('usage-v4-2026-10-09T08-30-01-002Z.db');
+    expect(horodate.slice(0, -3)).not.toMatch(/[:.]/);
+  });
+
+  it('refuse au chargement un tableau de pas en double, troué, ou qui nʼatteint pas la version', () => {
+    // Ce que `assertMigrationChain` tient, et qui est appelé au chargement du
+    // module : une erreur de maintenance arrête le processus au démarrage, pas
+    // à la première migration sur la base de production.
+    const pas = (to: number): Migration => ({to, what: 'essai', up: () => {}});
+    expect(() => assertMigrationChain([pas(4), pas(5)], 5)).not.toThrow();
+    expect(() => assertMigrationChain([], 5)).not.toThrow();
+    expect(() => assertMigrationChain([pas(5), pas(5)], 5)).toThrowError(/la même version/);
+    expect(() => assertMigrationChain([pas(3), pas(5)], 5)).toThrowError(/de 1 en 1/);
+    expect(() => assertMigrationChain([pas(4), pas(5)], 6)).toThrowError(/SCHEMA_VERSION/);
+    // Et le tableau réel passe la même porte.
+    expect(() => assertMigrationChain(MIGRATIONS, SCHEMA_VERSION)).not.toThrow();
   });
 
   it('dérive les CHECK du DDL des listes closes du code : une seule vérité', () => {
@@ -1339,7 +1711,12 @@ describe('ce que le module ne peut pas faire', () => {
     .map((name) => [name, readFileSync(join(JOURNAL_SOURCES, name), 'utf8')] as const);
 
   it('a bien des sources à contrôler', () => {
-    expect(sources.map(([name]) => name).sort()).toEqual(['db.ts', 'index.ts', 'schema.ts']);
+    expect(sources.map(([name]) => name).sort()).toEqual([
+      'db.ts',
+      'index.ts',
+      'migrations.ts',
+      'schema.ts'
+    ]);
   });
 
   it.each(sources)('%s ne contient ni DELETE, ni DROP, ni TRUNCATE, ni REPLACE', (_name, source) => {

@@ -6,6 +6,7 @@
  */
 import {describe, expect, it} from 'vitest';
 import {
+  ABSENT,
   addressLabel,
   formatInstant,
   formatInteger,
@@ -14,6 +15,7 @@ import {
   KIND_LABELS,
   labelOrNull,
   langLabel,
+  linkLabel,
   parsePage,
   shortId,
   STATUS_LABELS,
@@ -77,6 +79,16 @@ describe('les libellés', () => {
     expect(addressLabel('Bureau fictif', '203.0.113.7')).toBe('Bureau fictif');
     expect(addressLabel('', '203.0.113.7')).toBe('203.0.113.7');
     expect(addressLabel(null, '203.0.113.7')).toBe('203.0.113.7');
+  });
+
+  it('écrit lʼétiquette dʼun lien, ou « — » quand la session nʼen a pas (story 12)', () => {
+    expect(linkLabel('a7f3')).toBe('a7f3');
+    expect(linkLabel(' a7f3 ')).toBe('a7f3');
+    // Une session arrivée par une adresse nue, ou née avant la version 5.
+    expect(linkLabel(null)).toBe(ABSENT);
+    expect(linkLabel(undefined)).toBe(ABSENT);
+    expect(linkLabel('')).toBe(ABSENT);
+    expect(ABSENT).toBe('—');
   });
 
   it('nomme chaque sorte et chaque statut du journal, en français', () => {

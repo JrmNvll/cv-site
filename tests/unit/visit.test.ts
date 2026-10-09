@@ -16,7 +16,7 @@ import {
   visitIds,
   type CookieReader
 } from '@/app/_lib/visit';
-import {SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
+import {LABEL_COOKIE, LABEL_MAX, SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
 
 const journal = vi.hoisted(() => ({touchSession: vi.fn()}));
 vi.mock('@/journal', () => journal);
@@ -152,7 +152,9 @@ describe('recordVisit', () => {
       ip: 'dev',
       userAgent: 'Navigateur/1.0 (test)',
       referer: 'https://exemple.invalid/offre',
-      lang: 'en'
+      lang: 'en',
+      // Aucun cookie relais présenté : pas d'étiquette de lien (story 12).
+      label: null
     });
   });
 
@@ -206,6 +208,100 @@ describe('recordVisit', () => {
     expect(journal.touchSession).toHaveBeenCalledWith(
       expect.objectContaining({userAgent: null, referer: null})
     );
+  });
+
+  it('relaie lʼétiquette du cookie cv_label jusquʼau journal (story 12)', async () => {
+    await recordVisit({
+      cookies: jar({
+        [VISITOR_COOKIE]: VISITOR_ID,
+        [SESSION_COOKIE]: `${SESSION_ID}.1`,
+        [LABEL_COOKIE]: 'a7f3'
+      }),
+      headers,
+      lang: 'fr'
+    });
+
+    expect(journal.touchSession).toHaveBeenCalledWith(expect.objectContaining({label: 'a7f3'}));
+  });
+
+  it('refuse une étiquette forgée : un cookie ne vaut pas mieux quʼune chaîne de requête', async () => {
+    // Le proxy ne pose jamais ces valeurs, mais le cookie n'est pas signé —
+    // rien de hors bornes ou hors jeu n'entre dans la base.
+    for (const valeur of ['', 'a b', 'a/b', '<script>', 'é', 'x'.repeat(LABEL_MAX + 1)]) {
+      vi.resetAllMocks();
+      journal.touchSession.mockReturnValue({outcome: 'created', visitorCreated: true});
+      await recordVisit({
+        cookies: jar({
+          [VISITOR_COOKIE]: VISITOR_ID,
+          [SESSION_COOKIE]: `${SESSION_ID}.1`,
+          [LABEL_COOKIE]: valeur
+        }),
+        headers,
+        lang: 'fr'
+      });
+      expect(journal.touchSession, JSON.stringify(valeur)).toHaveBeenCalledWith(
+        expect.objectContaining({label: null})
+      );
+    }
+    // La borne, elle, passe.
+    vi.resetAllMocks();
+    journal.touchSession.mockReturnValue({outcome: 'created', visitorCreated: true});
+    await recordVisit({
+      cookies: jar({
+        [VISITOR_COOKIE]: VISITOR_ID,
+        [SESSION_COOKIE]: `${SESSION_ID}.1`,
+        [LABEL_COOKIE]: 'x'.repeat(LABEL_MAX)
+      }),
+      headers,
+      lang: 'fr'
+    });
+    expect(journal.touchSession).toHaveBeenCalledWith(
+      expect.objectContaining({label: 'x'.repeat(LABEL_MAX)})
+    );
+  });
+
+  it('dit la perte dʼune étiquette arrivée sur une session déjà ouverte', async () => {
+    // L'étiquette n'est posée qu'à la création de la session : une arrivée par
+    // un lien alors qu'une session est déjà ouverte n'est donc pas écrite — et
+    // le proxy efface le relais juste après. Voulu pour la base, mais l'arrivée
+    // serait alors invisible : une ligne la rend lisible dans les journaux.
+    journal.touchSession.mockReturnValue({outcome: 'prolonged', visitorCreated: false});
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await recordVisit({
+      cookies: jar({
+        [VISITOR_COOKIE]: VISITOR_ID,
+        [SESSION_COOKIE]: `${SESSION_ID}.1`,
+        [LABEL_COOKIE]: 'zz9'
+      }),
+      headers,
+      lang: 'fr'
+    });
+
+    expect(avertissement).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(avertissement.mock.calls[0]![0] as string)).toMatchObject({
+      level: 'warn',
+      event: 'visit.label_dropped',
+      sessionId: SESSION_ID,
+      label: 'zz9',
+      outcome: 'prolonged'
+    });
+    avertissement.mockRestore();
+  });
+
+  it('ne dit rien quand lʼétiquette est posée, ni quand il nʼy en a pas', async () => {
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cookies = (extra: Record<string, string> = {}) =>
+      jar({[VISITOR_COOKIE]: VISITOR_ID, [SESSION_COOKIE]: `${SESSION_ID}.1`, ...extra});
+
+    // Session créée avec son étiquette : rien à signaler.
+    await recordVisit({cookies: cookies({[LABEL_COOKIE]: 'a7f3'}), headers, lang: 'fr'});
+    // Session prolongée sans étiquette : le cas ordinaire de toute seconde page.
+    journal.touchSession.mockReturnValue({outcome: 'prolonged', visitorCreated: false});
+    await recordVisit({cookies: cookies(), headers, lang: 'fr'});
+
+    expect(avertissement).not.toHaveBeenCalled();
+    avertissement.mockRestore();
   });
 
   it('nʼappelle rien sans cookies valides, et rend null', async () => {

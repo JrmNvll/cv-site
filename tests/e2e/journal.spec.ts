@@ -35,6 +35,7 @@ type SessionRow = {
   lang: string;
   started_at: string;
   last_seen_at: string;
+  label: string | null;
 };
 
 /** Une connexion en lecture seule, le temps d'une requête : toujours l'état commis. */
@@ -50,7 +51,7 @@ function lire<T>(sql: string, ...params: string[]): T | undefined {
 const visitor = (id: string) => lire<VisitorRow>('SELECT id, first_seen FROM visitor WHERE id = ?', id);
 const session = (id: string) =>
   lire<SessionRow>(
-    'SELECT id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at FROM session WHERE id = ?',
+    'SELECT id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at, label FROM session WHERE id = ?',
     id
   );
 const sessionsOf = (visitorId: string) =>
@@ -153,6 +154,95 @@ test('une seconde visite nʼajoute rien et fait avancer last_seen_at', async ({p
   expect(apres.referer).toBe(provenance);
 });
 
+/**
+ * L'étiquette d'un lien (story 12), par le **navigateur** : c'est la barre
+ * d'adresse qui compte, et c'est elle qui ne doit jamais montrer `?l=`.
+ */
+test('une arrivée étiquetée : lʼadresse devient propre, la session porte lʼétiquette, la suivante nʼen hérite pas', async ({
+  page,
+  context
+}) => {
+  // Une valeur sans référent : elle ne désigne personne.
+  const etiquette = 'a7f3';
+
+  await page.goto(`/fr?l=${etiquette}`);
+
+  // La redirection a eu lieu : plus de paramètre dans la barre d'adresse.
+  await expect(page).toHaveURL(/\/fr$/);
+  expect(new URL(page.url()).search).toBe('');
+  const {visitorId, sessionId} = idsDuContexte(await context.cookies());
+  // La session est créée avec l'étiquette, à sa création.
+  await expect.poll(() => session(sessionId)?.label).toBe(etiquette);
+  // Le cookie relais est effacé par le proxy sur la réponse qui suit : il ne
+  // reste rien qui puisse étiqueter la visite d'après.
+  expect((await context.cookies()).some(({name}) => name === 'cv_label')).toBe(false);
+
+  // Une seconde visite, sans paramètre : rien n'ajoute, ne change ni n'efface.
+  await page.goto('/fr');
+  expect(idsDuContexte(await context.cookies())).toEqual({visitorId, sessionId});
+  expect(session(sessionId)!.label).toBe(etiquette);
+  expect(sessionsOf(visitorId)).toBe(1);
+
+  // Un retour par une adresse nue, cookies oubliés : une session sans étiquette.
+  await context.clearCookies();
+  await page.goto('/fr');
+  const nue = idsDuContexte(await context.cookies());
+  expect(nue.sessionId).not.toBe(sessionId);
+  await expect.poll(() => session(nue.sessionId)).toBeDefined();
+  expect(session(nue.sessionId)!.label).toBeNull();
+});
+
+test('la racine étiquetée mène à /fr en une seule adresse propre', async ({page, context}) => {
+  const etiquette = 'zz9';
+
+  await page.goto(`/?l=${etiquette}`);
+
+  await expect(page).toHaveURL(/\/fr$/);
+  const {sessionId} = idsDuContexte(await context.cookies());
+  await expect.poll(() => session(sessionId)?.label).toBe(etiquette);
+});
+
+test('une valeur dʼétiquette refusée est ignorée en silence : page servie, rien en base', async ({
+  request
+}, testInfo) => {
+  const userAgent = signature(testInfo);
+
+  // Trente-trois caractères, et une valeur hors du jeu autorisé.
+  for (const valeur of ['x'.repeat(33), 'a b/c', '']) {
+    const response = await request.get(`/fr?l=${encodeURIComponent(valeur)}`, {
+      headers: {'user-agent': userAgent},
+      maxRedirects: 0
+    });
+    await response.text();
+    // Aucune redirection : la page est servie comme si le paramètre n'y était pas.
+    expect(response.status(), JSON.stringify(valeur)).toBe(200);
+    const {sessionId} = idsRecus(response);
+    // La session de cette requête-là n'existe pas encore (le document est servi
+    // avec les Set-Cookie ; c'est la requête suivante qui la crée) — mais
+    // surtout, aucun cv_label n'a été posé.
+    expect(
+      response
+        .headersArray()
+        .filter(({name}) => name.toLowerCase() === 'set-cookie')
+        .some(({value}) => value.startsWith('cv_label=')),
+      JSON.stringify(valeur)
+    ).toBe(false);
+    expect(sessionId).toMatch(ULID);
+  }
+  // Aucune des requêtes n'a écrit de session étiquetée sous cette signature.
+  expect(
+    lire<{n: number}>('SELECT count(*) AS n FROM session WHERE user_agent = ? AND label IS NOT NULL', userAgent)!.n
+  ).toBe(0);
+});
+
+test('/admin ne consomme pas lʼétiquette : ni cookie, ni redirection', async ({request}) => {
+  const response = await request.get('/admin?l=a7f3', {maxRedirects: 0});
+  await response.text();
+
+  expect(response.status()).toBe(200);
+  expect(response.headersArray().some(({name}) => name.toLowerCase() === 'set-cookie')).toBe(false);
+});
+
 test('une page inconnue est journalisée comme toute visite', async ({request}, testInfo) => {
   const userAgent = signature(testInfo);
 
@@ -201,7 +291,8 @@ test('le test de fumée ne se journalise pas : ni visiteur, ni session, ni écha
   const fumee = 'cv-site-smoke/0.0.0-test';
   const contexte = await playwright.request.newContext({baseURL: testInfo.project.use.baseURL});
 
-  // Un document, puis une puce du premier écran : les deux chemins qui journalisent.
+  // Un document nu, puis une puce du premier écran : les deux chemins qui
+  // journalisent.
   const document = await visiter(contexte, '/fr', {'user-agent': fumee});
   expect(document.status()).toBe(200);
   const puce = await visiter(contexte, '/api/questions/lic-01?lang=fr', {'user-agent': fumee});
@@ -214,6 +305,19 @@ test('le test de fumée ne se journalise pas : ni visiteur, ni session, ni écha
   const {visitorId, sessionId} = idsRecus(document);
   expect(visitor(visitorId)).toBeUndefined();
   expect(session(sessionId)).toBeUndefined();
+
+  // Et le même document **étiqueté** — la ligne « Fumée » de la matrice : le
+  // proxy redirige et pose le relais comme pour tout le monde, `recordVisit`
+  // rend `null`, donc ni session ni étiquette. Le cas nu reste couvert ci-dessus.
+  // Un libellé propre à ce cas : d'autres tests écrivent dans la même base, et
+  // on ne relit que ce qu'on vient d'écrire — ici, rien.
+  const libelle = `fumee-${testInfo.testId.replace(/[^A-Za-z0-9_-]/g, '').slice(-8)}`;
+  const etiquete = await visiter(contexte, `/fr?l=${libelle}`, {'user-agent': fumee});
+  expect(etiquete.status()).toBe(200);
+  const ids = idsRecus(etiquete);
+  expect(session(ids.sessionId)).toBeUndefined();
+  expect(sessionsSignees(fumee)).toBe(0);
+  expect(lire<{n: number}>('SELECT count(*) AS n FROM session WHERE label = ?', libelle)!.n).toBe(0);
   await contexte.dispose();
 });
 

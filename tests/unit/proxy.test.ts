@@ -5,9 +5,12 @@
  * Cas de la matrice couverts ici : visite sans cookie, session inactive de plus
  * de trente minutes, racine sans langue, `/admin` selon `ADMIN_DEV` et selon
  * l'environnement — et jamais un cookie sur `/admin*` (story 8 : l'admin ne se
- * journalise pas) —, non-mise en cache des réponses porteuses d'identité, et
- * périmètre réel du `matcher`.
+ * journalise pas) —, non-mise en cache des réponses porteuses d'identité,
+ * périmètre réel du `matcher`, et l'étiquette de lien `?l=` (story 12) :
+ * valeur acceptée ou refusée, redirection qui la retire, cookie relais posé
+ * puis effacé, et `/admin` qui n'en consomme rien.
  */
+import {readFileSync} from 'node:fs';
 import {NextRequest, type NextResponse} from 'next/server';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {ULID_PATTERN} from '@/lib/ulid';
@@ -171,6 +174,214 @@ describe('cookies de visite', () => {
     expect(response.headers.get('location')).toBeTruthy();
     expect(cookies[VISITOR_COOKIE]).toBeDefined();
     expect(cookies[SESSION_COOKIE]).toBeDefined();
+  });
+});
+
+describe('lʼétiquette dʼun lien (story 12)', () => {
+  /** Les valeurs de test ne désignent personne : elles n'ont aucun référent. */
+  const LIBELLE = 'a7f3';
+
+  it('redirige vers lʼadresse sans ?l=, en 302, et pose les trois cookies', async () => {
+    const {
+      default: proxy,
+      LABEL_COOKIE,
+      LABEL_REDIRECT_STATUS,
+      SESSION_COOKIE,
+      VISITOR_COOKIE,
+      CACHE_CONTROL_VISIT
+    } = await loadProxy();
+
+    const response = proxy(request(`/fr?l=${LIBELLE}`));
+
+    expect(response.status).toBe(LABEL_REDIRECT_STATUS);
+    expect(LABEL_REDIRECT_STATUS).toBe(302);
+    const location = new URL(response.headers.get('location')!);
+    expect(location.pathname).toBe('/fr');
+    expect(location.search).toBe('');
+    const cookies = setCookies(response);
+    expect(Object.keys(cookies).sort()).toEqual([LABEL_COOKIE, SESSION_COOKIE, VISITOR_COOKIE].sort());
+    expect(cookies[LABEL_COOKIE]!.value).toBe(LIBELLE);
+    // Le relais ne survit pas à la fermeture du navigateur, et reste à nous.
+    const attributs = cookies[LABEL_COOKIE]!.attributes;
+    expect(attributs).toHaveProperty('httponly');
+    expect(attributs).toHaveProperty('secure');
+    expect(attributs.samesite?.toLowerCase()).toBe('lax');
+    expect(attributs.path).toBe('/');
+    expect(attributs['max-age']).toBeUndefined();
+    expect(attributs.expires).toBeUndefined();
+    expect(response.headers.get('cache-control')).toBe(CACHE_CONTROL_VISIT);
+  });
+
+  it('conserve les autres paramètres de lʼadresse', async () => {
+    const {default: proxy} = await loadProxy();
+
+    const response = proxy(request(`/fr?l=${LIBELLE}&utm_source=mail`));
+
+    const location = new URL(response.headers.get('location')!);
+    expect(location.pathname).toBe('/fr');
+    expect(location.searchParams.get('utm_source')).toBe('mail');
+    expect(location.searchParams.has('l')).toBe(false);
+  });
+
+  it('consomme le paramètre **et** route la langue : une seule adresse propre, /fr', async () => {
+    const {default: proxy, LABEL_COOKIE, LABEL_REDIRECT_STATUS} = await loadProxy();
+
+    const response = proxy(request(`/?l=${LIBELLE}`));
+
+    // Un seul saut : pas `/` puis `/fr`, directement `/fr`.
+    expect(response.status).toBe(LABEL_REDIRECT_STATUS);
+    const location = new URL(response.headers.get('location')!);
+    expect(location.pathname).toBe('/fr');
+    expect(location.search).toBe('');
+    expect(setCookies(response)[LABEL_COOKIE]!.value).toBe(LIBELLE);
+  });
+
+  it.each([
+    ['', 'vide'],
+    ['x'.repeat(33), '33 caractères'],
+    ['a b', 'une espace'],
+    ['a/c', 'une barre oblique'],
+    ['a.b', 'un point'],
+    ['<script>', 'du balisage'],
+    ['étiquette', 'un accent']
+  ])('ignore en silence la valeur %j (%s) : aucun cookie, aucune redirection', async (valeur) => {
+    const {default: proxy, LABEL_COOKIE} = await loadProxy();
+
+    const response = proxy(
+      new NextRequest(new URL(`/fr?l=${encodeURIComponent(valeur)}`, 'http://127.0.0.1:3000'))
+    );
+
+    // La page est servie normalement — les deux cookies de visite seulement.
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(setCookies(response)[LABEL_COOKIE]).toBeUndefined();
+  });
+
+  it('accepte la borne : 32 caractères du jeu autorisé', async () => {
+    const {default: proxy, LABEL_COOKIE} = await loadProxy();
+    const limite = `${'a-9_'.repeat(7)}abcd`;
+    expect(limite).toHaveLength(32);
+
+    const response = proxy(request(`/fr?l=${limite}`));
+
+    expect(response.status).toBe(302);
+    expect(setCookies(response)[LABEL_COOKIE]!.value).toBe(limite);
+  });
+
+  it('efface le cookie relais sur la réponse qui suit : une étiquette ne contamine pas la visite dʼaprès', async () => {
+    const {default: proxy, LABEL_COOKIE} = await loadProxy();
+
+    const response = proxy(
+      request('/fr', {
+        [LABEL_COOKIE]: LIBELLE,
+        cv_visitor: VISITOR_ID,
+        cv_session: `${SESSION_ID}.${NOW}`
+      })
+    );
+
+    const cookie = setCookies(response)[LABEL_COOKIE]!;
+    expect(cookie.value).toBe('');
+    expect(cookie.attributes['max-age']).toBe('0');
+    expect(cookie.attributes.path).toBe('/');
+  });
+
+  it('ne touche pas au cookie relais quand la requête nʼen porte pas', async () => {
+    const {default: proxy, LABEL_COOKIE} = await loadProxy();
+
+    expect(setCookies(proxy(request('/fr')))[LABEL_COOKIE]).toBeUndefined();
+  });
+
+  it('repose le relais, sans lʼeffacer, quand une arrivée étiquetée en porte déjà un', async () => {
+    const {default: proxy, LABEL_COOKIE} = await loadProxy();
+
+    const response = proxy(request('/fr?l=zz9', {[LABEL_COOKIE]: LIBELLE}));
+
+    const cookies = response.headers.getSetCookie().filter((raw) => raw.startsWith(`${LABEL_COOKIE}=`));
+    expect(cookies).toHaveLength(1);
+    expect(setCookies(response)[LABEL_COOKIE]!.value).toBe('zz9');
+  });
+
+  it.each(['/admin', '/admin/sessions'])(
+    'ne consomme rien sur %s : ni cookie, ni redirection — lʼadmin ne se journalise pas',
+    async (path) => {
+      const {default: proxy, LABEL_COOKIE} = await loadProxy({adminDev: '1'});
+
+      const response = proxy(request(`${path}?l=${LIBELLE}`));
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('location')).toBeNull();
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(setCookies(response)[LABEL_COOKIE]).toBeUndefined();
+    }
+  );
+
+  it.each(['/admin', '/admin/sessions/01K4EXAMPSESS0000000000000'])(
+    'efface quand même le relais sur %s, et rien dʼautre',
+    async (path) => {
+      const {default: proxy, LABEL_COOKIE} = await loadProxy({adminDev: '1'});
+
+      // Le propriétaire est précisément celui qui clique ses propres liens puis
+      // va voir l'admin : un relais qui survivrait à ce détour étiquetterait
+      // une visite ultérieure sans rapport.
+      const cookies = setCookies(proxy(request(path, {[LABEL_COOKIE]: LIBELLE})));
+
+      expect(Object.keys(cookies)).toEqual([LABEL_COOKIE]);
+      expect(cookies[LABEL_COOKIE]!.value).toBe('');
+      expect(cookies[LABEL_COOKIE]!.attributes['max-age']).toBe('0');
+    }
+  );
+
+  it.each(['POST', 'PUT', 'DELETE'])(
+    'ignore ?l= sur une requête %s : un 302 dégraderait la méthode et perdrait le corps',
+    async (method) => {
+      const {default: proxy, LABEL_COOKIE} = await loadProxy();
+
+      const response = proxy(
+        new NextRequest(new URL(`/fr?l=${LIBELLE}`, 'http://127.0.0.1:3000'), {method})
+      );
+
+      expect(response.headers.get('location')).toBeNull();
+      expect(setCookies(response)[LABEL_COOKIE]).toBeUndefined();
+    }
+  );
+
+  it('consomme ?l= sur une requête HEAD, comme sur un GET', async () => {
+    const {default: proxy, LABEL_COOKIE, LABEL_REDIRECT_STATUS} = await loadProxy();
+
+    const response = proxy(
+      new NextRequest(new URL(`/fr?l=${LIBELLE}`, 'http://127.0.0.1:3000'), {method: 'HEAD'})
+    );
+
+    expect(response.status).toBe(LABEL_REDIRECT_STATUS);
+    expect(setCookies(response)[LABEL_COOKIE]!.value).toBe(LIBELLE);
+  });
+
+  it('tient la dépendance au routage de langue : ni cookie de langue, ni négociation', async () => {
+    // `labelRedirect` ne garde de la réponse du routage que son `Location` :
+    // tout ce que next-intl poserait d'autre serait perdu. C'est sans
+    // conséquence tant que ces deux options valent `false` — si l'une passait à
+    // `true`, il faudrait repartir de la réponse du routage au lieu de la
+    // reconstruire. Ce test est là pour que ce changement ne passe pas seul.
+    const {routing} = await import('@/i18n/routing');
+    expect(routing.localeCookie).toBe(false);
+    expect(routing.localeDetection).toBe(false);
+
+    // Et le comportement qui en dépend : une arrivée étiquetée sur la racine ne
+    // pose que les trois cookies attendus.
+    const {default: proxy, LABEL_COOKIE, SESSION_COOKIE, VISITOR_COOKIE} = await loadProxy();
+    const cookies = setCookies(proxy(request(`/?l=${LIBELLE}`)));
+    expect(Object.keys(cookies).sort()).toEqual(
+      [LABEL_COOKIE, SESSION_COOKIE, VISITOR_COOKIE].sort()
+    );
+  });
+
+  it('nʼouvre jamais la base : le relais passe par le cookie, pas par le journal', async () => {
+    // AD-14 : `proxy.ts` ne doit pas pouvoir atteindre la couche `journal` —
+    // `layers.config.mjs` le tient, et le dire ici le rend visible du lecteur
+    // qui se demande pourquoi l'étiquette fait ce détour.
+    const source = readFileSync(new URL('../../src/proxy.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/@\/journal/);
+    expect(source).not.toMatch(/node:sqlite/);
   });
 });
 

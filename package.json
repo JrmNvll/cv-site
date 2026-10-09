@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "migrate": "node scripts/migrate.mjs",
     "test:smoke": "node scripts/smoke.mjs",
     "test:adversarial": "vitest run --config vitest.adversarial.config.ts",
     "check:content": "node scripts/check-content.mjs",

@@ -37,6 +37,13 @@ const USD = new Intl.NumberFormat(LOCALE, {minimumFractionDigits: 3, maximumFrac
 const INTEGER = new Intl.NumberFormat(LOCALE, {maximumFractionDigits: 0});
 
 /**
+ * Ce qu'une valeur absente affiche, partout dans l'admin : un cadratin. Une
+ * seule écriture, pour que toutes les cases vides se ressemblent — et pour
+ * qu'un test puisse dire « absent » sans recopier le caractère.
+ */
+export const ABSENT = '—';
+
+/**
  * Un instant ISO 8601 UTC, à l'heure de Zurich : « 17.09.2026 11:40 » — avec
  * les secondes sur demande, pour l'ordre des échanges d'une session. Une
  * valeur illisible est rendue telle quelle : mieux vaut voir ce que la base
@@ -50,19 +57,19 @@ export function formatInstant(iso: string, options: {readonly seconds?: boolean}
 
 /** Des micro-USD entiers, en USD à trois décimales : « 0,128 USD ». `null` vaut « — ». */
 export function formatMicroUsd(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  if (value === null || value === undefined || !Number.isFinite(value)) return ABSENT;
   return `${USD.format(value / 1_000_000)} USD`;
 }
 
 /** Un entier, groupé à la suisse : « 1’234 ». `null` vaut « — ». */
 export function formatInteger(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  if (value === null || value === undefined || !Number.isFinite(value)) return ABSENT;
   return INTEGER.format(value);
 }
 
 /** Des millisecondes, en secondes à une décimale : « 1,2 s ». `null` vaut « — ». */
 export function formatLatency(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined || !Number.isFinite(ms)) return '—';
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return ABSENT;
   return `${new Intl.NumberFormat(LOCALE, {minimumFractionDigits: 1, maximumFractionDigits: 1}).format(ms / 1000)} s`;
 }
 
@@ -88,6 +95,17 @@ export function visitorLabel(name: string | null | undefined, id: string): strin
 /** Ce qui désigne une adresse : son étiquette si elle en a une, sinon l'adresse. */
 export function addressLabel(label: string | null | undefined, ip: string): string {
   return labelOrNull(label) ?? ip;
+}
+
+/**
+ * L'étiquette du lien par lequel une session est arrivée (story 12), ou « — » :
+ * une session née d'une adresse nue n'en a pas, et une session d'avant la
+ * version 5 du schéma non plus. Rendue comme du **texte**, jamais comme un
+ * lien — le libellé vient d'une adresse qu'un inconnu a pu écrire ; il est
+ * borné et restreint par le proxy, à l'entrée, pas ici.
+ */
+export function linkLabel(label: string | null | undefined): string {
+  return labelOrNull(label) ?? ABSENT;
 }
 
 /**

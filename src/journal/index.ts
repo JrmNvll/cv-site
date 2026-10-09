@@ -3,7 +3,10 @@
  *
  * Responsabilité : seul propriétaire de `usage.db` (`node:sqlite`, fichier dans
  * `DATA_DIR`) — visiteurs, sessions, échanges, cumul de dépense, étiquettes
- * d'adresse. Écritures en insertion, plus la liste fermée de colonnes
+ * d'adresse. Depuis la story 12, une session porte en plus l'**étiquette du
+ * lien** par lequel elle est arrivée (`session.label`, posée au seul `INSERT`),
+ * et une base d'une version antérieure est migrée à l'ouverture
+ * (`./migrations.ts`). Écritures en insertion, plus la liste fermée de colonnes
  * modifiables d'AD-7 : `session.last_seen_at`, la finalisation d'un échange
  * réservé (`status`, `answer`, `sources`, `citation_ok`, les quatre compteurs,
  * `cost_micro_usd`, `latency_ms`), et les trois choses que l'admin écrit —
@@ -101,6 +104,13 @@ export type TouchSessionInput = {
   readonly referer: string | null;
   /** La langue courante du document. */
   readonly lang: string;
+  /**
+   * L'étiquette du lien par lequel la visite arrive (story 12), lue du cookie
+   * relais `cv_label` par l'appelant, ou `null`. Posée à la **création** de la
+   * session seulement : une session déjà ouverte garde la sienne, et un retour
+   * par une adresse nue crée une session sans étiquette — c'est voulu.
+   */
+  readonly label?: string | null;
   /** L'instant de la visite ; par défaut, maintenant. Sert aux tests. */
   readonly now?: Date;
 };
@@ -139,6 +149,12 @@ export type Session = {
   readonly startedAt: string;
   /** ISO 8601 UTC. */
   readonly lastSeenAt: string;
+  /**
+   * L'étiquette du lien par lequel la session est arrivée (story 12), ou `null`
+   * pour une adresse nue — et pour toute session créée avant la version 5 du
+   * schéma. Posée à la création, jamais ensuite.
+   */
+  readonly label: string | null;
 };
 
 /**
@@ -237,10 +253,24 @@ export function touchSession(input: TouchSessionInput): TouchSessionResult {
     if (!known) {
       db.prepare('INSERT INTO visitor (id, first_seen) VALUES (?, ?)').run(visitorId, now);
     }
+    // `label` n'est posée qu'ici, dans l'`INSERT` : aucune mise à jour ne la
+    // touche jamais (AD-7, story 12). L'étiquette colle à la session, pas au
+    // visiteur — deux liens envoyés à deux moments donnent deux sessions
+    // étiquetées différemment, et c'est l'information utile.
     db.prepare(
-      `INSERT INTO session (id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(sessionId, visitorId, input.ip, input.userAgent, input.referer, input.lang, now, now);
+      `INSERT INTO session (id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at, label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      sessionId,
+      visitorId,
+      input.ip,
+      input.userAgent,
+      input.referer,
+      input.lang,
+      now,
+      now,
+      input.label ?? null
+    );
     return {outcome: 'created', visitorCreated: !known};
   });
 }
@@ -260,7 +290,7 @@ export function findVisitor(id: string): Visitor | undefined {
 export function findSession(id: string): Session | undefined {
   const row = journal()
     .prepare(
-      `SELECT id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at
+      `SELECT id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at, label
        FROM session WHERE id = ?`
     )
     .get(id) as
@@ -273,6 +303,7 @@ export function findSession(id: string): Session | undefined {
         lang: string;
         started_at: string;
         last_seen_at: string;
+        label: string | null;
       }
     | undefined;
   if (row === undefined) return undefined;
@@ -284,7 +315,8 @@ export function findSession(id: string): Session | undefined {
     referer: row.referer,
     lang: row.lang,
     startedAt: row.started_at,
-    lastSeenAt: row.last_seen_at
+    lastSeenAt: row.last_seen_at,
+    label: row.label
   };
 }
 
@@ -869,6 +901,7 @@ type SessionSummaryRow = {
   lang: string;
   started_at: string;
   last_seen_at: string;
+  label: string | null;
   exchanges: number;
   cost_micro_usd: number;
 };
@@ -888,7 +921,7 @@ function sessionSummaries(
   const rows = journal()
     .prepare(
       `SELECT s.id, s.visitor_id, v.name AS visitor_name, s.ip, l.label AS ip_label,
-              s.user_agent, s.referer, s.lang, s.started_at, s.last_seen_at,
+              s.user_agent, s.referer, s.lang, s.started_at, s.last_seen_at, s.label,
               (SELECT count(*) FROM exchange e WHERE e.session_id = s.id) AS exchanges,
               (SELECT coalesce(sum(e.cost_micro_usd), 0) FROM exchange e WHERE e.session_id = s.id)
                 AS cost_micro_usd
@@ -911,6 +944,7 @@ function sessionSummaries(
     lang: row.lang,
     startedAt: row.started_at,
     lastSeenAt: row.last_seen_at,
+    label: row.label,
     exchanges: row.exchanges,
     costMicroUsd: row.cost_micro_usd
   }));

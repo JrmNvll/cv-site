@@ -45,7 +45,16 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
   la lecture ; une seule fonction crée ou prolonge une session. L'**application** n'efface donc
   rien ; un droit à l'effacement s'exerce hors d'elle : sur demande, l'éditeur efface à la main
   les données liées à la visite concernée et consigne cet effacement — c'est ce que déclare la
-  page « Mentions légales & confidentialité » (story 9).
+  page « Mentions légales & confidentialité » (story 9). **Amendé par la story 12** :
+  `session.label` porte l'étiquette du lien par lequel une session est arrivée, posée au seul
+  `INSERT` — jamais modifiée, jamais recopiée sur le visiteur ; et une base d'une version
+  antérieure n'est plus refusée mais **migrée à l'ouverture**, par un tableau de pas `n → n+1`
+  joués chacun dans une transaction, précédés d'une copie de la base par `VACUUM INTO` dans
+  `DATA_DIR`, nommée d'après la version quittée. Un pas n'ajoute que ce qui manque, ne supprime
+  rien et se rejoue sans effet ; une base migrée n'ouvre plus avec le code précédent, donc le
+  retour arrière d'un déploiement passe par la restauration de cette copie. La page « Mentions
+  légales & confidentialité » n'a **pas** été amendée pour cette étiquette : demande explicite et
+  réitérée de l'éditeur (2026-10-08), qui en porte la responsabilité.
 - **AD-8 — Deux projections de `cv.yaml`, par liste blanche.** `display` pour la page, `agent`
   pour le modèle, champ par champ ; un champ non listé ne sort pas ; courriel, téléphone et
   coordonnées d'une référence ne sont jamais dans le HTML servi — une route sur geste explicite,
@@ -90,7 +99,15 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
   `touchSession()`, qui crée la session à sa première apparition (adresse, navigateur, provenance,
   langue) et prolonge ensuite ; les cookies ne sont pas signés — étiquette du journal, pas
   autorisation ; le journal observe la visite sans la conditionner ; l'admin ne se journalise
-  pas.
+  pas. **Amendé par la story 12** : une adresse envoyée à une personne nommée peut porter
+  `?l=<libellé>` — 1 à 32 caractères de `[A-Za-z0-9_-]`, toute autre valeur ignorée en silence.
+  Le proxy, et lui seul, le valide, le relaie par un cookie court `cv_label` (mêmes attributs,
+  sans durée) et **redirige en `302` vers la même adresse sans le paramètre**, les autres
+  paramètres conservés, à travers le routage de langue : le visiteur ne le voit jamais dans sa
+  barre d'adresse. La requête suivante crée la session avec l'étiquette et le proxy efface le
+  cookie sur cette même réponse — une étiquette ne contamine pas la visite d'après. Rien de tout
+  cela sous `/admin*`, et le proxy n'ouvre toujours pas la base : l'étiquette voyage par le
+  cookie, comme l'horodatage de session.
 - **AD-15 — Une seule source pour l'adresse du client.** Caddy pose `X-Client-IP` depuis son
   `client_ip`, en écrasant toute valeur entrante ; `X-Forwarded-For` n'est jamais lu ; une seule
   fonction (`src/lib/client-ip.ts`) rend l'adresse, `journal` et le limiteur la reçoivent en

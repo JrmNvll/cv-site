@@ -2,12 +2,22 @@
  * La liste des sessions, telle que le tableau de bord et la fiche visiteur la
  * montrent : une ligne par session, du plus récent au plus ancien, ce que le
  * journal a joint (nom du visiteur, étiquette de l'adresse, compte et coût des
- * échanges). Tout est du texte : la provenance et le navigateur viennent d'un
- * en-tête que n'importe qui a pu écrire, ils ne deviennent jamais un lien.
+ * échanges), et l'étiquette du lien par lequel la session est arrivée
+ * (colonne « Lien », story 12). Tout est du texte : la provenance, le
+ * navigateur et le libellé du lien viennent d'un en-tête ou d'une adresse que
+ * n'importe qui a pu écrire, ils ne deviennent jamais un lien.
  */
 import Link from 'next/link';
 import type {SessionSummary} from '@/journal';
-import {addressLabel, formatInstant, formatMicroUsd, langLabel, visitorLabel} from '../_lib/format';
+import {
+  ABSENT,
+  addressLabel,
+  formatInstant,
+  formatMicroUsd,
+  langLabel,
+  linkLabel,
+  visitorLabel
+} from '../_lib/format';
 
 export type SessionsTableProps = {
   readonly sessions: readonly SessionSummary[];
@@ -45,6 +55,9 @@ export function SessionsTable({sessions, hideVisitor = false}: SessionsTableProp
             <th scope="col" className={TH}>
               Provenance
             </th>
+            <th scope="col" className={TH}>
+              Lien
+            </th>
             <th scope="col" className={`${TH} text-right`}>
               Échanges
             </th>
@@ -72,7 +85,10 @@ export function SessionsTable({sessions, hideVisitor = false}: SessionsTableProp
                 {addressLabel(session.ipLabel, session.ip)}
               </td>
               <td className={TD}>{langLabel(session.lang)}</td>
-              <td className={`${TD} max-w-[280px] break-all text-ink-soft`}>{session.referer ?? '—'}</td>
+              <td className={`${TD} max-w-[280px] break-all text-ink-soft`}>{session.referer ?? ABSENT}</td>
+              <td className={`${TD} break-all`} data-link-label>
+                {linkLabel(session.label)}
+              </td>
               <td className={`${TD} text-right tabular-nums`}>{session.exchanges}</td>
               <td className={`${TD} text-right tabular-nums`}>{formatMicroUsd(session.costMicroUsd)}</td>
             </tr>

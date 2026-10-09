@@ -2,8 +2,9 @@
  * Le branchement du journal sur la requête — AD-14, côté `app`.
  *
  * `proxy.ts` pose les cookies et n'ouvre jamais la base ; `journal` ouvre la
- * base et ne lit jamais la requête. Entre les deux, ce module : il lit les deux
- * cookies, l'adresse (`clientIp`, AD-15), le navigateur, la provenance, et
+ * base et ne lit jamais la requête. Entre les deux, ce module : il lit les
+ * cookies — les deux de visite, et le relais `cv_label` quand il y en a un
+ * (story 12) —, l'adresse (`clientIp`, AD-15), le navigateur, la provenance, et
  * passe le tout à `touchSession()`. Plusieurs appelants, le même geste : la
  * racine du **site** (`src/app/(site)/layout.tsx`), qui voit tout document du
  * site ; la 404 globale (`src/app/global-not-found.tsx`), pour toute URL sans
@@ -21,7 +22,7 @@ import {hasLocale} from 'next-intl';
 import {routing, type Locale} from '@/i18n/routing';
 import {clientIp} from '@/lib/client-ip';
 import {isUlid} from '@/lib/ulid';
-import {SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
+import {isVisitLabel, LABEL_COOKIE, SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
 import type {TouchSessionResult} from '@/journal';
 
 /**
@@ -73,6 +74,20 @@ export function visitIds(cookies: CookieReader): VisitIds | null {
   const visitorId = cookies.get(VISITOR_COOKIE)?.value;
   const sessionId = cookies.get(SESSION_COOKIE)?.value.split('.')[0];
   return isUlid(visitorId) && isUlid(sessionId) ? {visitorId, sessionId} : null;
+}
+
+/**
+ * L'étiquette du lien portée par le cookie relais `cv_label`, posé par
+ * `proxy.ts` à l'arrivée d'un `?l=` valide (story 12) — ou `null`.
+ *
+ * Revalidée ici : un cookie n'est pas plus digne de confiance qu'une chaîne de
+ * requête, et le libellé entre dans la base. `touchSession()` ne la pose qu'à
+ * la **création** de la session ; `proxy.ts` efface le cookie sur la même
+ * réponse, l'étiquette ne vaut donc que pour cette visite.
+ */
+export function visitLabel(cookies: CookieReader): string | null {
+  const value = cookies.get(LABEL_COOKIE)?.value;
+  return isVisitLabel(value) ? value : null;
 }
 
 /**
@@ -144,13 +159,33 @@ export async function recordVisit(request: VisitRequest): Promise<RecordedVisit 
 
   try {
     const {touchSession} = await import('@/journal');
+    const label = visitLabel(request.cookies);
     const result = touchSession({
       ...ids,
       ip,
       userAgent: bounded(request.headers.get('user-agent')),
       referer: provenance(request.headers.get('referer')),
-      lang: request.lang
+      lang: request.lang,
+      label
     });
+    if (label !== null && result.outcome !== 'created') {
+      // L'étiquette colle à la session et n'est posée qu'à sa création : une
+      // arrivée par un lien alors qu'une session est déjà ouverte n'est donc
+      // **pas** écrite, et `proxy.ts` efface le relais sur cette même réponse.
+      // C'est voulu pour la base — mais l'arrivée serait alors invisible : une
+      // ligne la rend lisible dans les journaux, sans toucher à la base. Le
+      // libellé est borné et restreint, il n'y a rien à échapper ici.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          event: 'visit.label_dropped',
+          sessionId: ids.sessionId,
+          label,
+          outcome: result.outcome,
+          text: "Arrivée par un lien étiqueté sur une session déjà ouverte : l'étiquette d'origine est conservée, celle-ci n'est pas écrite."
+        })
+      );
+    }
     return {...result, ...ids, ip};
   } catch (error) {
     console.error(

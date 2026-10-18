@@ -156,16 +156,18 @@ Ce qu'il faut savoir :
   inscriptible.** Le site ne le crée pas : il refuse de démarrer, comme pour un
   contenu invalide. En mode WAL, SQLite pose `usage.db-wal` et `usage.db-shm` à
   côté ; les trois sont ignorés par Git.
-- **Le schéma est versionné** (`PRAGMA user_version`, version 5 depuis la story
-  12 : `exchange.kind` admet `hero`, `exchange.status` admet `cap_reached`,
+- **Le schéma est versionné** (`PRAGMA user_version`, version 6 depuis la story
+  13 : `exchange.kind` admet `hero`, `exchange.status` admet `cap_reached`,
   l'étiquette d'une adresse vit dans sa table `ip_label(ip, label, at)` — plus
-  dans `session` —, et `session.label` porte l'étiquette du lien par lequel la
-  session est arrivée). Une base plus récente que le code est refusée.
+  dans `session` —, `session.label` porte l'étiquette du lien par lequel la
+  session est arrivée, et `block` les visiteurs écartés du site). Une base plus
+  récente que le code est refusée.
 - **Une base plus ancienne est migrée à l'ouverture**
   ([`src/journal/migrations.ts`](./src/journal/migrations.ts), story 12) : un
   tableau de pas `n → n+1`, chacun dans **une** transaction avec le nouveau
   `user_version`, précédés d'une copie de la base par `VACUUM INTO` dans
-  `DATA_DIR`, nommée d'après la version quittée (`usage-v4.db`). Un pas
+  `DATA_DIR`, nommée d'après la version **quittée** — `usage-v5.db` pour le
+  prochain déploiement, puisque la production est en version 5. Un pas
   n'ajoute que ce qui manque, ne supprime rien, et se rejoue sans effet ; une
   base en lecture seule est refusée **avant** que la moindre copie soit écrite.
   La migration a lieu **dans `applySchema()`** : un processus ne peut donc pas
@@ -278,6 +280,62 @@ Ce qu'il faut savoir :
   extension (`/foo`) est redirigé vers `/fr/foo` et journalisé comme toute
   visite du site. `tests/e2e/admin.spec.ts` fixe ces comportements.
 
+## Bloquer un visiteur
+
+Depuis la fiche d'une session, « Bloquer ce visiteur » ferme le site à son
+auteur sur ses **deux** clés, d'un seul geste (story 13) : l'adresse de la
+session et son cookie `cv_visitor`. Le verdict se prend dans
+[`recordVisit()`](./src/app/_lib/visit.ts) — le seul passage obligé des visites,
+et le seul endroit qui lit déjà le cookie *et* l'adresse. Un document bloqué
+reçoit la page des adresses inconnues ; les quatre routes qui servent du
+contenu — une question du premier écran, l'assistant, les coordonnées et la
+photo — rendent un `404` nu, **avant** toute réservation de dépense. Une route
+appelée **sans cookie** consulte l'adresse seule : sans cela, il suffisait
+d'effacer ses cookies pour récupérer les réponses, le portrait et le numéro.
+
+Ce qu'il faut savoir :
+
+- **Les deux clés se posent ensemble et se lèvent séparément.** Une adresse est
+  souvent partagée — opérateur mobile, entreprise, VPN —, et la lever rouvre le
+  site à ceux qui la partagent sans rouvrir le cookie bloqué. La page
+  `/admin/blocages` porte le registre, levés compris, borné aux 200 lignes les
+  plus récentes — rien ne le purge (AD-7), et le total dit le reste.
+- **Un blocage se lève, il ne s'efface pas** (AD-7) : la ligne reste, datée de
+  sa levée, et rebloquer en écrit une nouvelle. L'historique des décisions se
+  relit — c'est un journal d'audit, pas un effacement déguisé.
+- **En IPv6, c'est le préfixe `/64` qui est bloqué**, pas l'adresse exacte :
+  chez la plupart des abonnés elle tourne, le préfixe reste. Une IPv4
+  encapsulée (`::ffff:192.0.2.1`) est ramenée à son IPv4 — son `/64` serait nul,
+  donc partagé par tous. `dev` et `unknown` ne se bloquent **jamais** : la
+  seconde est portée par les sondes de santé de `deploy.ps1`, et la bloquer
+  fermerait le site à chaque déploiement.
+- **Rien ne distingue un bloqué d'une adresse inconnue.** Pas de message, pas
+  d'en-tête, et aucun code d'erreur du contrat qui nomme le blocage — le
+  panneau de l'assistant l'afficherait. Avec JavaScript, le bloqué voit la page
+  « Page introuvable » ; **sans** JavaScript, le corps n'est pas rendu, comme
+  pour toute 404 levée pendant le rendu (voir
+  [`global-not-found.tsx`](./src/app/global-not-found.tsx)) — c'est exactement
+  ce que le site rend déjà à `/wp-login.php`, et c'est mesuré contre ce témoin
+  dans [`tests/e2e/blocage.spec.ts`](./tests/e2e/blocage.spec.ts).
+- **La colonne « Lien » et la provenance restent déclaratives**, le blocage non :
+  ses clés viennent du journal, jamais du formulaire. Rien de ce que le
+  navigateur envoie ne choisit *qui* est bloqué.
+- **Ce que le blocage ne fait pas.** Il n'empêche pas la requête d'atteindre
+  Node : le refus est applicatif, pas posé par Caddy — qui ne connaît pas les
+  cookies de visite et ne saurait bloquer qu'une adresse. Il protège le CV et la
+  dépense, pas la bande passante — ni la croissance de `usage.db` : la visite
+  d'un bloqué crée toujours sa session (voir ci-dessous), donc quelqu'un
+  d'insistant fait grossir le journal, de quelques centaines d'octets par
+  passage. Et **si le visiteur supprime son cookie, seule
+  l'adresse le retient** : c'est une limite acceptée, pas un oubli — aucune
+  technique de pistage (empreinte de navigateur, cookie signé, stockage local)
+  n'est employée pour la combler.
+- **La visite d'un bloqué reste journalisée** (AD-7 garde tout) : son insistance
+  se voit dans l'admin. Aucun échange ne peut en naître.
+- **Si le registre est illisible, la page est servie.** Un journal en panne ne
+  ferme pas le site, comme il ne l'ouvre pas — le même arbitrage qu'AD-14, et le
+  défaut de prudence est assumé.
+
 ## L'espace d'administration
 
 `/admin` est ce que Jérémie voit du journal (CAP-7) : des pages en français,
@@ -290,9 +348,10 @@ propre racine (`src/app/(admin)/`), sans next-intl et sans texte dans
 | Page | Montre |
 | --- | --- |
 | `GET /admin` | Dépense du mois face au plafond, nombre de sessions et d'échanges ; les 50 sessions les plus récemment actives **ayant au moins un échange** — dernière activité, visiteur (nom ou identifiant abrégé), adresse (étiquette ou adresse), langue, provenance, **lien** (l'étiquette du `?l=` par lequel la session est arrivée, « — » sans), échanges, coût ; `?tout=1` montre aussi les sessions sans échange (les sondes de robots, filtrées à la lecture) ; `?page=` pagine |
-| `GET /admin/sessions/<ulid>` | Visiteur, adresse, **lien**, navigateur, provenance, langue, début et dernière activité ; tous les échanges dans l'ordre, toute sorte et tout statut — la question **en texte**, la réponse rendue par le même `renderMarkdown` que le panneau, sources, citations, compteurs, coût, latence ; les deux formulaires |
+| `GET /admin/sessions/<ulid>` | Visiteur, adresse, **lien**, **accès** (ouvert, ou bloqué par le cookie et/ou l'adresse), navigateur, provenance, langue, début et dernière activité ; tous les échanges dans l'ordre, toute sorte et tout statut — la question **en texte**, la réponse rendue par le même `renderMarkdown` que le panneau, sources, citations, compteurs, coût, latence ; les formulaires — nommer, étiqueter, et bloquer ou lever |
 | `GET /admin/visiteurs/<ulid>` | Nom, note, première visite, le formulaire nom + note, toutes les sessions du visiteur |
 | `GET /admin/questions` | Les puces du premier écran par identifiant (libellé du corpus français), les questions libres et annonces par texte normalisé (minuscules, blancs réduits, 200 premiers caractères) — 50 lignes chacun, sur toute la période |
+| `GET /admin/blocages` | Le registre des blocages, du plus récent au plus ancien, **levés compris** — quand, quelle sorte (cookie ou adresse), la clé, la session d'où la décision est venue, et l'état ; un bouton « Lever » par clé qui tient |
 
 Les heures sont celles de Zurich, les montants en USD à trois décimales. Un
 identifiant inconnu vaut la 404 de l'admin, en français — statut, titre et
@@ -303,10 +362,14 @@ tombe sur la page d'erreur de l'admin, en français aussi, sans le message de
 l'exception. La fiche d'un visiteur montre ses 200 sessions les plus
 récentes et dit s'il y en a plus.
 
-**Deux mutations, et rien d'autre** — la liste fermée d'AD-7 : `POST
-/admin/api/visiteurs/<ulid>` (`name`, `note`) et `POST /admin/api/adresses/<ip>`
-(`label`), plus `from`, la page à laquelle revenir (`/admin` ou `/admin/…`,
-sinon `400`). Un formulaire, un `303` vers `from`. L'étiquette porte sur
+**Quatre mutations, et rien d'autre** — la liste fermée d'AD-7 : `POST
+/admin/api/visiteurs/<ulid>` (`name`, `note`), `POST /admin/api/adresses/<ip>`
+(`label`), et depuis la story 13 `POST /admin/api/blocages/<session>` (aucun
+champ : les deux clés viennent de la session) et `POST /admin/api/blocages/lever`
+(`kind`, `value`) ; plus `from`, la page à laquelle revenir (`/admin` ou
+`/admin/…`, sinon `400`). Lever une clé qui ne tenait pas vaut `404` — « rien à
+lever » n'est pas un succès, et l'afficher comme tel masquerait un formulaire
+périmé. Un formulaire, un `303` vers `from`. L'étiquette porte sur
 l'**adresse** (`ip_label`) : toutes ses sessions, passées et futures, la
 montrent. Un champ vide retire ; rien n'est jamais supprimé, ni purgé, ni
 édité dans les échanges. `from` vaut exactement `/admin`, `/admin?…` ou `/admin/…`, en ASCII
@@ -856,8 +919,9 @@ c'est l'ouverture qui migre (voir « Le journal des visites ») —, dit sur la
 sortie standard ce qu'il a fait, et sort `0` sans rien faire s'il n'y a rien à
 jouer — et une base absente est un **refus**, pas une création : un `DATA_DIR`
 mal recopié ne doit pas donner un déploiement vert sur un journal neuf. Il copie
-la base avant d'y toucher, dans `DATA_DIR`, sous le nom de la version quittée :
-`C:\Data\cv-site\usage-v4.db` — ou, si ce nom est déjà pris (une base restaurée
+la base avant d'y toucher, dans `DATA_DIR`, sous le nom de la version quittée —
+`C:\Data\cv-site\usage-v5.db` au prochain déploiement, la production étant en
+version 5 — ou, si ce nom est déjà pris (une base restaurée
 peut retrouver la copie d'une migration antérieure), un nom horodaté à côté,
 plutôt que pas de copie du tout. **Conséquence sur le retour
 arrière** : une base migrée n'ouvre plus avec le code précédent, qui refuse une

@@ -17,7 +17,7 @@ import {renderMarkdown} from '@/app/(site)/[locale]/_components/markdown';
 import type {Exchange} from '@/journal';
 import {isUlid} from '@/lib/ulid';
 import {Breadcrumb} from '../../_components/breadcrumb';
-import {AddressForm, VisitorForm} from '../../_components/forms';
+import {AddressForm, BlockForm, LiftForm, VisitorForm} from '../../_components/forms';
 import {
   ABSENT,
   addressLabel,
@@ -127,14 +127,27 @@ export default async function AdminSession({params}: {params: Params}) {
   const {id} = await params;
   if (!isUlid(id)) notFound();
 
-  const {findSession, findVisitor, ipLabel, sessionExchanges, IP_LABEL_MAX, VISITOR_NAME_MAX, VISITOR_NOTE_MAX} =
-    await import('@/journal');
+  const {
+    blockVerdict,
+    findSession,
+    findVisitor,
+    ipLabel,
+    sessionExchanges,
+    IP_LABEL_MAX,
+    VISITOR_NAME_MAX,
+    VISITOR_NOTE_MAX
+  } = await import('@/journal');
+  const {ipBlockKey} = await import('@/lib/client-ip');
   const session = findSession(id);
   if (session === undefined) notFound();
   const visitor = findVisitor(session.visitorId);
   const etiquette = ipLabel(session.ip);
   const echanges = sessionExchanges(id);
   const from = `/admin/sessions/${id}`;
+  // L'état du blocage, clé par clé : les deux se posent ensemble mais se
+  // lèvent séparément, et la fiche doit donc dire laquelle tient.
+  const blocage = blockVerdict({ip: session.ip, visitorId: session.visitorId});
+  const cleAdresse = ipBlockKey(session.ip);
 
   return (
     <main className="py-8">
@@ -173,6 +186,24 @@ export default async function AdminSession({params}: {params: Params}) {
               laquelle la session est arrivée (story 12). */}
           <dd className={`${DD} break-all`} data-link-label>
             {linkLabel(session.label)}
+          </dd>
+        </div>
+        <div>
+          <dt className={DT}>Accès</dt>
+          <dd className={DD} data-access>
+            {blocage.byIp || blocage.byVisitor ? (
+              <span className="text-ink">
+                Bloqué{' '}
+                <span className="text-ink-muted">
+                  ({[blocage.byVisitor ? 'cookie' : null, blocage.byIp ? 'adresse' : null]
+                    .filter((part) => part !== null)
+                    .join(' et ')}
+                  )
+                </span>
+              </span>
+            ) : (
+              'Ouvert'
+            )}
           </dd>
         </div>
         <div>
@@ -226,6 +257,55 @@ export default async function AdminSession({params}: {params: Params}) {
           from={from}
         />
         <AddressForm ip={session.ip} label={etiquette?.label ?? ''} labelMax={IP_LABEL_MAX} from={from} />
+      </section>
+
+      <section className="mt-10" aria-labelledby="acces-titre">
+        <h2 id="acces-titre" className={H2}>
+          Accès au site
+        </h2>
+        <div className="mt-4 flex flex-col gap-6">
+          {blocage.byIp || blocage.byVisitor ? (
+            <div className="max-w-xl">
+              <p className="text-[13px] text-ink-soft">
+                Ce visiteur est bloqué. Chaque clé se lève séparément : rouvrir l’adresse rend le site aux autres
+                abonnés qui la partagent, sans rouvrir ce cookie.
+              </p>
+              <ul className="mt-3 flex flex-col gap-2">
+                {blocage.byVisitor ? (
+                  <li className="flex items-center gap-3">
+                    <span className="font-mono text-[13px] text-ink-soft">cookie · {session.visitorId}</span>
+                    <LiftForm kind="visitor" value={session.visitorId} from={from} />
+                  </li>
+                ) : null}
+                {blocage.byIp && cleAdresse !== null ? (
+                  <li className="flex items-center gap-3">
+                    <span className="font-mono text-[13px] text-ink-soft">adresse · {cleAdresse}</span>
+                    <LiftForm kind="ip" value={cleAdresse} from={from} />
+                  </li>
+                ) : null}
+              </ul>
+              <p className="mt-3 text-[12px] text-ink-muted">
+                Une levée est datée dans le journal, elle n’efface pas le blocage. L’historique complet est dans{' '}
+                <Link prefetch={false} href="/admin/blocages" className={LINK}>
+                  les blocages
+                </Link>
+                .
+              </p>
+            </div>
+          ) : null}
+          {/* Une seule clé bloquée laisse l'autre ouverte : le formulaire
+              reste là pour la fermer, et `block()` ne réinscrit pas celle qui
+              tient déjà. Il disparaît quand les deux sont fermées. */}
+          {blocage.byIp && blocage.byVisitor ? null : (
+            <BlockForm
+              sessionId={session.id}
+              ip={session.ip}
+              ipBlockable={cleAdresse !== null}
+              dejaBloque={blocage.byIp || blocage.byVisitor}
+              from={from}
+            />
+          )}
+        </div>
       </section>
     </main>
   );

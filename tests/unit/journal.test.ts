@@ -26,7 +26,7 @@ import {
   runMigrations,
   type Migration
 } from '@/journal/migrations';
-import {BUSY_TIMEOUT_MS, DDL, SCHEMA_VERSION, SESSION_LABEL_CHECK} from '@/journal/schema';
+import {BLOCK_DDL, BLOCK_KINDS, BUSY_TIMEOUT_MS, DDL, SCHEMA_VERSION, SESSION_LABEL_CHECK} from '@/journal/schema';
 import {
   addExchange,
   EXCHANGE_KINDS,
@@ -57,6 +57,11 @@ import {
   TOP_QUESTIONS,
   topQuestions,
   touchSession,
+  block,
+  blockVerdict,
+  isBlocked,
+  liftBlock,
+  listBlocks,
   VISITOR_NAME_MAX,
   VISITOR_NOTE_MAX,
   VISITOR_SESSIONS_MAX,
@@ -68,6 +73,7 @@ import {
 } from '@/journal';
 import {isUlid, ulid, ulidTime} from '@/lib/ulid';
 import {DDL_V4, DDL_V4_EST_DERIVE} from './journal-v4';
+import {DDL_V5, DDL_V5_EST_DERIVE} from './journal-v5';
 import {LABEL_MAX} from '@/lib/visit-cookies';
 
 const JOURNAL_SOURCES = fileURLToPath(new URL('../../src/journal', import.meta.url));
@@ -302,6 +308,226 @@ describe('première visite', () => {
     expect(session.startedAt).toMatch(ISO_UTC);
     expect(session.startedAt).toBe(LATER.toISOString());
     expect(findVisitor(entree.visitorId)!.firstSeen).toBe(LATER.toISOString());
+  });
+});
+
+describe('les blocages (story 13)', () => {
+  /** Une visite journalisée, dont on rend les deux clés — ce que l'admin a sous les yeux. */
+  function visiteBloquable(ip = '203.0.113.7'): {visitorId: string; sessionId: string; ip: string} {
+    const entree = visite({ip});
+    touchSession(entree);
+    return {visitorId: entree.visitorId, sessionId: entree.sessionId, ip};
+  }
+
+  it('pose les deux clés dʼun seul geste, et les rend toutes les deux au verdict', () => {
+    const v = visiteBloquable();
+
+    const pose = block({ip: v.ip, visitorId: v.visitorId, fromSession: v.sessionId, now: NOW});
+
+    expect(pose).toEqual({
+      ipBlockable: true,
+      ipKey: '203.0.113.7',
+      ipBlocked: true,
+      visitorBlocked: true
+    });
+    expect(blockVerdict({ip: v.ip, visitorId: v.visitorId})).toEqual({byIp: true, byVisitor: true});
+    expect(isBlocked({byIp: true, byVisitor: true})).toBe(true);
+    // Les deux lignes portent la session dʼoù la décision est venue.
+    const lignes = listBlocks().blocks;
+    expect(lignes).toHaveLength(2);
+    expect(lignes.map(({kind}) => kind).sort()).toEqual(['ip', 'visitor']);
+    for (const ligne of lignes) {
+      expect(ligne.fromSession).toBe(v.sessionId);
+      expect(ligne.liftedAt).toBeNull();
+      expect(ligne.at).toMatch(ISO_UTC);
+    }
+  });
+
+  it('écarte chaque clé séparément : lʼune bloquée, lʼautre libre', () => {
+    const v = visiteBloquable();
+    block({ip: v.ip, visitorId: v.visitorId, now: NOW});
+
+    // Le même cookie depuis une autre adresse : pris par le cookie.
+    expect(blockVerdict({ip: '198.51.100.9', visitorId: v.visitorId})).toEqual({
+      byIp: false,
+      byVisitor: true
+    });
+    // Un autre cookie depuis la même adresse : pris par lʼadresse — cʼest ce
+    // qui tient quand quelqu'un efface ses cookies.
+    expect(blockVerdict({ip: v.ip, visitorId: ulid(NOW.getTime())})).toEqual({
+      byIp: true,
+      byVisitor: false
+    });
+    // Un voisin de rien : libre.
+    expect(blockVerdict({ip: '198.51.100.9', visitorId: ulid(NOW.getTime())})).toEqual({
+      byIp: false,
+      byVisitor: false
+    });
+  });
+
+  it('ne bloque pas une adresse qui ne désigne personne, et le dit — le cookie, lui, est posé', () => {
+    // `unknown` est porté par les sondes de santé de `deploy.ps1` : la bloquer
+    // fermerait le site à chaque déploiement.
+    for (const ip of ['unknown', 'dev']) {
+      const v = visiteBloquable(ip);
+
+      const pose = block({ip, visitorId: v.visitorId, now: NOW});
+
+      expect(pose).toEqual({ipBlockable: false, ipKey: null, ipBlocked: false, visitorBlocked: true});
+      expect(blockVerdict({ip, visitorId: v.visitorId})).toEqual({byIp: false, byVisitor: true});
+      // Et aucune ligne dʼadresse nʼexiste pour cette valeur.
+      expect(listBlocks().blocks.filter(({kind}) => kind === 'ip')).toEqual([]);
+    }
+  });
+
+  it('bloque un abonné IPv6 par son préfixe /64, pas par lʼadresse du jour', () => {
+    const v = visiteBloquable('2001:db8:1:2::5');
+
+    const pose = block({ip: v.ip, visitorId: v.visitorId, now: NOW});
+
+    expect(pose.ipKey).toBe('2001:db8:1:2::/64');
+    // Lʼadresse a changé dans la nuit : le blocage tient.
+    expect(blockVerdict({ip: '2001:db8:1:2:abcd::1', visitorId: ulid(NOW.getTime())})).toEqual({
+      byIp: true,
+      byVisitor: false
+    });
+    // Le /64 voisin nʼest pas pris.
+    expect(blockVerdict({ip: '2001:db8:1:3::5', visitorId: ulid(NOW.getTime())})).toEqual({
+      byIp: false,
+      byVisitor: false
+    });
+  });
+
+  it('nʼinscrit pas deux fois une clé déjà bloquée', () => {
+    const v = visiteBloquable();
+    block({ip: v.ip, visitorId: v.visitorId, now: NOW});
+
+    const encore = block({ip: v.ip, visitorId: v.visitorId, now: LATER});
+
+    // Aucune des deux clés n'a été réinscrite, et chaque champ le dit pour
+    // **sa** clé : avant la revue de la story 13, `visitorBlocked` valait vrai
+    // dès que l'une des deux avait été écrite.
+    expect(encore).toEqual({
+      ipBlockable: true,
+      ipKey: '203.0.113.7',
+      ipBlocked: false,
+      visitorBlocked: false
+    });
+    expect(listBlocks().blocks).toHaveLength(2);
+
+    // Et après la levée de la seule adresse, rebloquer n'écrit **que** l'adresse.
+    expect(liftBlock('ip', '203.0.113.7', LATER)).toBe(1);
+    const apresLevee = block({ip: v.ip, visitorId: v.visitorId, now: LATER});
+    expect(apresLevee).toMatchObject({ipBlocked: true, visitorBlocked: false});
+  });
+
+  it('lève une clé sans effacer sa ligne, et laisse lʼautre fermée', () => {
+    const v = visiteBloquable();
+    block({ip: v.ip, visitorId: v.visitorId, now: NOW});
+
+    expect(liftBlock('ip', '203.0.113.7', LATER)).toBe(1);
+
+    expect(blockVerdict({ip: v.ip, visitorId: v.visitorId})).toEqual({byIp: false, byVisitor: true});
+    const levee = listBlocks().blocks.find(({kind}) => kind === 'ip')!;
+    expect(levee.liftedAt).toMatch(ISO_UTC);
+    expect(levee.at).toBe(NOW.toISOString());
+    // Rien nʼa disparu : les deux lignes sont toujours là (AD-7).
+    expect(listBlocks().blocks).toHaveLength(2);
+  });
+
+  it('ne lève rien quand rien ne tient — « rien à lever » nʼest pas un succès', () => {
+    expect(liftBlock('ip', '203.0.113.7', NOW)).toBe(0);
+    const v = visiteBloquable();
+    block({ip: v.ip, visitorId: v.visitorId, now: NOW});
+    expect(liftBlock('ip', '203.0.113.7', LATER)).toBe(1);
+    // Déjà levée : plus rien à lever, et la levée dʼorigine nʼest pas refaite.
+    expect(liftBlock('ip', '203.0.113.7', new Date('2026-09-15T11:00:00.000Z'))).toBe(0);
+    expect(listBlocks().blocks.find(({kind}) => kind === 'ip')!.liftedAt).toBe(LATER.toISOString());
+  });
+
+  it('rebloque par une nouvelle ligne : la suite des décisions se relit', () => {
+    const v = visiteBloquable();
+    block({ip: v.ip, visitorId: v.visitorId, now: NOW});
+    liftBlock('visitor', v.visitorId, LATER);
+
+    const rebloque = block({ip: v.ip, visitorId: v.visitorId, now: new Date('2026-09-15T12:00:00.000Z')});
+
+    expect(rebloque.visitorBlocked).toBe(true);
+    expect(blockVerdict({ip: v.ip, visitorId: v.visitorId}).byVisitor).toBe(true);
+    const duCookie = listBlocks().blocks.filter(({kind}) => kind === 'visitor');
+    expect(duCookie).toHaveLength(2);
+    // La plus ancienne garde sa levée ; la nouvelle tient.
+    expect(duCookie.map(({liftedAt}) => liftedAt === null)).toEqual([true, false]);
+  });
+
+  it('refuse un identifiant de visiteur qui nʼest pas un ULID', () => {
+    expect(() => block({ip: '203.0.113.7', visitorId: 'pas-un-ulid', now: NOW})).toThrow(TypeError);
+    expect(listBlocks().blocks).toEqual([]);
+  });
+
+  it('la table refuse une sorte inconnue et une clé hors borne : le CHECK, pas seulement le code', () => {
+    const insere = (kind: string, value: string) =>
+      db
+        .prepare('INSERT INTO block (id, kind, value, at, from_session, lifted_at) VALUES (?, ?, ?, ?, NULL, NULL)')
+        .run(ulid(NOW.getTime()), kind, value, NOW.toISOString());
+
+    expect(() => insere('courriel', 'quelqu-un@exemple.invalid')).toThrow();
+    expect(() => insere('ip', '')).toThrow();
+    expect(() => insere('ip', 'x'.repeat(65))).toThrow();
+    expect(() => insere('ip', 'x'.repeat(64))).not.toThrow();
+  });
+
+  it('survit au redémarrage : le registre vit dans la base, pas en mémoire', () => {
+    const v = visiteBloquable();
+    block({ip: v.ip, visitorId: v.visitorId, now: NOW});
+
+    closeJournal();
+    db = openJournal(path);
+
+    expect(blockVerdict({ip: v.ip, visitorId: v.visitorId})).toEqual({byIp: true, byVisitor: true});
+  });
+
+  it('migre une base v5 peuplée : la table apparaît, les lignes sont gardées, rejouée sans effet', () => {
+    expect(DDL_V5_EST_DERIVE, 'le DDL v5 doit être dérivé du DDL courant').toBe(true);
+    const neuve = schemaDe(db);
+    closeJournal();
+
+    const dir = dataDir();
+    const ancienne = join(dir, JOURNAL_FILE);
+    const base = new DatabaseSync(ancienne);
+    base.exec('PRAGMA journal_mode = WAL');
+    base.exec(DDL_V5);
+    const visiteur = ulid(NOW.getTime());
+    const session = ulid(NOW.getTime());
+    base.prepare('INSERT INTO visitor (id, first_seen) VALUES (?, ?)').run(visiteur, NOW.toISOString());
+    base
+      .prepare(
+        `INSERT INTO session (id, visitor_id, ip, user_agent, referer, lang, started_at, last_seen_at, label)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(session, visiteur, '203.0.113.7', null, null, 'fr', NOW.toISOString(), NOW.toISOString(), 'a7f3');
+    base.exec('PRAGMA user_version = 5');
+    base.close();
+
+    const migree = openJournal(ancienne);
+
+    // Le schéma dʼune base migrée et celui dʼune base neuve ne diffèrent pas.
+    expect(schemaDe(migree)).toEqual(neuve);
+    // La session dʼavant est intacte, étiquette comprise.
+    expect(findSession(session)).toMatchObject({id: session, ip: '203.0.113.7', label: 'a7f3'});
+    // Et le blocage fonctionne sur la base convertie, pas seulement sur une neuve.
+    block({ip: '203.0.113.7', visitorId: visiteur, fromSession: session, now: NOW});
+    expect(blockVerdict({ip: '203.0.113.7', visitorId: visiteur})).toEqual({byIp: true, byVisitor: true});
+
+    // La copie dʼavant la migration est là, en version 5.
+    const copies = readdirSync(dir).filter((nom) => nom.startsWith('usage-v'));
+    expect(copies).toEqual(['usage-v5.db']);
+
+    // Rejouée : la version ne bouge plus, et rien nʼest recopié.
+    closeJournal();
+    db = openJournal(ancienne);
+    expect((db.prepare('PRAGMA user_version').get() as {user_version: number}).user_version).toBe(SCHEMA_VERSION);
+    expect(readdirSync(dir).filter((nom) => nom.startsWith('usage-v'))).toEqual(['usage-v5.db']);
   });
 });
 
@@ -1337,6 +1563,7 @@ describe('ouverture', () => {
     ).filter(({name}) => !name.startsWith('sqlite_'));
 
     expect(noms.filter(({type}) => type === 'table').map(({name}) => name)).toEqual([
+      'block',
       'exchange',
       'ip_label',
       'session',
@@ -1346,6 +1573,7 @@ describe('ouverture', () => {
     const colonnes = (db.prepare('PRAGMA table_info(session)').all() as {name: string}[]).map(({name}) => name);
     expect(colonnes).not.toContain('ip_label');
     expect(noms.filter(({type}) => type === 'index').map(({name}) => name)).toEqual([
+      'block_kind_value',
       'exchange_at',
       'exchange_session_id_at',
       'session_ip',
@@ -1462,8 +1690,14 @@ describe('ouverture', () => {
     }
   );
 
-  it('est en version 5 : hero, cap_reached, lʼétiquette dʼadresse dans sa table, et session.label', () => {
-    expect(SCHEMA_VERSION).toBe(5);
+  it('est en version 6 : hero, cap_reached, lʼétiquette dʼadresse, session.label, et la table des blocages', () => {
+    expect(SCHEMA_VERSION).toBe(6);
+    // Le DDL d'une base neuve et le pas de migration posent le **même** bloc.
+    expect(DDL).toContain(BLOCK_DDL);
+    expect(BLOCK_DDL).toContain("CHECK (kind IN ('ip', 'visitor'))");
+    expect([...BLOCK_KINDS].sort()).toEqual(['ip', 'visitor']);
+    // L'index de la lecture chaude ne couvre que ce qui tient encore.
+    expect(BLOCK_DDL).toMatch(/CREATE INDEX IF NOT EXISTS block_kind_value ON block\(kind, value\) WHERE lifted_at IS NULL;/);
     expect(DDL).toMatch(/label\s+TEXT CHECK \(.+\)\n\) STRICT;/);
     // La borne de la colonne est celle du proxy, pas une seconde liste.
     expect(SESSION_LABEL_CHECK).toContain(`BETWEEN 1 AND ${LABEL_MAX}`);
@@ -1793,6 +2027,15 @@ describe('ce que le module ne peut pas faire', () => {
    *  - toute autre table est refusée.
    */
   function verdict(update: Update): string {
+    if (update.table === 'block') {
+      // Lever un blocage (story 13) : une seule affectation, `lifted_at`, et
+      // cette clause `WHERE` exactement — on ne relève jamais une levée déjà
+      // faite, et on ne touche à rien d'autre de la ligne.
+      if (update.colonnes.join(',') !== 'lifted_at') return 'block : autre chose que lifted_at';
+      return update.condition === 'kind = ? AND value = ? AND lifted_at IS NULL'
+        ? 'admise'
+        : 'block : autre clause WHERE';
+    }
     if (update.table === 'visitor' || update.table === 'ip_label') {
       return ADMIN_FORMS.includes(update.instruction) ? 'admise' : `forme hors liste sur ${update.table}`;
     }

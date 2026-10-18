@@ -22,6 +22,7 @@
 import {hasLocale} from 'next-intl';
 import {setRequestLocale} from 'next-intl/server';
 import {notFound} from 'next/navigation';
+import {requireNotBlocked} from '@/app/_lib/visit';
 import {routing} from '@/i18n/routing';
 import {AssistantDock, DOCK_BAR_HEIGHT_CLASS} from './_components/assistant-dock';
 import {AssistantPanel} from './_components/assistant-panel';
@@ -41,6 +42,9 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
     notFound();
   }
   setRequestLocale(locale);
+  // Avant le contenu : un visiteur bloqué (story 13) reçoit la page des URL
+  // inconnues, et le CV n'est même pas projeté pour lui.
+  await requireNotBlocked();
 
   // Import **différé**, et non statique : `force-dynamic` empêche le *rendu*
   // au build, pas le **chargement** du module — Next lit ses exports pendant

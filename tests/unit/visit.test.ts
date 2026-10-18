@@ -18,7 +18,14 @@ import {
 } from '@/app/_lib/visit';
 import {LABEL_COOKIE, LABEL_MAX, SESSION_COOKIE, VISITOR_COOKIE} from '@/lib/visit-cookies';
 
-const journal = vi.hoisted(() => ({touchSession: vi.fn()}));
+const journal = vi.hoisted(() => ({
+  touchSession: vi.fn(),
+  // Simulé, celui-là : ce fichier éprouve les deux verdicts. `isBlocked` reste
+  // une fonction réelle — c'est une règle du journal, pas un comportement à
+  // feindre, et la feindre masquerait une inversion de la condition.
+  blockVerdict: vi.fn(),
+  isBlocked: (verdict: {byIp: boolean; byVisitor: boolean}) => verdict.byIp || verdict.byVisitor
+}));
 vi.mock('@/journal', () => journal);
 
 const VISITOR_ID = '01K4EXAMPVSTR0000000000000';
@@ -31,6 +38,7 @@ function jar(cookies: Record<string, string>): CookieReader {
 beforeEach(() => {
   vi.resetAllMocks();
   journal.touchSession.mockReturnValue({outcome: 'created', visitorCreated: true});
+  journal.blockVerdict.mockReturnValue({byIp: false, byVisitor: false});
 });
 
 describe('visitIds', () => {
@@ -62,6 +70,59 @@ describe('visitIds', () => {
     });
 
     expect(visitIds(request.cookies)).toEqual({visitorId: VISITOR_ID, sessionId: SESSION_ID});
+  });
+});
+
+describe('le verdict de blocage (story 13)', () => {
+  const requete = (cookies: Record<string, string>) =>
+    recordVisit({
+      cookies: jar(cookies),
+      headers: new Headers({'user-agent': 'Mozilla/5.0'}),
+      lang: 'fr'
+    });
+
+  const COOKIES = {[VISITOR_COOKIE]: VISITOR_ID, [SESSION_COOKIE]: `${SESSION_ID}.1757930400000`};
+
+  it('interroge le registre avec les deux clés de la visite, et rend blocked faux par défaut', async () => {
+    const visite = await requete(COOKIES);
+
+    expect(journal.blockVerdict).toHaveBeenCalledWith({ip: 'dev', visitorId: VISITOR_ID});
+    expect(visite?.blocked).toBe(false);
+    // Un bloqué comme un autre : la visite est journalisée dans les deux cas.
+    expect(journal.touchSession).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['son adresse', {byIp: true, byVisitor: false}],
+    ['son cookie', {byIp: false, byVisitor: true}],
+    ['les deux', {byIp: true, byVisitor: true}]
+  ])('rend blocked vrai quand %s est bloqué — et journalise quand même', async (_quoi, verdict) => {
+    journal.blockVerdict.mockReturnValue(verdict);
+
+    const visite = await requete(COOKIES);
+
+    expect(visite?.blocked).toBe(true);
+    // AD-7 garde tout : l'insistance de quelqu'un qu'on a écarté est une
+    // information. Ce qui change, c'est ce que l'appelant lui sert.
+    expect(journal.touchSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('nʼinterroge pas le registre sans cookies valides : rien nʼidentifie le visiteur', async () => {
+    expect(await requete({})).toBeNull();
+
+    expect(journal.blockVerdict).not.toHaveBeenCalled();
+    expect(journal.touchSession).not.toHaveBeenCalled();
+  });
+
+  it('sert la page quand le registre est illisible : le refus nʼest pas le défaut', async () => {
+    journal.blockVerdict.mockImplementation(() => {
+      throw new Error('base verrouillée');
+    });
+
+    // `recordVisit` rend `null` — comme pour tout échec du journal (AD-14 :
+    // observer ne conditionne pas) — et aucun appelant ne verra `blocked`.
+    // Le défaut de prudence est assumé, et dit dans le README.
+    expect(await requete(COOKIES)).toBeNull();
   });
 });
 
@@ -140,6 +201,7 @@ describe('recordVisit', () => {
     expect(result).toEqual({
       outcome: 'created',
       visitorCreated: true,
+      blocked: false,
       visitorId: VISITOR_ID,
       sessionId: SESSION_ID,
       ip: 'dev'
@@ -230,6 +292,7 @@ describe('recordVisit', () => {
     for (const valeur of ['', 'a b', 'a/b', '<script>', 'é', 'x'.repeat(LABEL_MAX + 1)]) {
       vi.resetAllMocks();
       journal.touchSession.mockReturnValue({outcome: 'created', visitorCreated: true});
+      journal.blockVerdict.mockReturnValue({byIp: false, byVisitor: false});
       await recordVisit({
         cookies: jar({
           [VISITOR_COOKIE]: VISITOR_ID,
@@ -246,6 +309,7 @@ describe('recordVisit', () => {
     // La borne, elle, passe.
     vi.resetAllMocks();
     journal.touchSession.mockReturnValue({outcome: 'created', visitorCreated: true});
+    journal.blockVerdict.mockReturnValue({byIp: false, byVisitor: false});
     await recordVisit({
       cookies: jar({
         [VISITOR_COOKIE]: VISITOR_ID,

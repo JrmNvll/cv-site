@@ -22,6 +22,7 @@ import type {ReactNode} from 'react';
 import {hasLocale} from 'next-intl';
 import {getTranslations, setRequestLocale} from 'next-intl/server';
 import {notFound} from 'next/navigation';
+import {requireNotBlocked} from '@/app/_lib/visit';
 import {routing, type Locale} from '@/i18n/routing';
 import {joinParts} from './format';
 import {PageFrame} from './page-frame';
@@ -62,6 +63,10 @@ export function prosePage({namespace, body, hostingProvider = '', after}: ProseP
       notFound();
     }
     setRequestLocale(locale);
+    // Avant tout contenu : un visiteur bloqué (story 13) reçoit la page des
+    // URL inconnues, et n'a donc rien à charger. Les deux pages de prose
+    // passent par cette fabrique : l'appel y vaut pour les deux.
+    await requireNotBlocked();
     const t = await getTranslations();
 
     const {displayProjection} = await import('@/content');

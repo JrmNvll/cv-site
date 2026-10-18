@@ -17,7 +17,14 @@ import {HERO_QUESTIONS, MATCH_QUESTION} from '@/app/(site)/[locale]/_components/
 import type {QaEntry} from '@/content';
 
 const contenu = vi.hoisted(() => ({qaEntry: vi.fn()}));
-const journal = vi.hoisted(() => ({touchSession: vi.fn(), addExchange: vi.fn()}));
+const journal = vi.hoisted(() => ({
+  touchSession: vi.fn(), addExchange: vi.fn(),
+  // Aucun blocage dans ces cas (story 13) : des fonctions réelles, que
+  // `vi.resetAllMocks()` ne vide pas — `blockVerdict` réinitialisé rendrait
+  // `undefined`, et le verdict deviendrait une exception.
+  blockVerdict: () => ({byIp: false, byVisitor: false}),
+  isBlocked: (verdict: {byIp: boolean; byVisitor: boolean}) => verdict.byIp || verdict.byVisitor
+}));
 
 vi.mock('@/content', () => contenu);
 vi.mock('@/journal', () => journal);

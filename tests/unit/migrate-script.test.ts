@@ -24,6 +24,7 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {fileURLToPath} from 'node:url';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {MIGRATIONS} from '@/journal/migrations';
 import {DDL, SCHEMA_VERSION} from '@/journal/schema';
 import {DDL_V4, DDL_V4_EST_DERIVE} from './journal-v4';
 
@@ -144,10 +145,16 @@ describe('npm run migrate', () => {
 
     expect(resultat.stderr).toBe('');
     expect(resultat.status).toBe(0);
-    // Ce que l'exploitant lit : d'où à où, le pas joué, et la copie à restaurer.
+    // Ce que l'exploitant lit : d'où à où, chaque pas joué, et la copie à
+    // restaurer. Deux pas depuis la story 13 (5 puis 6) : la cible est dérivée
+    // de `SCHEMA_VERSION`, et chaque pas de la chaîne doit se nommer — un pas
+    // ajouté sans un mot dans cette sortie passerait inaperçu en déploiement.
     expect(resultat.stdout).toContain('Migration faite');
-    expect(resultat.stdout).toContain('de la version 4 à 5');
-    expect(resultat.stdout).toContain('session.label');
+    expect(resultat.stdout).toContain(`de la version 4 à ${SCHEMA_VERSION}`);
+    for (const pas of MIGRATIONS.filter(({to}) => to > 4)) {
+      expect(resultat.stdout, `pas ${pas.to}`).toContain(`version ${pas.to} — ${pas.what}`);
+    }
+    // Une seule copie, nommée d'après la version quittée — pas une par pas.
     expect(resultat.stdout).toContain('usage-v4.db');
     expect(resultat.stdout).toContain('restaurer');
     // La ligne `journal.migrated` du journal applicatif est là aussi.
@@ -157,9 +164,11 @@ describe('npm run migrate', () => {
     expect(copies()).toEqual(['usage-v4.db']);
     expect(version(join(dossier, 'usage-v4.db'))).toBe(4);
 
-    // La session d'avant est toujours là, sans étiquette, et la colonne existe.
+    // La session d'avant est toujours là, sans étiquette, et les deux pas ont
+    // laissé ce qu'ils promettent : la colonne de la v5, la table de la v6.
     const relue = new DatabaseSync(base, {readOnly: true});
     expect(relue.prepare('SELECT id, label FROM session').all()).toEqual([{id: session, label: null}]);
+    expect(relue.prepare('SELECT count(*) AS n FROM block').get()).toEqual({n: 0});
     relue.close();
 
     // Rejoué : rien à faire, et aucune seconde copie.

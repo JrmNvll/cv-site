@@ -38,7 +38,7 @@
 import {existsSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
-import {SCHEMA_VERSION, SESSION_LABEL_CHECK} from './schema';
+import {BLOCK_DDL, SCHEMA_VERSION, SESSION_LABEL_CHECK} from './schema';
 
 /** Un pas de migration : il mène la base **à** `to`, depuis `to - 1`. */
 export type Migration = {
@@ -60,7 +60,10 @@ function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
 
 /**
  * Les pas, dans l'ordre, un par version. Le premier mène de 4 à 5 : la base de
- * la story 11 est la première qu'il a fallu convertir plutôt que recréer.
+ * la story 11 est la première qu'il a fallu convertir plutôt que recréer. Le
+ * second, de 5 à 6, est la première reprise du mécanisme — et la preuve qu'il
+ * tient : on y ajoute une table sans rien savoir d'autre que la version de
+ * départ.
  */
 export const MIGRATIONS: readonly Migration[] = [
   {
@@ -80,6 +83,24 @@ export const MIGRATIONS: readonly Migration[] = [
       if (!hasColumn(db, 'session', 'label')) {
         db.exec(`ALTER TABLE session ADD COLUMN label TEXT CHECK (${SESSION_LABEL_CHECK})`);
       }
+    }
+  },
+  {
+    to: 6,
+    what: 'block — les visiteurs écartés du site, par adresse et par cookie',
+    up: (db) => {
+      // Le DDL de la table, au mot près celui qu'une base neuve reçoit
+      // (`BLOCK_DDL`) : une seule vérité, et un test compare les deux schémas.
+      //
+      // Exécuté **sans garde** : `IF NOT EXISTS` porte sur la table *et* sur
+      // son index, donc le pas est rejouable de lui-même et rattrape un état
+      // partiel — une table déjà là mais sans son index, ce qu'un garde
+      // `hasTable` aurait sauté en laissant la lecture chaude sans couverture.
+      //
+      // Une création de table n'emporte aucune ligne existante : rien à
+      // convertir, rien à perdre. C'est le pas le plus sûr qui soit — et le
+      // premier qui reprend le mécanisme apporté par la story 12.
+      db.exec(BLOCK_DDL);
     }
   }
 ];

@@ -43,7 +43,7 @@ import type {NextRequest} from 'next/server';
 import type {AskResult} from '@/agent';
 import {routing, type Locale} from '@/i18n/routing';
 import {CHAT_REFUSAL_STATUS, formatSseEvent, type ChatRefusal, type ChatRefusalReason} from './chat-contract';
-import {recordVisit, visitIds} from './visit';
+import {blockedResponse, recordVisit, requestBlocked, visitIds} from './visit';
 
 /** Le battement de cœur, tant que l'agent n'a rien produit. */
 export const HEARTBEAT_MS = 10_000;
@@ -122,6 +122,9 @@ export async function streamRoute<Body extends {readonly lang: string}>(
     return refuse(visitIds(request.cookies) === null ? 'no_visitor' : 'model_unavailable');
   }
   if (visit.outcome === 'mismatch') return refuse('no_visitor');
+  // Un visiteur bloqué (story 13) : `404` nu, **avant** toute réservation et
+  // tout appel au modèle. C'est ici que le blocage protège la dépense.
+  if (await requestBlocked(request, visit)) return blockedResponse();
 
   let result: AskResult;
   try {

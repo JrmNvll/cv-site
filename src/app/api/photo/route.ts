@@ -35,6 +35,7 @@
  *    directement. `sandbox` le neutralise sans gêner le rendu dans `<img>`.
  */
 import sharp from 'sharp';
+import {blockedResponse, requestBlocked} from '@/app/_lib/visit';
 import type {ServedPhoto} from '@/content';
 import {PHOTO_CSS_HEIGHT, PHOTO_CSS_WIDTH, photoScale, type PhotoScale} from './sizes';
 
@@ -141,6 +142,12 @@ function variant(image: ServedPhoto, scale: PhotoScale): Promise<Variant | null>
 }
 
 export async function GET(request: Request): Promise<Response> {
+  // Un visiteur bloqué (story 13) n'obtient pas le portrait : c'est une donnée
+  // personnelle, et une adresse connue suffit à la demander hors de la page.
+  // La route ne journalise rien — ce n'est pas un geste du visiteur, c'est une
+  // ressource de la page —, donc le verdict se prend sur la requête seule.
+  if (await requestBlocked(request, null)) return blockedResponse();
+
   const scale = photoScale(new URL(request.url).searchParams.get('s'));
   if (scale === undefined) {
     return new Response(null, {status: 400, headers: {'Cache-Control': CACHE_CONTROL}});

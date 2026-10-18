@@ -21,6 +21,13 @@ const journal = vi.hoisted(() => ({
   setVisitor: vi.fn(),
   setIpLabel: vi.fn(),
   isJournalIp: vi.fn(),
+  // Les blocages (story 13) : `BLOCK_KINDS` est la liste close du schéma, pas
+  // une valeur à feindre — la route s'en sert pour refuser une sorte inconnue.
+  block: vi.fn(),
+  liftBlock: vi.fn(),
+  findSession: vi.fn(),
+  BLOCK_KINDS: ['ip', 'visitor'] as const,
+  BLOCK_VALUE_MAX: 64,
   VISITOR_NAME_MAX: 120,
   VISITOR_NOTE_MAX: 2000,
   IP_LABEL_MAX: 120
@@ -29,8 +36,12 @@ vi.mock('@/journal', () => journal);
 
 type VisitorRoute = typeof import('@/app/(admin)/admin/api/visiteurs/[id]/route');
 type AddressRoute = typeof import('@/app/(admin)/admin/api/adresses/[ip]/route');
+type BlockRoute = typeof import('@/app/(admin)/admin/api/blocages/[session]/route');
+type LiftRoute = typeof import('@/app/(admin)/admin/api/blocages/lever/route');
 let visitorRoute: VisitorRoute;
 let addressRoute: AddressRoute;
+let blockRoute: BlockRoute;
+let liftRoute: LiftRoute;
 
 const VISITOR_ID = '01K4EXAMPVSTR0000000000000';
 const HOST = '127.0.0.1:3000';
@@ -70,13 +81,28 @@ async function chargerLesRoutes(adminDev: '0' | '1' = '1'): Promise<void> {
   vi.resetModules();
   visitorRoute = await import('@/app/(admin)/admin/api/visiteurs/[id]/route');
   addressRoute = await import('@/app/(admin)/admin/api/adresses/[ip]/route');
+  blockRoute = await import('@/app/(admin)/admin/api/blocages/[session]/route');
+  liftRoute = await import('@/app/(admin)/admin/api/blocages/lever/route');
 }
+
+const SESSION_ID = '01K4EXAMPSESS0000000000000';
+
+const bloquer = (session: string, fields: Record<string, string> = {}, options: CallOptions = {}) =>
+  blockRoute.POST(request(`/admin/api/blocages/${session}`, {...options, body: new URLSearchParams(fields)}), {
+    params: Promise.resolve({session})
+  });
+
+const lever = (fields: Record<string, string>, options: CallOptions = {}) =>
+  liftRoute.POST(request('/admin/api/blocages/lever', {...options, body: new URLSearchParams(fields)}));
 
 beforeEach(async () => {
   vi.resetAllMocks();
   vi.unstubAllEnvs();
   journal.setVisitor.mockReturnValue(true);
   journal.isJournalIp.mockImplementation((value: string) => /^\d+\.\d+\.\d+\.\d+$/.test(value) || /^[0-9a-f:]+$/i.test(value));
+  journal.findSession.mockReturnValue({id: SESSION_ID, visitorId: VISITOR_ID, ip: '203.0.113.7'});
+  journal.block.mockReturnValue({ipBlocked: true, ipKey: '203.0.113.7', visitorBlocked: true});
+  journal.liftBlock.mockReturnValue(1);
   // En test, `NODE_ENV` n'est pas `production` : la porte n'est ouverte que par `ADMIN_DEV=1`.
   await chargerLesRoutes('1');
 });
@@ -477,5 +503,76 @@ describe('la mécanique, pièce par pièce', () => {
     expect(isSameOrigin(h({origin: `http://${HOST}`}))).toBe(false);
     expect(isSameOrigin(h({host: HOST}))).toBe(false);
     expect(isSameOrigin(h({}))).toBe(false);
+  });
+});
+
+describe('bloquer et lever (story 13)', () => {
+  it('bloque les deux clés de la session, et dit dʼoù vient la décision', async () => {
+    const response = await bloquer(SESSION_ID, {from: '/admin/sessions/x'});
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/admin/sessions/x');
+    // L'adresse et le visiteur viennent de la session, pas du formulaire :
+    // rien de ce que le navigateur envoie ne choisit **qui** est bloqué.
+    expect(journal.block).toHaveBeenCalledWith({
+      ip: '203.0.113.7',
+      visitorId: VISITOR_ID,
+      fromSession: SESSION_ID
+    });
+  });
+
+  it('refuse une session inconnue (404) et un identifiant qui nʼest pas un ULID (400) — sans rien écrire', async () => {
+    journal.findSession.mockReturnValue(undefined);
+    expect((await bloquer(SESSION_ID, {from: '/admin'})).status).toBe(404);
+
+    expect((await bloquer('pas-un-ulid', {from: '/admin'})).status).toBe(400);
+    expect(journal.block).not.toHaveBeenCalled();
+  });
+
+  it('lève une clé, et une seule : la sorte et la valeur viennent du formulaire', async () => {
+    const response = await lever({kind: 'ip', value: '203.0.113.7', from: '/admin/blocages'});
+
+    expect(response.status).toBe(303);
+    expect(journal.liftBlock).toHaveBeenCalledWith('ip', '203.0.113.7');
+  });
+
+  it('refuse une sorte hors de la liste close, et une valeur vide — rien nʼest levé', async () => {
+    for (const fields of [
+      {kind: 'courriel', value: 'x', from: '/admin'},
+      {kind: '', value: 'x', from: '/admin'},
+      {kind: 'ip', value: '', from: '/admin'}
+    ]) {
+      expect((await lever(fields)).status, JSON.stringify(fields)).toBe(400);
+    }
+    expect(journal.liftBlock).not.toHaveBeenCalled();
+  });
+
+  it('« rien à lever » est un 404, pas un succès : un formulaire périmé ne doit pas rassurer', async () => {
+    journal.liftBlock.mockReturnValue(0);
+
+    expect((await lever({kind: 'visitor', value: VISITOR_ID, from: '/admin'})).status).toBe(404);
+  });
+
+  it('refuse une origine étrangère et une autre méthode, comme les deux autres mutations', async () => {
+    expect((await bloquer(SESSION_ID, {from: '/admin'}, {headers: {'sec-fetch-site': 'cross-site'}})).status).toBe(403);
+    expect((await lever({kind: 'ip', value: 'x', from: '/admin'}, {headers: {'sec-fetch-site': 'cross-site'}})).status).toBe(403);
+    // 'PUT' et non 'GET' : une requête GET ne peut pas porter de corps.
+    expect((await bloquer(SESSION_ID, {from: '/admin'}, {method: 'PUT'})).status).toBe(405);
+    expect(journal.block).not.toHaveBeenCalled();
+    expect(journal.liftBlock).not.toHaveBeenCalled();
+  });
+
+  it('refuse un retour hors de lʼadmin : la redirection ne sort jamais du site', async () => {
+    expect((await bloquer(SESSION_ID, {from: 'https://ailleurs.invalid/'})).status).toBe(400);
+    expect(journal.block).not.toHaveBeenCalled();
+  });
+
+  it('porte fermée → 404, et rien nʼest écrit', async () => {
+    await chargerLesRoutes('0');
+
+    expect((await bloquer(SESSION_ID, {from: '/admin'})).status).toBe(404);
+    expect((await lever({kind: 'ip', value: 'x', from: '/admin'})).status).toBe(404);
+    expect(journal.block).not.toHaveBeenCalled();
+    expect(journal.liftBlock).not.toHaveBeenCalled();
   });
 });

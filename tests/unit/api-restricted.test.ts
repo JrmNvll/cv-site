@@ -31,7 +31,14 @@ const contenu = vi.hoisted(() => ({
 }));
 // Le journal aussi : la route du téléphone prolonge la session (AD-14), et ce
 // qui est prouvé ici, c'est qu'elle ne le fait qu'avec des cookies.
-const journal = vi.hoisted(() => ({touchSession: vi.fn()}));
+const journal = vi.hoisted(() => ({
+  touchSession: vi.fn(),
+  // Aucun blocage dans ces cas (story 13) : des fonctions réelles, que
+  // `vi.resetAllMocks()` ne vide pas — `blockVerdict` réinitialisé rendrait
+  // `undefined`, et le verdict deviendrait une exception.
+  blockVerdict: () => ({byIp: false, byVisitor: false}),
+  isBlocked: (verdict: {byIp: boolean; byVisitor: boolean}) => verdict.byIp || verdict.byVisitor
+}));
 
 vi.mock('@/content', () => contenu);
 vi.mock('@/journal', () => journal);

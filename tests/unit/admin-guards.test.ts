@@ -49,7 +49,10 @@ describe('lʼespace dʼadministration', () => {
       'app/(admin)/admin/_lib/format.ts',
       'app/(admin)/admin/_lib/mutation-route.ts',
       'app/(admin)/admin/api/adresses/[ip]/route.ts',
+      'app/(admin)/admin/api/blocages/[session]/route.ts',
+      'app/(admin)/admin/api/blocages/lever/route.ts',
       'app/(admin)/admin/api/visiteurs/[id]/route.ts',
+      'app/(admin)/admin/blocages/page.tsx',
       'app/(admin)/admin/error.tsx',
       'app/(admin)/admin/layout.tsx',
       'app/(admin)/admin/not-found.tsx',
@@ -128,7 +131,10 @@ describe('lʼespace dʼadministration', () => {
     const lecteurs = adminSources.filter((path) => readFileSync(path, 'utf8').includes("import('@/journal')"));
     expect(lecteurs.map(nom).sort()).toEqual([
       'app/(admin)/admin/api/adresses/[ip]/route.ts',
+      'app/(admin)/admin/api/blocages/[session]/route.ts',
+      'app/(admin)/admin/api/blocages/lever/route.ts',
       'app/(admin)/admin/api/visiteurs/[id]/route.ts',
+      'app/(admin)/admin/blocages/page.tsx',
       'app/(admin)/admin/page.tsx',
       'app/(admin)/admin/questions/page.tsx',
       'app/(admin)/admin/sessions/[id]/page.tsx',
@@ -186,14 +192,16 @@ describe('lʼespace dʼadministration', () => {
 
   it('nʼa que des formulaires HTML : method="post" vers /admin/api/, et un champ from', () => {
     const forms = readFileSync(join(ADMIN, 'admin', '_components', 'forms.tsx'), 'utf8');
-    const formulaires = [...forms.matchAll(/<form\b[^>]*>/g)].map((m) => m[0]);
-    expect(formulaires).toHaveLength(2);
+    const formulaires = [...forms.matchAll(/<form\b[\s\S]*?>/g)].map((m) => m[0]);
+    // Quatre depuis la story 13 : nommer, étiqueter, bloquer, lever. L'action
+    // est un gabarit quand elle porte un identifiant, une chaîne sinon.
+    expect(formulaires).toHaveLength(4);
     for (const form of formulaires) {
       expect(form).toContain('method="post"');
-      expect(form).toMatch(/action=\{`\/admin\/api\/(visiteurs|adresses)\//);
+      expect(form).toMatch(/action=(?:\{`|")\/admin\/api\/(visiteurs|adresses|blocages)\//);
       expect(form).not.toContain('onSubmit');
     }
-    expect(forms.match(/name="from"/g)).toHaveLength(2);
+    expect(forms.match(/name="from"/g)).toHaveLength(4);
     expect(forms).not.toContain("'use client'");
   });
 });

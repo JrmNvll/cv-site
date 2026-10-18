@@ -9,10 +9,12 @@
  * (`./migrations.ts`). Écritures en insertion, plus la liste fermée de colonnes
  * modifiables d'AD-7 : `session.last_seen_at`, la finalisation d'un échange
  * réservé (`status`, `answer`, `sources`, `citation_ok`, les quatre compteurs,
- * `cost_micro_usd`, `latency_ms`), et les trois choses que l'admin écrit —
- * `visitor.name`, `visitor.note`, `ip_label.label` (avec son `at`) — et rien
- * d'autre. Aucune suppression, aucune purge, aucune table d'agrégat : le cumul
- * du mois est une somme à la lecture, les classements de l'admin aussi.
+ * `cost_micro_usd`, `latency_ms`), les trois choses que l'admin écrit —
+ * `visitor.name`, `visitor.note`, `ip_label.label` (avec son `at`) — et, depuis
+ * la story 13, `block.lifted_at` : lever un blocage le **date**, il ne l'efface
+ * pas. Rien d'autre. Aucune suppression, aucune purge, aucune table d'agrégat :
+ * le cumul du mois est une somme à la lecture, les classements de l'admin
+ * aussi.
  *
  * Dépendances autorisées : `src/env.ts`, `src/lib/`, `node:sqlite`, ses propres
  * types. Interdites : `content`, `knowledge`, `agent`, `app`. Le journal ne
@@ -46,7 +48,7 @@
  */
 import {isIP} from 'node:net';
 import type {DatabaseSync} from 'node:sqlite';
-import {DEV_CLIENT_IP, UNKNOWN_CLIENT_IP} from '@/lib/client-ip';
+import {DEV_CLIENT_IP, ipBlockKey, UNKNOWN_CLIENT_IP} from '@/lib/client-ip';
 import {isUlid, ulid} from '@/lib/ulid';
 import {journal} from './db';
 
@@ -320,7 +322,7 @@ export function findSession(id: string): Session | undefined {
   };
 }
 
-import type {ExchangeKind, ExchangeStatus} from './schema';
+import type {BlockKind, ExchangeKind, ExchangeStatus} from './schema';
 
 export {EXCHANGE_KINDS, EXCHANGE_STATUSES} from './schema';
 export type {ExchangeKind, ExchangeStatus} from './schema';
@@ -1196,4 +1198,221 @@ export function ipLabel(ip: string): IpLabel | undefined {
     | {ip: string; label: string; at: string}
     | undefined;
   return row === undefined ? undefined : {ip: row.ip, label: row.label, at: row.at};
+}
+
+/* ── Les blocages (story 13) ─────────────────────────────────────────────── */
+
+export {BLOCK_KINDS} from './schema';
+export type {BlockKind} from './schema';
+
+/** Ce qu'une visite présente, et qui peut la faire écarter. */
+export type BlockQuery = {
+  /** L'adresse telle que `clientIp()` la rend — normalisée ici, pas par l'appelant. */
+  readonly ip: string;
+  /**
+   * L'identifiant du cookie `cv_visitor`, ou `null` quand la requête n'en
+   * porte pas — une route appelée sans cookie, par exemple. L'adresse est
+   * alors la seule clé consultée : c'est **elle** qui retient quelqu'un qui a
+   * effacé ses cookies, et ne rien consulter du tout rouvrirait la porte.
+   */
+  readonly visitorId: string | null;
+};
+
+/**
+ * Pourquoi une visite est écartée — les deux clés séparément, parce qu'elles se
+ * lèvent séparément et que l'admin doit pouvoir le dire.
+ */
+export type BlockVerdict = {
+  /** L'adresse (ou son préfixe `/64`) est bloquée. */
+  readonly byIp: boolean;
+  /** Le cookie de visiteur est bloqué. */
+  readonly byVisitor: boolean;
+};
+
+/** Vrai dès que l'une des deux clés est bloquée. */
+export function isBlocked(verdict: BlockVerdict): boolean {
+  return verdict.byIp || verdict.byVisitor;
+}
+
+/**
+ * Les deux clés d'une visite confrontées au registre — **la lecture chaude**,
+ * jouée à chaque document et à chaque geste du visiteur.
+ *
+ * Une seule requête, et seulement sur les blocages non levés, que l'index
+ * partiel `block_kind_value` couvre. L'adresse est normalisée ici par
+ * `ipBlockKey()` : la même fonction qu'à la pose, sinon poser et reconnaître
+ * divergeraient au premier préfixe IPv6. Une adresse qui ne se bloque pas
+ * (`dev`, `unknown`) ne peut pas non plus être trouvée bloquée.
+ */
+export function blockVerdict(query: BlockQuery): BlockVerdict {
+  const ipKey = ipBlockKey(query.ip);
+  // Les clauses sont **omises** plutôt que comparées à une chaîne vide : une
+  // adresse qui ne se bloque pas (`dev`, `unknown`) et une requête sans cookie
+  // ne doivent correspondre à rien, et le dire ici vaut mieux que de compter
+  // sur le `CHECK` de la table pour qu'aucune ligne ne porte de clé vide.
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (ipKey !== null) {
+    clauses.push("(kind = 'ip' AND value = ?)");
+    params.push(ipKey);
+  }
+  if (query.visitorId !== null && query.visitorId !== '') {
+    clauses.push("(kind = 'visitor' AND value = ?)");
+    params.push(query.visitorId);
+  }
+  if (clauses.length === 0) return {byIp: false, byVisitor: false};
+
+  const rows = journal()
+    .prepare(
+      `SELECT DISTINCT kind FROM block
+       WHERE lifted_at IS NULL AND (${clauses.join(' OR ')})`
+    )
+    .all(...params) as {kind: string}[];
+  const kinds = new Set(rows.map((row) => row.kind));
+  return {byIp: kinds.has('ip'), byVisitor: kinds.has('visitor')};
+}
+
+/** La longueur maximale d'une clé de blocage, comme le `CHECK` de la table. */
+export const BLOCK_VALUE_MAX = 64;
+
+export type BlockInput = {
+  /** L'adresse de la session bloquée ; une adresse qui ne se bloque pas est ignorée. */
+  readonly ip: string;
+  /** L'identifiant du visiteur à bloquer. */
+  readonly visitorId: string;
+  /** La session depuis laquelle le blocage est posé — pour retrouver le contexte. */
+  readonly fromSession?: string | null;
+  /** L'instant de la pose ; par défaut, maintenant. Sert aux tests. */
+  readonly now?: Date;
+};
+
+/** Ce qui a été posé, et ce qui ne l'a pas été. */
+export type BlockResult = {
+  /**
+   * Faux quand l'adresse ne **se bloque pas** (`dev`, `unknown`) : l'admin le
+   * dit, pour ne pas laisser croire à un blocage d'adresse qui n'existe pas.
+   */
+  readonly ipBlockable: boolean;
+  /** La clé d'adresse, telle qu'elle est inscrite — un préfixe `/64`, parfois. */
+  readonly ipKey: string | null;
+  /** Vrai si **cet appel** a inscrit la clé d'adresse ; faux si elle tenait déjà. */
+  readonly ipBlocked: boolean;
+  /** Vrai si **cet appel** a inscrit le cookie ; faux s'il tenait déjà. */
+  readonly visitorBlocked: boolean;
+};
+
+/**
+ * Bloque un visiteur sur ses **deux** clés, d'un seul geste (décision de
+ * Jérémie, 2026-10-16) : l'adresse de la session et le cookie `cv_visitor`.
+ *
+ * Une clé déjà bloquée et non levée n'est pas réinscrite — rebloquer n'a de
+ * sens qu'après une levée. Une adresse qui ne désigne personne (`dev`,
+ * `unknown` : les sondes de santé de `deploy.ps1` en portent) est **refusée**,
+ * et le cookie est posé seul ; le résultat le dit, pour que l'admin ne laisse
+ * pas croire à un blocage d'adresse qui n'existe pas.
+ */
+export function block(input: BlockInput): BlockResult {
+  if (!isUlid(input.visitorId)) {
+    throw new TypeError('block : visitorId doit être un ULID validé');
+  }
+  const now = input.now ?? new Date();
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('block : now doit être une date valide');
+  }
+  const at = now.toISOString();
+  const ipKey = ipBlockKey(input.ip);
+  const db = journal();
+
+  return transaction(db, () => {
+    const poser = (kind: BlockKind, value: string): boolean => {
+      const existe =
+        db
+          .prepare('SELECT 1 FROM block WHERE kind = ? AND value = ? AND lifted_at IS NULL')
+          .get(kind, value) !== undefined;
+      if (existe) return false;
+      db.prepare(
+        'INSERT INTO block (id, kind, value, at, from_session, lifted_at) VALUES (?, ?, ?, ?, ?, NULL)'
+      ).run(ulid(now.getTime()), kind, value, at, input.fromSession ?? null);
+      return true;
+    };
+
+    // Chaque champ dit ce qu'il nomme, et rien d'autre : `visitorBlocked` vaut
+    // vrai quand **cette ligne-là** a été écrite, pas quand l'autre l'a été.
+    const visitorBlocked = poser('visitor', input.visitorId);
+    const ipBlocked = ipKey === null ? false : poser('ip', ipKey);
+    return {ipBlockable: ipKey !== null, ipKey, ipBlocked, visitorBlocked};
+  });
+}
+
+/**
+ * Lève une clé — **sans effacer sa ligne** : `lifted_at` la date, et c'est tout
+ * (AD-7). Une adresse partagée se rouvre ainsi en laissant le cookie fermé.
+ *
+ * Rend le nombre de lignes levées : `0` si la clé n'était pas bloquée, ce que
+ * l'admin traduit en « rien à lever » plutôt qu'en succès.
+ */
+export function liftBlock(kind: BlockKind, value: string, now: Date = new Date()): number {
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('liftBlock : now doit être une date valide');
+  }
+  const db = journal();
+  return transaction(db, () => {
+    const {changes} = db
+      .prepare('UPDATE block SET lifted_at = ? WHERE kind = ? AND value = ? AND lifted_at IS NULL')
+      .run(now.toISOString(), kind, value);
+    return Number(changes);
+  });
+}
+
+export type BlockRow = {
+  readonly id: string;
+  readonly kind: BlockKind;
+  readonly value: string;
+  /** ISO 8601 UTC. */
+  readonly at: string;
+  /** La session depuis laquelle le blocage a été posé, si elle est connue. */
+  readonly fromSession: string | null;
+  /** ISO 8601 UTC, ou `null` tant que le blocage tient. */
+  readonly liftedAt: string | null;
+};
+
+/** Comme les autres listes de l'admin : bornée, et le total dit le reste. */
+export const BLOCKS_MAX = 200;
+
+/**
+ * Les blocages, les plus récents d'abord — levés **compris** : c'est le journal
+ * d'audit, et une levée se lit comme une décision, pas comme un oubli.
+ *
+ * Borné à `BLOCKS_MAX`, comme les sessions d'un visiteur : rien ne purge ce
+ * registre (AD-7), donc il ne peut que grandir, et une page qui rendrait tout
+ * finirait par mettre une minute. Le compte total accompagne la page.
+ */
+export function listBlocks(): {readonly blocks: readonly BlockRow[]; readonly total: number} {
+  const db = journal();
+  const {n: total} = db.prepare('SELECT count(*) AS n FROM block').get() as {n: number};
+  const rows = db
+    .prepare(
+      `SELECT id, kind, value, at, from_session, lifted_at FROM block
+       ORDER BY at DESC, id DESC
+       LIMIT ?`
+    )
+    .all(BLOCKS_MAX) as {
+    id: string;
+    kind: BlockKind;
+    value: string;
+    at: string;
+    from_session: string | null;
+    lifted_at: string | null;
+  }[];
+  return {
+    blocks: rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      value: row.value,
+      at: row.at,
+      fromSession: row.from_session,
+      liftedAt: row.lifted_at
+    })),
+    total
+  };
 }

@@ -133,5 +133,10 @@ describe('les adresses des pages', () => {
     expect(currentSection('/admin/questions')).toBe('/admin/questions');
     expect(currentSection('/admin/questions/x')).toBe('/admin/questions');
     expect(currentSection('/admin/questionsx')).toBe('/admin');
+    // La troisième section (story 13), dérivée de `NAV` et non écrite à la
+    // main : une entrée de plus doit se marquer d'elle-même.
+    expect(currentSection('/admin/blocages')).toBe('/admin/blocages');
+    expect(currentSection('/admin/blocages/x')).toBe('/admin/blocages');
+    expect(currentSection('/admin/blocagesx')).toBe('/admin');
   });
 });

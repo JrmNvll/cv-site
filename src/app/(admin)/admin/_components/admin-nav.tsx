@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * La navigation de l'admin : deux liens, celui de la section courante marqué
+ * La navigation de l'admin : trois liens, celui de la section courante marqué
  * `aria-current="page"`. Un composant client pour la seule raison que le
  * chemin courant n'est lisible que par `usePathname()` — rendu côté serveur
  * avec le bon attribut, il n'a besoin d'aucun JavaScript pour être juste.
@@ -12,12 +12,21 @@ import {usePathname} from 'next/navigation';
 
 const NAV = [
   {href: '/admin', label: 'Tableau de bord'},
-  {href: '/admin/questions', label: 'Questions'}
+  {href: '/admin/questions', label: 'Questions'},
+  {href: '/admin/blocages', label: 'Blocages'}
 ] as const;
 
-/** La section d'un chemin : `/admin/questions` pour tout ce qui est dessous, `/admin` pour le reste. */
+/**
+ * La section d'un chemin : celle des entrées de `NAV` dont il relève, `/admin`
+ * pour le reste. Dérivée de `NAV` et non écrite à la main : une entrée de plus
+ * se marque d'elle-même. Une fiche de session ou de visiteur retombe sur le
+ * tableau de bord, d'où elle s'atteint.
+ */
 export function currentSection(pathname: string): string {
-  return pathname === '/admin/questions' || pathname.startsWith('/admin/questions/') ? '/admin/questions' : '/admin';
+  const section = NAV.map(({href}) => href)
+    .filter((href) => href !== '/admin')
+    .find((href) => pathname === href || pathname.startsWith(`${href}/`));
+  return section ?? '/admin';
 }
 
 export function AdminNav() {

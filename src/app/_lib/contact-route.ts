@@ -13,7 +13,7 @@
  * `api/photo/route.ts`).
  */
 import type {NextRequest} from 'next/server';
-import {localeOfReferer, recordVisit} from './visit';
+import {blockedResponse, localeOfReferer, recordVisit, requestBlocked} from './visit';
 
 const HEADERS = {'Cache-Control': 'private, no-store'};
 
@@ -27,11 +27,16 @@ export async function contactRoute(
   request: NextRequest,
   read: () => Promise<RevealedContact | null>
 ): Promise<Response> {
-  await recordVisit({
+  const visit = await recordVisit({
     cookies: request.cookies,
     headers: request.headers,
     lang: localeOfReferer(request.headers.get('referer'), request.headers.get('host'))
   });
+  // Un visiteur bloqué (story 13) n'obtient pas les coordonnées : `404` nu,
+  // avant même de lire la projection. `requestBlocked` et non `visit?.blocked` :
+  // sans cookie, `recordVisit` rend `null`, et la coordonnée serait partie —
+  // il suffisait d'effacer ses cookies pour récupérer le numéro.
+  if (await requestBlocked(request, visit)) return blockedResponse();
 
   const contact = await read();
   const body = {

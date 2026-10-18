@@ -28,7 +28,7 @@ import {hasLocale} from 'next-intl';
 import type {NextRequest} from 'next/server';
 import {isHeroQuestion} from '@/app/(site)/[locale]/_components/hero-questions';
 import {type HeroAnswer, type HeroRefusal} from '@/app/_lib/questions-contract';
-import {recordVisit} from '@/app/_lib/visit';
+import {blockedResponse, recordVisit, requestBlocked} from '@/app/_lib/visit';
 import {routing} from '@/i18n/routing';
 
 /**
@@ -98,6 +98,9 @@ export async function GET(
   // `HERO_EXCHANGES_PER_SESSION`, le journal rend `null` : la réponse est
   // servie, `exchangeId` aussi — nul.
   const visit = await recordVisit({cookies: request.cookies, headers: request.headers, lang});
+  // Un visiteur bloqué (story 13) : `404` nu, et aucun échange journalisé.
+  // `requestBlocked` consulte l'adresse quand la requête n'a pas de cookie.
+  if (await requestBlocked(request, visit)) return blockedResponse();
   let exchangeId: string | null = null;
   if (visit !== null && visit.outcome !== 'mismatch') {
     try {

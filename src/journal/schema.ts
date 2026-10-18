@@ -45,8 +45,11 @@ import {LABEL_MAX} from '@/lib/visit-cookies';
  *  - 5 : `session.label` — l'étiquette d'un lien envoyé, posée à la création de
  *    la session d'après le paramètre `?l=` relayé par un cookie (story 12) ;
  *    première migration du projet, sur une base qui porte de vraies données.
+ *  - 6 : la table `block(kind, value, at, from_session, lifted_at)` — un visiteur
+ *    écarté du site par son adresse et par son cookie, en insertion seule : un
+ *    blocage se **lève** (`lifted_at`), il ne s'efface pas (story 13).
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * La contrainte qui borne `session.label` — **une seule vérité**, posée par le
@@ -81,6 +84,20 @@ export type ExchangeKind = (typeof EXCHANGE_KINDS)[number];
  */
 export const EXCHANGE_STATUSES = ['pending', 'done', 'model_error', 'cap_reached'] as const;
 export type ExchangeStatus = (typeof EXCHANGE_STATUSES)[number];
+
+/**
+ * Les deux clés par lesquelles un visiteur se bloque (story 13), liste close —
+ * `CHECK` dérivé, comme ci-dessus. `ip` : la clé d'adresse rendue par
+ * `ipBlockKey()` (une IPv4, ou un préfixe `/64` en IPv6), jamais l'adresse
+ * brute du journal ; `visitor` : l'identifiant du cookie `cv_visitor`.
+ *
+ * Les deux sont posées d'un même geste depuis l'admin, et **se lèvent
+ * séparément** : une adresse partagée — opérateur mobile, entreprise, VPN —
+ * emporte des innocents, et il faut pouvoir la rouvrir en gardant le cookie
+ * fermé.
+ */
+export const BLOCK_KINDS = ['ip', 'visitor'] as const;
+export type BlockKind = (typeof BLOCK_KINDS)[number];
 
 /*
  * `exchange.citation_ok` — un booléen (`1` / `0`), `NULL` sans réponse. Ce
@@ -119,6 +136,40 @@ export const PRAGMAS = [
   'PRAGMA journal_mode = WAL',
   'PRAGMA foreign_keys = ON'
 ] as const;
+
+/**
+ * La table des blocages — **une seule vérité**, comme `SESSION_LABEL_CHECK` :
+ * ce bloc est posé par le DDL d'une base neuve **et** par le pas de migration
+ * vers la version 6 d'une base existante, au mot près. Les deux chemins doivent
+ * mener au même schéma, et c'est un test qui le vérifie en les comparant.
+ *
+ * En insertion seule, comme tout ce que le journal écrit (AD-7). Lever un
+ * blocage n'efface pas sa ligne : `lifted_at` la date. Ce n'est pas un
+ * effacement déguisé — la distinction compte, et elle est l'inverse de celle
+ * que le droit à l'oubli impose : ici rien de personnel n'est masqué sous une
+ * apparence de suppression, c'est une mesure de sécurité qui garde son
+ * historique. Rebloquer la même clé écrit une **nouvelle** ligne ; la
+ * précédente garde sa levée, et la suite des décisions se relit.
+ *
+ * `from_session` : la session depuis laquelle Jérémie a cliqué « Bloquer » —
+ * de quoi retrouver ce qu'il avait sous les yeux. Sans `NOT NULL` : une session
+ * peut avoir été posée par une clé saisie à la main, et la contrainte de clé
+ * étrangère (`foreign_keys = ON`) n'accepterait pas une session inconnue.
+ */
+export const BLOCK_DDL = `
+CREATE TABLE IF NOT EXISTS block (
+  id            TEXT PRIMARY KEY,
+  kind          TEXT NOT NULL CHECK (kind IN (${sqlList(BLOCK_KINDS)})),
+  value         TEXT NOT NULL CHECK (length(value) BETWEEN 1 AND 64),
+  at            TEXT NOT NULL,
+  from_session  TEXT REFERENCES session(id),
+  lifted_at     TEXT
+) STRICT;
+
+-- La lecture chaude : à chaque visite, « cette adresse ou ce visiteur est-il
+-- bloqué, et pas encore levé ? ». Les blocages levés restent dans la table et
+-- n'ont pas à être parcourus.
+CREATE INDEX IF NOT EXISTS block_kind_value ON block(kind, value) WHERE lifted_at IS NULL;`;
 
 /** Le DDL, idempotent : `IF NOT EXISTS` partout, un redémarrage ne touche à rien. */
 export const DDL = `
@@ -162,6 +213,8 @@ CREATE TABLE IF NOT EXISTS ip_label (
   label  TEXT NOT NULL,
   at     TEXT NOT NULL
 ) STRICT;
+
+${BLOCK_DDL}
 
 CREATE TABLE IF NOT EXISTS exchange (
   id                     TEXT PRIMARY KEY,

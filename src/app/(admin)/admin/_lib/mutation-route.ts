@@ -1,8 +1,8 @@
 /**
  * La mécanique commune des mutations de l'admin — `POST /admin/api/*`.
  *
- * Deux routes (nommer un visiteur, étiqueter une adresse), une seule règle,
- * écrite une fois. Une mutation est un **formulaire HTML** vers une route
+ * Quatre routes — nommer un visiteur, étiqueter une adresse, bloquer, lever
+ * (story 13) —, une seule règle, écrite une fois. Une mutation est un **formulaire HTML** vers une route
  * handler (AD-10 : aucune Server Action), qui répond par une redirection vers
  * la page d'origine — lisible et utilisable sans JavaScript.
  *
@@ -22,8 +22,9 @@
  *     borne une fois ses invisibles retirés et ses bouts blancs ôtés, ou si
  *     `from` n'est pas un chemin de retour de l'admin (`isAdminReturnPath`) ;
  *  4. `400` si la cible n'est pas de la forme attendue (une adresse qui n'en
- *     est pas une), `404` si elle n'existe pas (un visiteur inconnu) — dits
- *     par `apply` ;
+ *     est pas une, une sorte de clé hors liste close), `404` si elle n'existe
+ *     pas (un visiteur inconnu, une clé qui n'était pas bloquée — « rien à
+ *     lever » n'est pas un succès) — dits par `apply` ;
  *  5. `303` vers `from` une fois écrit.
  *
  * Tout est `private, no-store`. Les corps de refus sont du texte, en français.

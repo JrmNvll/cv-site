@@ -17,7 +17,14 @@ import type {AgentEvent} from '@/agent';
 import {AD_MAX_CHARS, createSseDecoder, type ChatEvent} from '@/app/_lib/chat-contract';
 
 const agent = vi.hoisted(() => ({ask: vi.fn(), match: vi.fn()}));
-const journal = vi.hoisted(() => ({touchSession: vi.fn()}));
+const journal = vi.hoisted(() => ({
+  touchSession: vi.fn(),
+  // Aucun blocage dans ces cas (story 13) : des fonctions réelles, que
+  // `vi.resetAllMocks()` ne vide pas — `blockVerdict` réinitialisé rendrait
+  // `undefined`, et le verdict deviendrait une exception.
+  blockVerdict: () => ({byIp: false, byVisitor: false}),
+  isBlocked: (verdict: {byIp: boolean; byVisitor: boolean}) => verdict.byIp || verdict.byVisitor
+}));
 
 vi.mock('@/agent', () => agent);
 vi.mock('@/journal', () => journal);

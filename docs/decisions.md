@@ -54,7 +54,14 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
   rien et se rejoue sans effet ; une base migrée n'ouvre plus avec le code précédent, donc le
   retour arrière d'un déploiement passe par la restauration de cette copie. La page « Mentions
   légales & confidentialité » n'a **pas** été amendée pour cette étiquette : demande explicite et
-  réitérée de l'éditeur (2026-10-08), qui en porte la responsabilité.
+  réitérée de l'éditeur (2026-10-08), qui en porte la responsabilité. **Amendé par la story 13** :
+  une table `block(kind, value, at, from_session, lifted_at)` écarte un visiteur du site par deux
+  clés — sa clé d'adresse (une IPv4, ou le préfixe `/64` d'un abonné IPv6) et son cookie
+  `cv_visitor`. En insertion seule, comme le reste : lever un blocage le **date**
+  (`block.lifted_at` rejoint la liste fermée des colonnes modifiables), il ne l'efface pas, et
+  rebloquer écrit une nouvelle ligne. Ce n'est pas un effacement déguisé — c'est l'inverse : une
+  mesure de sécurité qui garde son historique, là où un droit à l'oubli exige, lui, une
+  suppression réelle.
 - **AD-8 — Deux projections de `cv.yaml`, par liste blanche.** `display` pour la page, `agent`
   pour le modèle, champ par champ ; un champ non listé ne sort pas ; courriel, téléphone et
   coordonnées d'une référence ne sont jamais dans le HTML servi — une route sur geste explicite,
@@ -107,7 +114,15 @@ Le pourquoi détaillé — ce que chaque décision empêche — reste dans le sq
   barre d'adresse. La requête suivante crée la session avec l'étiquette et le proxy efface le
   cookie sur cette même réponse — une étiquette ne contamine pas la visite d'après. Rien de tout
   cela sous `/admin*`, et le proxy n'ouvre toujours pas la base : l'étiquette voyage par le
-  cookie, comme l'horodatage de session.
+  cookie, comme l'horodatage de session. **Amendé par la story 13** : le même passage obligé rend
+  aussi le **verdict de blocage** — `recordVisit()` confronte les deux clés de la visite au
+  registre et dit à ses appelants de refuser. Un document bloqué reçoit la page des adresses
+  inconnues (`404`), une route un `404` nu, sans code d'erreur qui nomme le blocage : rien ne doit
+  distinguer un bloqué d'une adresse qui n'existe pas. La visite reste journalisée — l'insistance
+  de quelqu'un qu'on a écarté est une information — mais aucun échange ne peut en naître, et la
+  passerelle du modèle n'est jamais atteinte. Le proxy, toujours, ne consulte rien : la décision
+  se prend dans `app`, à un seul endroit. Et le test de fumée en sort avant tout verdict, pour
+  qu'un déploiement ne puisse pas se fermer tout seul.
 - **AD-15 — Une seule source pour l'adresse du client.** Caddy pose `X-Client-IP` depuis son
   `client_ip`, en écrasant toute valeur entrante ; `X-Forwarded-For` n'est jamais lu ; une seule
   fonction (`src/lib/client-ip.ts`) rend l'adresse, `journal` et le limiteur la reçoivent en

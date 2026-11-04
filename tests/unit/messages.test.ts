@@ -62,7 +62,6 @@ describe('catalogues de messages', () => {
           'contact.github',
           'sections.contact',
           'sections.certifications',
-          'certifications.verify',
           'certifications.verifyAria',
           'phone.reveal',
           'phone.pending',

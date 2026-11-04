@@ -91,7 +91,6 @@
     "option": "Option: {value}"
   },
   "certifications": {
-    "verify": "Verify the certificate",
     "verifyAria": "Verify the certificate {name} on {host} — opens in a new window"
   },
   "references": {

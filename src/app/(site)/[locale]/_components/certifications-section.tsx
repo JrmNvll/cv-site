@@ -12,6 +12,11 @@
  * la main à la page visée, et son intitulé accessible nomme la destination pour
  * qu'un lecteur d'écran sache où il part avant de cliquer.
  *
+ * Ce lien est une icône seule, à droite de l'intitulé (demande de Jérémie du
+ * 2026-11-04). Sans texte visible, tout le sens passe par `aria-label`, repris
+ * en `title` pour la souris ; et la zone cliquable reste à 24 px, le minimum de
+ * WCAG 2.5.8, quelle que soit la taille du dessin.
+ *
  * `displayProjection` ne porte que `certifications[dans_cv = true]` (AD-8) : une
  * entrée masquée dans `cv.yaml` n'arrive pas ici, tout en restant connue de
  * l'agent. Ce composant n'a donc rien à filtrer — et surtout rien à re-filtrer,
@@ -24,9 +29,6 @@ import {shortMonthYear} from './format';
 export type CertificationsSectionProps = {
   readonly certifications: DisplayProjection['certifications'];
 };
-
-/** Le style des liens du site, repris tel quel de la section des compétences. */
-const LINK = 'text-accent underline-offset-4 hover:text-accent-strong hover:underline';
 
 /**
  * Le domaine d'une adresse, pour dire au visiteur où le lien l'emmène.
@@ -62,6 +64,13 @@ export async function CertificationsSection({certifications}: CertificationsSect
       <ol className="flex flex-col">
         {certifications.map((certification) => {
           const date = shortMonthYear(certification.date, locale);
+          const verifyLabel =
+            certification.verification === undefined
+              ? undefined
+              : t('certifications.verifyAria', {
+                  name: certification.intitule,
+                  host: hostOf(certification.verification)
+                });
 
           return (
             <li
@@ -77,28 +86,42 @@ export async function CertificationsSection({certifications}: CertificationsSect
               )}
 
               <div className="lg:col-span-6 lg:col-start-3">
-                <h3 className="text-[19px] leading-snug font-semibold">{certification.intitule}</h3>
-                <p className="mt-0.5 text-[15px] text-ink-soft">{certification.organisme}</p>
+                {/* Le lien reste hors du `h3` : à l'intérieur, son intitulé
+                    accessible s'ajouterait au nom du titre. */}
+                <div className="flex items-start gap-1">
+                  <h3 className="text-[19px] leading-snug font-semibold">{certification.intitule}</h3>
 
-                {/* Sans adresse de vérification, la rubrique reste muette : une
-                    certification s'affiche, elle ne se prouve pas toujours. */}
-                {certification.verification === undefined ? null : (
-                  <p className="mt-2.5 text-[15px]">
+                  {/* Sans adresse de vérification, pas d'icône : une certification
+                      s'affiche, elle ne se prouve pas toujours. */}
+                  {certification.verification === undefined ? null : (
                     <a
                       href={certification.verification}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label={t('certifications.verifyAria', {
-                        name: certification.intitule,
-                        host: hostOf(certification.verification)
-                      })}
-                      className={LINK}
+                      aria-label={verifyLabel}
+                      title={verifyLabel}
+                      className="mt-px inline-flex size-6 shrink-0 items-center justify-center text-accent hover:text-accent-strong"
                       data-certification-link={certification.id}
                     >
-                      {t('certifications.verify')}
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="15"
+                        height="15"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
                     </a>
-                  </p>
-                )}
+                  )}
+                </div>
+                <p className="mt-0.5 text-[15px] text-ink-soft">{certification.organisme}</p>
               </div>
             </li>
           );

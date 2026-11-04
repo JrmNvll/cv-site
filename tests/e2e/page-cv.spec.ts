@@ -744,15 +744,27 @@ test('la rubrique des certifications sʼaffiche entre la formation et les réfé
         await expect(lien).toHaveAttribute('href', certification.verification);
         await expect(lien).toHaveAttribute('target', '_blank');
         await expect(lien).toHaveAttribute('rel', 'noopener noreferrer');
-        const visible = messages[locale].certifications.verify;
-        await expect(lien).toHaveText(visible);
-        // Lʼintitulé accessible nomme la destination et **contient le libellé
-        // visible** : sans cela, la commande vocale sur le texte lu échoue
-        // (WCAG 2.5.3, « Label in Name »).
+        // Une icône seule : aucun texte visible, donc tout le sens passe par
+        // lʼintitulé accessible, qui nomme la certification et la destination.
+        await expect(lien).toHaveText('');
+        await expect(lien.locator('svg')).toBeVisible();
+        await expect(lien.locator('svg')).toHaveAttribute('aria-hidden', 'true');
         const aria = await lien.getAttribute('aria-label');
-        expect(aria, `${locale} : nom accessible`).toContain(visible);
         expect(aria).toContain(new URL(certification.verification).host);
         expect(aria).toContain(certification.intitule);
+        await expect(lien).toHaveAttribute('title', aria!);
+
+        // À droite de lʼintitulé, sur sa ligne, et assez grande pour le doigt
+        // (24 px, WCAG 2.5.8) même si le dessin est plus petit.
+        const titre = await bloc
+          .getByRole('heading', {name: certification.intitule, exact: true})
+          .boundingBox();
+        const icone = await lien.boundingBox();
+        expect(icone!.x, `${name} / ${locale}`).toBeGreaterThanOrEqual(titre!.x + titre!.width);
+        expect(icone!.y).toBeLessThan(titre!.y + titre!.height);
+        expect(icone!.y + icone!.height).toBeGreaterThan(titre!.y);
+        expect(icone!.width).toBeGreaterThanOrEqual(24);
+        expect(icone!.height).toBeGreaterThanOrEqual(24);
       }
 
       // La place dans la page, mesurée et non supposée : après la formation,

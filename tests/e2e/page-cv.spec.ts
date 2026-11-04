@@ -8,6 +8,7 @@ import {
   employerCount,
   joinParts,
   periodLabel,
+  shortMonthYear,
   yearOf
 } from '../../src/app/(site)/[locale]/_components/format';
 import {display, rawCv, LANGS, type Lang} from './fixture-cv';
@@ -692,4 +693,105 @@ test('le sélecteur de langue pointe vers la même page dans lʼautre langue —
   await expect(page).toHaveURL(/\/en$/);
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('heading', {level: 1})).toHaveText(display.en.identite.titre);
+});
+
+/**
+ * La branche d'un message ICU `{count, plural, one {…} other {…}}`, résolue
+ * depuis le catalogue : le test dérive le titre attendu du même fichier que la
+ * page, au lieu de recopier « Certificat ».
+ */
+function brancheIcu(message: string, count: number): string {
+  const motif = count === 1 ? /one \{([^}]*)\}/ : /other \{([^}]*)\}/;
+  return motif.exec(message)?.[1] ?? message;
+}
+
+test('la rubrique des certifications sʼaffiche entre la formation et les références', async ({
+  page
+}) => {
+  for (const {name, viewport} of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+
+    for (const locale of LANGS) {
+      const attendues = display[locale].certifications;
+      expect(attendues.length, 'la fixture doit porter une certification affichée').toBeGreaterThan(
+        0
+      );
+
+      await page.goto(`/${locale}`);
+      const section = page.locator('section[aria-labelledby="certifications"]');
+      await expect(section.getByRole('heading', {level: 2}), `${name} / ${locale}`).toHaveText(
+        brancheIcu(messages[locale].sections.certifications, attendues.length)
+      );
+
+      for (const certification of attendues) {
+        const bloc = section
+          .locator('li')
+          .filter({has: page.getByRole('heading', {name: certification.intitule, exact: true})});
+        await expect(bloc).toHaveCount(1);
+        await expect(bloc.getByText(certification.organisme, {exact: true})).toBeVisible();
+        // Le mois, et pas seulement lʼannée : cʼest la forme du CV PDF.
+        const date = shortMonthYear(certification.date, locale);
+        if (date !== undefined) await expect(bloc.getByText(date, {exact: true})).toBeVisible();
+
+        const lien = bloc.locator(`[data-certification-link="${certification.id}"]`);
+        if (certification.verification === undefined) {
+          await expect(lien).toHaveCount(0);
+          continue;
+        }
+        // Un lien sortant vers une attestation tenue par un tiers : il sʼouvre à
+        // part, sans donner la main à la page visée (`noopener`) ni lui dire dʼoù
+        // on vient (`noreferrer`).
+        await expect(lien).toHaveAttribute('href', certification.verification);
+        await expect(lien).toHaveAttribute('target', '_blank');
+        await expect(lien).toHaveAttribute('rel', 'noopener noreferrer');
+        const visible = messages[locale].certifications.verify;
+        await expect(lien).toHaveText(visible);
+        // Lʼintitulé accessible nomme la destination et **contient le libellé
+        // visible** : sans cela, la commande vocale sur le texte lu échoue
+        // (WCAG 2.5.3, « Label in Name »).
+        const aria = await lien.getAttribute('aria-label');
+        expect(aria, `${locale} : nom accessible`).toContain(visible);
+        expect(aria).toContain(new URL(certification.verification).host);
+        expect(aria).toContain(certification.intitule);
+      }
+
+      // La place dans la page, mesurée et non supposée : après la formation,
+      // avant les références, comme sur le CV PDF. Les trois repères doivent
+      // exister — un `indexOf` à -1 rendrait la comparaison complaisante.
+      const ordre = await page
+        .locator('section[aria-labelledby]')
+        .evaluateAll((sections) => sections.map((item) => item.getAttribute('aria-labelledby')));
+      for (const repere of ['formation', 'certifications', 'references']) {
+        expect(ordre, `${name} / ${locale}`).toContain(repere);
+      }
+      expect(ordre.indexOf('certifications')).toBeGreaterThan(ordre.indexOf('formation'));
+      expect(ordre.indexOf('certifications')).toBeLessThan(ordre.indexOf('references'));
+
+      // La rubrique ne fait pas déborder la page en étroit.
+      expect(await debordeHorizontalement(page), `${name} / ${locale}`).toBe(false);
+    }
+  }
+});
+
+test('une certification masquée par `dans_cv: false` nʼapparaît pas', async ({page}) => {
+  // `?? []` : si la section quittait la fixture, un `TypeError` opaque
+  // remplacerait un échec qui nomme ce qui manque.
+  const brut = (rawCv.certifications ?? []) as {dans_cv?: boolean; intitule: string}[];
+  const masquees = brut.filter((entry) => entry.dans_cv === false);
+  expect(masquees.length, 'la fixture doit porter une certification masquée').toBeGreaterThan(0);
+
+  for (const locale of LANGS) {
+    await page.goto(`/${locale}`);
+    // Par rôle, et non par sous-chaîne du HTML : React échappe apostrophes et
+    // esperluettes, quʼun intitulé français porte souvent.
+    for (const masquee of masquees) {
+      await expect(
+        page.getByRole('heading', {name: masquee.intitule, exact: true}),
+        `${locale} : ${masquee.intitule}`
+      ).toHaveCount(0);
+    }
+    for (const visible of display[locale].certifications) {
+      await expect(page.getByRole('heading', {name: visible.intitule, exact: true})).toHaveCount(1);
+    }
+  }
 });

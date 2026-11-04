@@ -232,6 +232,9 @@ describe('les sources valides (AD-4)', () => {
     ['cv:profil', true],
     ['cv:experiences.conge-parental', true],
     ['cv:formation.certificat-annexe', true],
+    // Masquee de la page (dans_cv: false) mais citable, comme la formation.
+    ['cv:certifications.certification-fictive', true],
+    ['cv:certifications.certification-fictive-masquee', true],
     ['cv:competences.methodes-fictives', true],
     ['cv:certificats_travail.outillage-interne', true],
     ['cv:lettre_motivation', true],
@@ -241,6 +244,7 @@ describe('les sources valides (AD-4)', () => {
     ['qa:inexistante', false],
     ['cv:contact.telephone', false],
     ['cv:references.reference-fictive', false],
+    ['cv:certifications.inexistante', false],
     ['par-01', false],
     ['', false],
     ['toString', false]

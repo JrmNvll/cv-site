@@ -80,13 +80,20 @@ distinctes, `display` pour la page et `agent` pour le modèle (AD-8). Un champ
 ajouté à `cv.yaml` ne sort de nulle part tant qu'il n'a pas été ajouté là — et
 `tests/unit/projection-leak.test.ts` échoue s'il en sort quand même.
 
-Trois règles méritent d'être connues avant de toucher au contenu :
+Quatre règles méritent d'être connues avant de toucher au contenu :
 
-- **Chaque nœud citable porte un `id` écrit à la main** — `experiences`,
-  `formation`, `competences`, `certificats_travail`. Ces identifiants deviennent
+- **Chaque nœud citable porte un `id` écrit à la main** — `experiences`, `competences`,
+  `formation`, `certifications`, `certificats_travail`. Ces identifiants deviennent
   des clés de citation (`cv:experiences.<id>`, AD-4) : renommer un libellé ou
   intervertir deux entrées ne doit pas déplacer une citation déjà émise. Le
   démarrage échoue si un `id` manque ou apparaît deux fois.
+- **`certifications` et `certificats_travail` sont deux choses.** La
+  première porte les certifications obtenues, affichées avec leur lien public de
+  vérification ; la seconde les attestations d'employeur, dont le signataire ne
+  sort d'aucune projection (AD-8). Deux mots proches, aucun rapport : la page du CV
+  n'affiche que la première, et ce que `certifications` documente doit rester
+  d'accord avec la réponse `for-03` du corpus — sans quoi l'assistant dément la
+  page qu'il commente.
 - **Le corps d'une réponse part au modèle tel quel.** Les seuls marqueurs sont
   `PRIVÉ` et `PASSE`, seuls sur leur ligne ; « OUI. » ou « SQL, PHP, HTML. » sont
   des réponses ordinaires. Un bloc de code clôturé (```` ``` ````) protège tout ce

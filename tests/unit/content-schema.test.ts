@@ -108,7 +108,13 @@ describe('cvSchema — ce qui est exigé', () => {
   });
 
   it('laisse optionnelles les sections absentes du fichier de référence', () => {
-    for (const section of ['meta', 'references', 'certificats_travail', 'lettre_motivation'] as const) {
+    for (const section of [
+      'meta',
+      'references',
+      'certifications',
+      'certificats_travail',
+      'lettre_motivation'
+    ] as const) {
       expect(cvSchema.safeParse(sans(base(), section)).success).toBe(true);
     }
   });
@@ -129,7 +135,7 @@ describe('cvSchema — ce qui est exigé', () => {
 });
 
 describe('cvSchema — les identifiants citables', () => {
-  it.each(['experiences', 'formation', 'competences', 'certificats_travail'] as const)(
+  it.each(['experiences', 'formation', 'certifications', 'competences', 'certificats_travail'] as const)(
     'exige un identifiant sur chaque entrée de %s',
     (section) => {
       const entries = (base()[section] as Record<string, unknown>[]).map((entry) =>
@@ -139,7 +145,7 @@ describe('cvSchema — les identifiants citables', () => {
     }
   );
 
-  it.each(['experiences', 'formation', 'competences', 'certificats_travail'] as const)(
+  it.each(['experiences', 'formation', 'certifications', 'competences', 'certificats_travail'] as const)(
     'refuse deux fois le même identifiant dans %s',
     (section) => {
       // Deux `cv:experiences.<id>` identiques désigneraient deux nœuds : une citation de

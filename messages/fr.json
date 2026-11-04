@@ -74,6 +74,7 @@
     "assets": "Atouts",
     "spokenLanguages": "Langues",
     "education": "Formation",
+    "certifications": "{count, plural, one {Certificat} other {Certificats}}",
     "practical": "Informations pratiques",
     "references": "Références",
     "contact": "Contact"
@@ -88,6 +89,10 @@
   "education": {
     "equivalence": "Équivalence suisse : {value}",
     "option": "Option : {value}"
+  },
+  "certifications": {
+    "verify": "Vérifier le certificat",
+    "verifyAria": "Vérifier le certificat {name} sur {host} — nouvelle fenêtre"
   },
   "references": {
     "reveal": "Afficher les coordonnées",

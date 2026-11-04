@@ -255,6 +255,7 @@ async function main() {
   console.log(
     `  ${agent.experiences.length} expériences · ` +
       `${agent.formation.length} formations (${display.formation.length} affichée(s)) · ` +
+      `${agent.certifications.length} certification(s) (${display.certifications.length} affichée(s)) · ` +
       `${agent.competences.length} catégories de compétences · ` +
       `${agent.certificats_travail.length} certificat(s) de travail`
   );

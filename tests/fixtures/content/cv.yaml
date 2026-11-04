@@ -172,6 +172,27 @@ formation:
     justificatif: dossier-fictif/certificat-annexe-fictif.pdf
     dans_cv: false
 
+certifications:
+  - id: certification-fictive
+    intitule: Certification Fictive En Outillage
+    organisme: Organisme Certificateur Fictif
+    date: 2026-02-17
+    verification: certif-fictif.example/verifier/abc123
+    dans_cv: true
+
+  # Ni date ni adresse de vérification : la rubrique doit se rendre sans
+  # colonne de gauche et sans lien, et le titre passer au pluriel.
+  - id: certification-fictive-sans-preuve
+    intitule: Certification Fictive Sans Preuve
+    organisme: Troisième Organisme Fictif
+    dans_cv: true
+
+  # `dans_cv: false` : absente de l'affichage, présente pour l'agent (AD-8).
+  - id: certification-fictive-masquee
+    intitule: Certification Fictive Masquée
+    organisme: Autre Organisme Fictif
+    dans_cv: false
+
 references:
   - id: reference-fictive
     nom: Referente-Fictive-Personne

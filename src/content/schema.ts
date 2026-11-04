@@ -203,6 +203,33 @@ export const cvSchema = z.object({
   ).superRefine(uniqueIds('formation')),
 
   /**
+   * Les certifications obtenues — à ne pas confondre avec
+   * `certificats_travail`, qui porte les attestations d'employeur et leurs
+   * données de tiers, tenues hors de l'affichage (AD-8). Deux mots proches,
+   * deux objets sans rapport.
+   *
+   * `intitule` et `organisme` sont des noms propres : ils ne se traduisent
+   * pas, d'où `z.string()` plutôt que `localizedText` — un champ localisé
+   * inviterait un jour quelqu'un à en traduire un.
+   */
+  certifications: z
+    .array(
+      z.object({
+        id: stableId,
+        intitule: z.string().min(1),
+        organisme: z.string().min(1),
+        date: dateLike.optional(),
+        /** L'adresse publique qui atteste la certification — même règle que
+            les profils : ni `javascript:`, ni autre schéma que http(s). */
+        verification: profileUrl.optional(),
+        /** `false` retire l'entrée de l'affichage, pas du contexte (AD-8). */
+        dans_cv: z.boolean().default(true)
+      })
+    )
+    .superRefine(uniqueIds('certifications'))
+    .optional(),
+
+  /**
    * Données de tiers (AD-8, amendé le 2026-09-15) : le nom et la fonction
    * s'affichent ; `telephone` et `email` ne sortent d'aucune projection et ne
    * sont servis que par `/api/references/<id>/contact`, sur geste explicite.
@@ -254,3 +281,4 @@ export const cvSchema = z.object({
 export type CvDocument = z.infer<typeof cvSchema>;
 export type CvExperience = CvDocument['experiences'][number];
 export type CvFormation = CvDocument['formation'][number];
+export type CvCertification = NonNullable<CvDocument['certifications']>[number];

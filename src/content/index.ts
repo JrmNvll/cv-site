@@ -29,6 +29,7 @@ export type {
   AgentProjection,
   DisplayProjection,
   ProjectedCertificat,
+  ProjectedCertification,
   ProjectedCompetence,
   ProjectedExperience,
   ProjectedFormation,

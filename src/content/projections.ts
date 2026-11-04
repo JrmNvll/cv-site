@@ -60,6 +60,20 @@ export type ProjectedFormation = {
   readonly justificatif: boolean;
 };
 
+/**
+ * Une certification obtenue. `verification` est une adresse publique, servie
+ * absolue : la page en fait un lien sortant — comme les profils de `contact`,
+ * mais vers une attestation tenue par un tiers, pas vers une page de la
+ * personne.
+ */
+export type ProjectedCertification = {
+  readonly id: string;
+  readonly intitule: string;
+  readonly organisme: string;
+  readonly date?: string;
+  readonly verification?: string;
+};
+
 export type ProjectedCertificat = {
   readonly id: string;
   readonly entreprise: string;
@@ -118,6 +132,8 @@ export type DisplayProjection = {
   readonly experiences: readonly ProjectedExperience[];
   /** `formation[dans_cv=false]` est absente de l'affichage — AD-8. */
   readonly formation: readonly ProjectedFormation[];
+  /** Même règle que la formation : `dans_cv=false` reste hors de la page. */
+  readonly certifications: readonly ProjectedCertification[];
   /** Nom et fonction seulement ; `present_dans` filtre par langue — AD-8. */
   readonly references: readonly ProjectedReference[];
 };
@@ -133,6 +149,8 @@ export type AgentProjection = {
   readonly experiences: readonly Cited<ProjectedExperience>[];
   /** Toute la formation, `dans_cv` compris ou non — AD-8. */
   readonly formation: readonly Cited<ProjectedFormation>[];
+  /** Toutes les certifications, de même : le modèle les connaît. */
+  readonly certifications: readonly Cited<ProjectedCertification>[];
   readonly certificats_travail: readonly Cited<ProjectedCertificat>[];
   readonly lettre_motivation: Cited<{readonly arguments_cles: readonly string[]}> | null;
 };
@@ -330,6 +348,19 @@ export function buildProjections(
     } as ProjectedFormation)
   }));
 
+  const certifications = (cv.certifications ?? []).map((entry) => ({
+    dans_cv: entry.dans_cv,
+    projected: compact({
+      id: entry.id,
+      intitule: entry.intitule,
+      organisme: entry.organisme,
+      date: asText(entry.date),
+      // Absolue comme les profils : servie telle quelle dans un `href`, une
+      // adresse sans schéma deviendrait un chemin du site.
+      verification: absoluteUrl(entry.verification)
+    } as ProjectedCertification)
+  }));
+
   const certificats: ProjectedCertificat[] = (cv.certificats_travail ?? []).map((entry) =>
     compact({
       id: entry.id,
@@ -378,6 +409,9 @@ export function buildProjections(
     atouts,
     experiences: displayExperiences,
     formation: formation.filter((entry) => entry.dans_cv).map((entry) => entry.projected),
+    certifications: certifications
+      .filter((entry) => entry.dans_cv)
+      .map((entry) => entry.projected),
     references
   };
 
@@ -392,6 +426,10 @@ export function buildProjections(
     formation: formation.map((entry) => ({
       ...entry.projected,
       source: `cv:formation.${entry.projected.id}`
+    })),
+    certifications: certifications.map((entry) => ({
+      ...entry.projected,
+      source: `cv:certifications.${entry.projected.id}`
     })),
     certificats_travail: certificats.map((entry) => ({
       ...entry,

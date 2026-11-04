@@ -141,6 +141,7 @@ describe('aucun texte de CV nʼest écrit dans un composant', () => {
       [
         ...LECTEURS,
         '_components/career-section.tsx',
+        '_components/certifications-section.tsx',
         '_components/education-section.tsx',
         '_components/identity-heading.tsx',
         '_components/identity-profile.tsx',

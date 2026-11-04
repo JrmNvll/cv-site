@@ -27,6 +27,7 @@ import {routing} from '@/i18n/routing';
 import {AssistantDock, DOCK_BAR_HEIGHT_CLASS} from './_components/assistant-dock';
 import {AssistantPanel} from './_components/assistant-panel';
 import {CareerSection} from './_components/career-section';
+import {CertificationsSection} from './_components/certifications-section';
 import {EducationSection} from './_components/education-section';
 import {IdentityHeading} from './_components/identity-heading';
 import {IdentityProfile} from './_components/identity-profile';
@@ -91,6 +92,7 @@ export default async function LocaleHomePage({params}: {params: Promise<{locale:
         contact={cv.contact}
       />
       <EducationSection formation={cv.formation} />
+      <CertificationsSection certifications={cv.certifications} />
       <ReferencesSection references={cv.references} />
     </PageFrame>
   );
